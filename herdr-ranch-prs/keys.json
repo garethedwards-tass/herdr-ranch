@@ -1,0 +1,7 @@
+{
+  "global": { "cmd-shift-g": "mod.open:herdr-ranch-prs" },
+  "mod:herdr-ranch-prs": {
+    "cmd-r": "herdr-ranch-prs.refresh",
+    "cmd-o": "herdr-ranch-prs.browser"
+  }
+}

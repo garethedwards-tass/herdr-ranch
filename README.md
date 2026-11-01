@@ -1,0 +1,85 @@
+# Herdr Ranch
+
+![Herdr Ranch: issues, pull requests and your agents' questions next to your terminals](docs/images/social.png)
+
+Three mods for the [Herdr](https://herdr.dev) desktop app. They show the work of the space you're in next to its terminals and agents. Plus a layout that gives each of them a button in the tab bar.
+
+## Install
+
+Tell your agent, in Herdr:
+
+```text
+Read ~/.config/herdr-app/AGENTS.md, then install everything from github.com/jslowack/herdr-ranch: the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-inbox, the mod-buttons layout, and their keys.json entries; then switch to the mod-buttons layout.
+```
+
+Or in a terminal:
+
+```sh
+git clone https://github.com/jslowack/herdr-ranch && cd herdr-ranch && ./install.sh --layout
+herdr-app do layout.switch '{"name":"mod-buttons"}'
+```
+
+You get **Issues**, **PRs** and **Inbox** buttons next to Files and Changes.
+
+**Needs:** [`gh`](https://cli.github.com) signed in, and `git`. Jira, Linear and [Plannotator](https://plannotator.ai) only for what you use. Tested on macOS; Linux and Windows follow their documented commands.
+
+One mod at a time, keyboard shortcuts and updating: see [Install and update](docs/guide.md#install-and-update).
+
+## Issues
+
+![Issues: the list, an issue's page with Start agent, and the Start agent dialog](herdr-ranch-issues/preview.png)
+
+The space's issues from Jira Cloud, Linear or GitHub. Each issue opens as a page like GitHub's. **Start agent** (⌘↵) opens a coding agent on it, in a new git worktree and space.
+
+Link a space once from the cog: [Link a space](docs/guide.md#link-a-space), [Connect Jira](docs/connect-jira.md), [Connect Linear](docs/guide.md#connect-linear). More in [the guide](docs/guide.md#issues).
+
+## Pull requests
+
+![Pull requests: the grouped list and a pull request's page with Review with agent](herdr-ranch-prs/preview.png)
+
+The space's pull requests, grouped by what each one waits on: review requested, yours to fix, ready to merge. A page per pull request with checks, files and a merge box. **Review with agent** checks it out, builds, tests and reports, without writing to GitHub.
+
+More in [the guide](docs/guide.md#pull-requests).
+
+## Inbox
+
+![Inbox: the open Plannotator sessions](herdr-ranch-inbox/preview.png)
+
+The open [Plannotator](https://plannotator.ai) sessions: the plans and code reviews your agents opened for you. A click opens the page in your browser. A count on the button tells you when an agent is waiting.
+
+More in [the guide](docs/guide.md#inbox).
+
+## The mod-buttons layout
+
+![mod-buttons: a tab-bar button for every mod that wants one](mod-buttons/preview.png)
+
+Herdr's own layout, with a tab-bar button for every installed mod that declares one. It works for any mod, not only these. To add a button to your own mod, see [mod-buttons/RECIPE.md](mod-buttons/RECIPE.md). [herdrdev/herdr-app#246](https://github.com/herdrdev/herdr-app/issues/246) asks for this in Herdr itself.
+
+## What it touches
+
+- **Read only.** Nothing is written to Jira, Linear or GitHub. Start agent creates a local worktree and branch, and pushes nothing.
+- **Tokens** go to your system's credential store, never into Herdr's settings.
+
+Every program, host and file it uses: [docs/reference.md](docs/reference.md#what-they-run-and-store).
+
+## Recommended
+
+Mods by others that go well with Herdr Ranch. `./install.sh` offers them and the mod-buttons layout gives them a button.
+
+### Automations
+
+[DnzzL/herdr-automations](https://github.com/DnzzL/herdr-automations) (MIT): agent prompts on a schedule, such as a morning triage or a nightly dependency check. A run opens as a space in the app.
+
+What `install.sh` does for it, and how to remove it: [docs/reference.md](docs/reference.md#automations).
+
+## More
+
+- [Guide](docs/guide.md): install options, linking a space, Start agent, your own prompts.
+- [Reference](docs/reference.md): what runs and what is stored, install flags, keys.
+- [CHANGELOG.md](CHANGELOG.md): what changed per version.
+- Each mod's `RECIPE.md`: the brief an agent builds it from ([Issues](herdr-ranch-issues/RECIPE.md), [Pull requests](herdr-ranch-prs/RECIPE.md), [Inbox](herdr-ranch-inbox/RECIPE.md), [mod-buttons](mod-buttons/RECIPE.md)).
+- [CONTRIBUTING.md](CONTRIBUTING.md): tests, shared code, how the repository is laid out.
+
+## License
+
+[MIT](LICENSE).

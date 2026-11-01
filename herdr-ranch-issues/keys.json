@@ -1,0 +1,7 @@
+{
+  "global": { "cmd-shift-j": "mod.open:herdr-ranch-issues" },
+  "mod:herdr-ranch-issues": {
+    "cmd-r": "herdr-ranch-issues.refresh",
+    "cmd-o": "herdr-ranch-issues.browser"
+  }
+}

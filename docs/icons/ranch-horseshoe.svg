@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Herdr Ranch: horseshoe">
+  <rect width="64" height="64" rx="14" fill="#2b2f36"/>
+  <path d="M19 50V31a13 13 0 0 1 26 0v19" fill="none" stroke="#e9a23b" stroke-width="8" stroke-linecap="round"/>
+  <g fill="#2b2f36"><circle cx="19" cy="36" r="1.6"/><circle cx="19" cy="44" r="1.6"/><circle cx="45" cy="36" r="1.6"/><circle cx="45" cy="44" r="1.6"/><circle cx="24" cy="24" r="1.6"/><circle cx="40" cy="24" r="1.6"/></g>
+  <path d="M27 38h10M27 43h7" stroke="#f6efe2" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

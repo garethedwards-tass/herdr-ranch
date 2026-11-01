@@ -1,0 +1,5 @@
+jsconfig.json
+gpui-kit.d.ts
+herdr.d.ts
+.DS_Store
+*.error

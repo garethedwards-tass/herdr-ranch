@@ -1,0 +1,66 @@
+name: test
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The mods' copies of shared/ match
+        run: |
+          for f in shared/*.js; do
+            for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-inbox; do
+              cmp -s "$f" "$m/mods/$m/$(basename "$f")" || { echo "stale copy: $m/mods/$m/$(basename "$f")"; exit 1; }
+            done
+          done
+      - name: Every mod file parses
+        run: |
+          for f in */mods/*/*.js shared/*.js; do
+            case "$f" in *.d.ts) continue ;; esac
+            node --check "$f" || exit 1
+          done
+      - name: Logic tests
+        working-directory: tests
+        run: npm test
+
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: |
+          command -v shellcheck >/dev/null && exit 0
+          if [ "$RUNNER_OS" = macOS ]; then brew install shellcheck
+          else sudo apt-get update && sudo apt-get install -y shellcheck; fi
+      - name: shellcheck install.sh
+        run: shellcheck install.sh
+      - name: Smoke test install.sh
+        run: |
+          set -eu
+          tmp=$(mktemp -d)
+          export HOME="$tmp/home" HERDR_APP_HOME="$tmp/home/.config/herdr-app"
+          mkdir -p "$HOME" "$tmp/bin"
+          # A stand-in for the app's CLI: every call succeeds.
+          printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/herdr-app" && chmod +x "$tmp/bin/herdr-app"
+          export PATH="$tmp/bin:$PATH"
+
+          ./install.sh --no-recommended
+          ./install.sh --no-recommended
+          ./install.sh --layout --no-recommended
+
+          for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-inbox; do
+            [ -L "$HERDR_APP_HOME/mods/$m" ] || { echo "missing link: $m"; exit 1; }
+          done
+          [ -d "$HERDR_APP_HOME/mods/mod-buttons-bar" ] || { echo "missing mod-buttons-bar"; exit 1; }
+
+          # Piped from another folder, it can't find its clone and must refuse.
+          repo=$PWD
+          cd "$tmp"
+          if sh < "$repo/install.sh"; then echo "a piped install.sh should fail"; exit 1; fi
+          echo "piped run refused, as it should"

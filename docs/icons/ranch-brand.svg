@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Herdr Ranch: brand mark">
+  <rect width="64" height="64" rx="14" fill="#f3ead8"/>
+  <path d="M10 48h44" stroke="#5a3b22" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M15 48V22M49 48V22M13 27h38M13 37h38" stroke="#5a3b22" stroke-width="3.4" stroke-linecap="round"/>
+  <circle cx="32" cy="27" r="12" fill="#c8522d"/>
+  <path d="M28 33V21h5.2a3.6 3.6 0 0 1 0 7.2H28M32.6 28.2 36.4 33" fill="none" stroke="#f3ead8" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
