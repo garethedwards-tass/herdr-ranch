@@ -31,8 +31,6 @@ Then:
 1. Merge the three `*/keys.json` into `~/.config/herdr-app/keys.json` (Cmd+Shift+J opens the issues, Cmd+Shift+G the pull requests, Cmd+Shift+I the inbox; all keys are in [the reference](reference.md#keys)).
 2. Switch to the layout: `herdr-app do layout.switch '{"name":"mod-buttons"}'`. `ctrl-shift-l` switches back to any other layout.
 
-Run from a terminal, `install.sh` also offers the [recommended](../README.md#recommended) mods by others: `--recommended` installs them without asking, `--no-recommended` skips the question.
-
 **Without the layout,** open the lists with their keys or `herdr-app do mod.open '{"name":"herdr-ranch-issues"}'`. The cog in each list's header sets whether its button opens a side panel or a tab.
 
 **Coming from space-issues and space-prs?** `./install.sh` removes their old links, and the new mods take over their settings on first start.
@@ -120,4 +118,4 @@ A team can share prompts in git: a `.herdr/prompts.md` in the repository, with a
 
 ## Automations
 
-[DnzzL/herdr-automations](https://github.com/DnzzL/herdr-automations), a recommended mod by others. Its panel lists every automation with its schedule and next run, the runs that finished since you last looked, and a form with cron presets. A run opens as a space in the app. Its **Automations** button comes with the mod-buttons layout. What `install.sh` does for it and how to remove it: [the reference](reference.md#automations).
+[DnzzL/herdr-automations](https://github.com/DnzzL/herdr-automations), a recommended mod by others. Its panel lists every automation with its schedule and next run, the runs that finished since you last looked, and a form with cron presets. A run opens as a space in the app. Install it from its own repository (its section "In the Herdr desktop app"). Skip its layout step: the mod-buttons layout gives it an **Automations** button once its panel is in `~/.config/herdr-app/mods/automations`, and drops the button when you remove it.

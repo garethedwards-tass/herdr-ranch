@@ -4,6 +4,8 @@
 
 Three mods for the [Herdr](https://herdr.dev) desktop app. They show the work of the space you're in next to its terminals and agents. Plus a layout that gives each of them a button in the tab bar.
 
+**It's opinionated.** It assumes code on GitHub, issues in Jira, Linear or GitHub, and agents working in their own worktrees; the mods only read, you act in the tools themselves. If you work differently, each mod installs on its own and its `RECIPE.md` lets your agent build a variant.
+
 ## Install
 
 Tell your agent, in Herdr:
@@ -64,13 +66,11 @@ Every program, host and file it uses: [docs/reference.md](docs/reference.md#what
 
 ## Recommended
 
-Mods by others that go well with Herdr Ranch. `./install.sh` offers them and the mod-buttons layout gives them a button.
+Mods by others that go well with Herdr Ranch. Install them the way their own README says; the mod-buttons layout gives each a button, even when its `mod.json` declares none.
 
 ### Automations
 
-[DnzzL/herdr-automations](https://github.com/DnzzL/herdr-automations) (MIT): agent prompts on a schedule, such as a morning triage or a nightly dependency check. A run opens as a space in the app.
-
-What `install.sh` does for it, and how to remove it: [docs/reference.md](docs/reference.md#automations).
+[DnzzL/herdr-automations](https://github.com/DnzzL/herdr-automations) (MIT): agent prompts on a schedule, such as a morning triage or a nightly dependency check. A run opens as a space in the app. Follow its section "In the Herdr desktop app"; you can skip its layout step, the mod-buttons layout adds its button.
 
 ## More
 

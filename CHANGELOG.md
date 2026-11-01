@@ -11,5 +11,5 @@ The first release.
 - **Inbox:** the open Plannotator sessions per space or all, opened in your browser, closed with ×. Refreshes when a session opens or closes, and when Herdr's window comes back to the front.
 - **Link space:** connect Jira (classic API token) or Linear (personal API key), stored in the system's credential store; per-space GitHub repository.
 - **mod-buttons layout:** a tab-bar button for every mod that declares one, with a count from the mod.
-- **Recommended mods:** `install.sh` offers [Automations](https://github.com/DnzzL/herdr-automations), pinned to a release; the mod-buttons layout gives it a button.
+- **Recommended mods:** the README points to [Automations](https://github.com/DnzzL/herdr-automations); the mod-buttons layout gives it a button when it's installed.
 - macOS, Linux and Windows (tested on macOS).

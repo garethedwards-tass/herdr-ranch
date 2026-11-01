@@ -50,9 +50,9 @@ jobs:
           printf '#!/bin/sh\nexit 0\n' > "$tmp/bin/herdr-app" && chmod +x "$tmp/bin/herdr-app"
           export PATH="$tmp/bin:$PATH"
 
-          ./install.sh --no-recommended
-          ./install.sh --no-recommended
-          ./install.sh --layout --no-recommended
+          ./install.sh
+          ./install.sh
+          ./install.sh --layout
 
           for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-inbox; do
             [ -L "$HERDR_APP_HOME/mods/$m" ] || { echo "missing link: $m"; exit 1; }
