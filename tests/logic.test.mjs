@@ -142,97 +142,6 @@ test("every fetch in the mods uses only method, headers and body", async () => {
   }
 });
 
-import { sessionInSpace, parseSessions, inSpace } from "../shared/inbox.js";
-
-test("sessions: matched to a space by folder, else by the (cut) project name", () => {
-  const space = { folder: "/Users/x/Projects/rocket" };
-  assert.equal(sessionInSpace({ folder: "/Users/x/Projects/rocket" }, space, null), true);
-  assert.equal(sessionInSpace({ folder: "/Users/x/.herdr/worktrees/rocket/agent-RKT-1-a" }, space, "/Users/x/Projects/rocket"), true);
-  assert.equal(sessionInSpace({ folder: "/Users/x/Projects/other" }, space, null), false);
-  assert.equal(sessionInSpace({ folder: null, project: "rocket" }, space, null), true);
-  assert.equal(sessionInSpace({ folder: null, project: "agent-rkt-1438-checkout-fails-w" }, { folder: "/w/agent-rkt-1438-checkout-fails-with-gift" }, null), true);
-});
-
-test("sessions: the documented text output of plannotator sessions", () => {
-  const text = `Active Plannotator sessions:
-
-  #1   annotate   -          herdr-mods           http://localhost:52717       23m ago    -
-  #2   annotate   -          agent-rkt-1438-checkout-fails-w http://localhost:52544       17h 52m ago /Users/x/.herdr/worktrees/rocket/agent-RKT-1/docs/a.md
-  #3   review     -          rocket               http://localhost:50744       2h ago     -`;
-  const s = parseSessions(text);
-  assert.deepEqual(s.map((x) => [x.index, x.mode, x.project, x.url, x.age, x.label]), [
-    [1, "annotate", "herdr-mods", "http://localhost:52717", "23m ago", null],
-    [2, "annotate", "agent-rkt-1438-checkout-fails-w", "http://localhost:52544", "17h 52m ago", "/Users/x/.herdr/worktrees/rocket/agent-RKT-1/docs/a.md"],
-    [3, "review", "rocket", "http://localhost:50744", "2h ago", null],
-  ]);
-  assert.deepEqual(parseSessions("No active sessions."), []);
-  assert.equal(inSpace("/Users/x/.herdr/worktrees/rocket/agent-RKT-1/docs", { folder: "/Users/x/Projects/rocket" }, "/Users/x/Projects/rocket"), true);
-});
-
-import { stopSession, cleanSessions } from "../shared/inbox.js";
-
-test("sessions: stop only Plannotator's own process; clean runs the documented --clean", async () => {
-  const ran = [];
-  state.platform = "macos";
-  state.exec = (cmd, args) => {
-    ran.push([cmd, ...(args ?? [])].join(" "));
-    if (cmd === "ps") return { code: 0, stdout: args[1] === "111" ? "/Users/x/.local/bin/plannotator annotate plan.md\n" : "/usr/bin/vim notes.txt\n", stderr: "" };
-    if (cmd === "kill") return { code: 0, stdout: "", stderr: "" };
-    if (String(args?.at(-1)).includes("command -v plannotator")) return { code: 0, stdout: "/Users/x/.local/bin/plannotator\n", stderr: "" };
-    if (cmd.endsWith("plannotator")) return { code: 0, stdout: "", stderr: "" };
-    return null;
-  };
-  assert.equal(await stopSession({ pid: 111 }), null);
-  assert.ok(ran.includes("kill 111"));
-  assert.match(await stopSession({ pid: 222 }), /isn't Plannotator's/);
-  assert.ok(!ran.includes("kill 222"), "a reused process id is left alone");
-  assert.match(await stopSession({ pid: null }), /isn't known/);
-  await cleanSessions();
-  assert.ok(ran.some((r) => r.endsWith("plannotator sessions --clean")));
-  state.exec = null;
-});
-
-import { readSessions } from "../shared/inbox.js";
-
-test("sessions: running or not is asked of the system (a listening port), not fetched", async () => {
-  state.platform = "macos";
-  state.exec = (cmd, args) => {
-    if (String(args?.at(-1)).includes("command -v plannotator")) return { code: 0, stdout: "/p/plannotator\n", stderr: "" };
-    if (String(cmd).endsWith("plannotator") && args[1] === "--json") return { code: 0, stdout: JSON.stringify([{ index: 1, mode: "annotate", url: "http://localhost:52544", port: 52544, pid: 5, project: "a" }, { index: 2, mode: "annotate", url: "http://localhost:50744", port: 50744, pid: 6, project: "b" }]), stderr: "" };
-    if (cmd === "lsof" && args.includes("-iTCP:52544")) return { code: 0, stdout: "5\n", stderr: "" };
-    if (cmd === "lsof" && args.includes("-iTCP:50744")) return { code: 1, stdout: "", stderr: "" };
-    if (cmd === "lsof") return { code: 0, stdout: "n/Users/x/a\n", stderr: "" };
-    return null;
-  };
-  state.fetched = [];
-  const list = await readSessions();
-  assert.deepEqual(list.map((x) => [x.port, x.alive]), [[52544, true], [50744, false]]);
-  assert.equal(state.fetched.length, 0, "no fetch to local pages");
-  state.exec = null;
-});
-
-import { closeSession } from "../shared/inbox.js";
-
-test("close: a stale record --clean keeps is removed; a running one is stopped first", async () => {
-  state.platform = "macos";
-  let listed = [{ index: 1, mode: "annotate", url: "http://localhost:50744", port: 50744, pid: 21818, project: "b" }];
-  const ran = [];
-  state.exec = (cmd, args) => {
-    ran.push([cmd, ...(args ?? [])].join(" "));
-    if (String(args?.at(-1)).includes("command -v plannotator")) return { code: 0, stdout: "/p/plannotator\n", stderr: "" };
-    if (String(cmd).endsWith("plannotator") && args[1] === "--json") return { code: 0, stdout: JSON.stringify(listed), stderr: "" };
-    if (String(cmd).endsWith("plannotator") && args[1] === "--clean") return { code: 0, stdout: "Cleaned up stale sessions.", stderr: "" };
-    if (cmd === "lsof" && args.some((a) => a.startsWith("-iTCP:"))) return { code: 1, stdout: "", stderr: "" };
-    if (cmd === "lsof") return { code: 1, stdout: "", stderr: "" };
-    if (cmd === "rm") { listed = []; return { code: 0, stdout: "", stderr: "" }; }
-    return null;
-  };
-  assert.equal(await closeSession({ ...listed[0], alive: false }), null);
-  assert.ok(ran.includes("rm -f /Users/test/.plannotator/sessions/21818.json"), "the record file goes when --clean keeps it");
-  assert.ok(!ran.some((r) => r.startsWith("kill")), "nothing is killed for a stopped session");
-  state.exec = null;
-});
-
 import { imagesAsLinks } from "../shared/links.js";
 
 test("images in descriptions become links (they often need a sign-in and leave a gap)", () => {
@@ -266,7 +175,7 @@ test("updates: versions compare as numbers, and every place agrees on the versio
   assert.equal(newer("0.1.1", "0.1.0"), true);
   assert.equal(newer(null, "0.1.0"), false);
   const { readFileSync } = await import("node:fs");
-  for (const m of ["herdr-ranch-issues", "herdr-ranch-prs", "herdr-ranch-inbox"]) assert.equal(JSON.parse(readFileSync(`../${m}/mods/${m}/mod.json`, "utf8")).version, VERSION, m);
+  for (const m of ["herdr-ranch-issues", "herdr-ranch-prs", "herdr-ranch-reviews"]) assert.equal(JSON.parse(readFileSync(`../${m}/mods/${m}/mod.json`, "utf8")).version, VERSION, m);
   assert.equal(JSON.parse(readFileSync("../mod-buttons/mods/mod-buttons-bar/mod.json", "utf8")).version, VERSION, "mod-buttons");
   assert.match(readFileSync("../CHANGELOG.md", "utf8"), new RegExp(`^## v${VERSION.replace(/\./g, "\\.")}$`, "m"), "CHANGELOG has the current version");
 });

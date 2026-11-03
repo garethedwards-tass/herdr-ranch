@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
 import { newer } from "../shared/update.js";
 import { fill, clean, DEFAULTS } from "../shared/prompts.js";
-import { which } from "../shared/inbox.js";
 import { storeSignIn, removeSignIn, credentials, forget, trustSite, call } from "../shared/jira-client.js";
 
 const ok = (stdout = "") => ({ code: 0, stdout, stderr: "" });
@@ -35,32 +34,6 @@ test("fill: the description can't close the quotes around it", () => {
 test("clean: carriage returns become newlines", () => {
   assert.equal(clean("a\r\nb\rc\n"), "a\nb\nc\n");
   assert.equal(fill("{d}", { d: "x\ry" }), "x\ny");
-});
-
-test("which: a found path is kept, a miss is asked again", async () => {
-  state.platform = "macos";
-  let installed = false, asked = 0;
-  state.exec = (cmd, args) => {
-    if (cmd === "sh" && String(args.at(-1)) === "command -v tool-x") { asked++; return installed ? ok("/Users/x/.local/bin/tool-x\n") : fail; }
-    return null;
-  };
-  assert.equal(await which("tool-x"), null);
-  installed = true;
-  assert.equal(await which("tool-x"), "/Users/x/.local/bin/tool-x");
-  assert.equal(await which("tool-x"), "/Users/x/.local/bin/tool-x");
-  assert.equal(asked, 2, "asked again after the miss, then kept");
-  state.exec = null;
-});
-
-test("which: the login shell is the person's $SHELL", async () => {
-  state.platform = "linux";
-  const ran = [];
-  state.exec = (cmd, args) => { ran.push([cmd, ...args]); return fail; };
-  await which("tool-y");
-  assert.equal(ran[0][0], "sh");
-  assert.match(ran[0][2], /\$\{SHELL:-\/bin\/sh\}/);
-  state.exec = null;
-  state.platform = "macos";
 });
 
 test("storeSignIn: every old item for the site goes first (macOS), and removeSignIn removes them all", async () => {

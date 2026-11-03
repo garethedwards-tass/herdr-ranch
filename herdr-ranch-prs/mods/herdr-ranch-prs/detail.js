@@ -141,7 +141,6 @@ export function detail(pr, t, a) {
     id: "pr-detail", t, wide: a.wide, nav: a.nav,
     actions: [
       k.button("pr-open", "Open on GitHub", a.open, { hint: "O" }),
-      ...(a.plannotator && !loading ? [k.button("pr-plannotator", "Review in Plannotator", a.plannotator)] : []),
       ...(lead ? [
         ...(pr.state === "OPEN" && a.review && !loading ? [k.button("pr-review", "Start another", a.review)] : []),
         k.button("pr-go", `Go to agent · ${AGENT_STATUS[lead.status]?.[0] ?? "idle"}`, () => a.go(lead.id), { primary: true, icon: "bot", hint: "⌘↵" }),

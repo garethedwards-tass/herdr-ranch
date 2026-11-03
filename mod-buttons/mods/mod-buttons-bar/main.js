@@ -31,18 +31,19 @@ async function scan() {
   const mods = modsDir();
   const r = await exec("sh", ["-c", LIST, "list", mods]);
   if (r.code !== 0) return { buttons: [], installed: null };
-  const installed = new Set(), buttons = [];
+  const installed = new Set(), buttons = [], background = [];
   for (const line of r.stdout.split("\n").filter(Boolean)) {
     const [mod, json] = [line.slice(0, line.indexOf("\t")), line.slice(line.indexOf("\t") + 1)];
     installed.add(mod);
-    let b; try { b = JSON.parse(json).button ?? KNOWN[mod]; } catch { continue; }
+    let b, j; try { j = JSON.parse(json); b = j.button ?? KNOWN[mod]; } catch { continue; }
+    if (j.background === true && mod !== "mod-buttons-bar") background.push(mod);
     if (!b?.label || mod === "mod-buttons-bar") continue;
     buttons.push({ mod, label: String(b.label), icon: b.icon ?? null, opens: b.opens === "tab" ? "tab" : "panel", order: Number(b.order ?? 100) });
   }
   const icons = buttons.filter((b) => b.icon && /^[\w.-]+\.svg$/.test(b.icon));
   if (icons.length) await exec("sh", ["-c", COPY, "copy", mods, ...icons.map((b) => `${b.mod}:${b.icon}`)]);
   for (const b of buttons) b.svg = icons.includes(b) ? `${ICONS}/${b.mod}.svg` : null;
-  return { buttons: buttons.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)), installed };
+  return { buttons: buttons.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label)), installed, background: background.sort() };
 }
 
 // `opens` as the mod's settings choose it, else as its mod.json declares it.
@@ -54,15 +55,28 @@ const withPrefs = (buttons) => {
 // The panel-body stack gets a block for each "panel" button that has none, and loses
 // blocks of mods that are no longer installed. Only this (personal) layout is changed.
 // False when the layout has no panel-body yet, so the caller tries again later.
-function syncLayout(buttons, installed) {
-  const root = JSON.parse(JSON.stringify(layout() ?? null)), body = find(root, "panel-body");
+// A mod with `"background": true` in its mod.json gets an invisible block (0 px, at the end of
+// the `work` column) with props { background: true }: a copy that runs as long as the layout
+// shows, to watch for things and post toasts or counts. Its block goes when the mod does.
+function syncLayout(buttons, installed, background = []) {
+  const root = JSON.parse(JSON.stringify(layout() ?? null)), body = find(root, "panel-body"), work = find(root, "work");
   if (!body || !installed) return false;
+  let changed = false;
   const kept = (body.children ?? []).filter((c) => !c.content?.mod || BUILT_IN.has(c.content.mod) || installed.has(c.content.mod));
   const missing = buttons.filter((b) => b.opens === "panel" && !kept.some((c) => c.content?.mod === b.mod));
-  if (!missing.length && kept.length === (body.children ?? []).length) return true;
-  body.children = [...kept, ...missing.map((b) => ({ id: b.mod, type: "block", content: { mod: b.mod, props: { slot: "panel" } } }))];
-  if (!body.children.some((c) => c.id === body.active)) body.active = body.children[0]?.id;
-  run("layout.set", { layout: root });
+  if (missing.length || kept.length !== (body.children ?? []).length) {
+    body.children = [...kept, ...missing.map((b) => ({ id: b.mod, type: "block", content: { mod: b.mod, props: { slot: "panel" } } }))];
+    if (!body.children.some((c) => c.id === body.active)) body.active = body.children[0]?.id;
+    changed = true;
+  }
+  if (work) {
+    const isBg = (c) => String(c.id ?? "").startsWith("background-");
+    const others = (work.children ?? []).filter((c) => !isBg(c));
+    const want = background.filter((mod) => installed.has(mod)).map((mod) => ({ id: `background-${mod}`, type: "block", content: { mod, props: { background: true } }, size: { px: 0 } }));
+    const have = (work.children ?? []).filter(isBg).map((c) => c.id).join(",");
+    if (have !== want.map((c) => c.id).join(",")) { work.children = [...others, ...want]; changed = true; }
+  }
+  if (changed) run("layout.set", { layout: root });
   return true;
 }
 
@@ -83,8 +97,8 @@ export default class Tabs extends View {
     if (typeof this.panels !== "object") this.panels = {};
     this.buttons = [];
     const rescan = (cx) => cx.spawn(async (cx) => {
-      const { buttons, installed } = await scan().catch(() => ({ buttons: [], installed: null }));
-      this.buttons = buttons; this.installed = installed; this.synced = null; cx.notify();
+      const { buttons, installed, background } = await scan().catch(() => ({ buttons: [], installed: null, background: [] }));
+      this.buttons = buttons; this.installed = installed; this.background = background ?? []; this.synced = null; cx.notify();
     });
     rescan(cx);
     // `herdr-app do mod-buttons-bar.rescan` after installing or removing a mod.
@@ -123,7 +137,7 @@ export default class Tabs extends View {
   // mod that now opens as a tab.
   syncChoices(buttons, panel, body) {
     const key = buttons.map((b) => `${b.mod}:${b.opens}`).join(",");
-    if (!this.installed || key === this.synced || !syncLayout(buttons, this.installed)) return;
+    if (!this.installed || key === this.synced || !syncLayout(buttons, this.installed, this.background)) return;
     this.synced = key;
     if (panel && !panel.hidden && buttons.some((b) => b.opens === "tab" && body?.children?.find((c) => c.id === body.active)?.content?.mod === b.mod)) run("layout.hide", { id: "panel" });
   }

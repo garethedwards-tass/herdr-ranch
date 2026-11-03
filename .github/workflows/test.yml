@@ -11,7 +11,7 @@ jobs:
       - name: The mods' copies of shared/ match
         run: |
           for f in shared/*.js; do
-            for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-inbox; do
+            for m in herdr-ranch-issues herdr-ranch-prs; do
               cmp -s "$f" "$m/mods/$m/$(basename "$f")" || { echo "stale copy: $m/mods/$m/$(basename "$f")"; exit 1; }
             done
           done
@@ -54,10 +54,11 @@ jobs:
           ./install.sh
           ./install.sh --layout
 
-          for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-inbox; do
+          for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-reviews; do
             [ -L "$HERDR_APP_HOME/mods/$m" ] || { echo "missing link: $m"; exit 1; }
           done
           [ -d "$HERDR_APP_HOME/mods/mod-buttons-bar" ] || { echo "missing mod-buttons-bar"; exit 1; }
+          [ -L "$HOME/.local/bin/ranch-review" ] || { echo "missing ranch-review"; exit 1; }
 
           # Piped from another folder, it can't find its clone and must refuse.
           repo=$PWD

@@ -1,1 +1,0 @@
-{"version": "0.1.0", "place": "none", "title": "Inbox \u00b7 Herdr Ranch", "overlay": {"kind": "window", "key": "herdr-ranch-inbox", "width": 0.6, "height": 0.8}, "button": {"label": "Inbox", "icon": "inbox.svg", "opens": "panel", "order": 30}}

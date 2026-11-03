@@ -12,10 +12,9 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
 - **Works on macOS, Linux and Windows.** Remote spaces run `gh` and `git` on their own machine.
 - **Programs:**
   - `gh` and `git`;
-  - `plannotator` (Inbox, Review in Plannotator), on the space's machine for remote spaces;
   - for the Jira and Linear sign-in: `security` (macOS), `secret-tool` (Linux) or PowerShell (Windows);
-  - for Inbox: `ps` (that a process is Plannotator's before it is stopped), `lsof` (which port listens and a session's folder on macOS) and `readlink` (a session's folder on Linux, through `/proc`);
   - `open`, `xdg-open` or `rundll32` for the browser buttons;
+  - for Reviews: `node` (the `ranch-review` CLI), `herdr-app` and `hc` (opening the review, pasting into an agent), `osascript` (screenshots from the clipboard, macOS);
   - `sh` in the mod-buttons layout, to list the installed mods.
 - **Network:**
   - Jira: `https://<your-site>/rest/api/3` with your token;
@@ -26,8 +25,9 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
   - in the system's credential store, only after you press Connect: the Jira sign-in (item `herdr-jira:<site>`) and the Linear key (item `herdr-linear:linear.app`);
   - in Herdr's shared state: the space links, the lists' settings, your prompts and the last update check;
   - in the mod's local storage: the last list per space;
-  - the icons in `~/.config/herdr-app/data/herdr-ranch/icons`.
-- **Files outside Herdr's folder:** Inbox watches `~/.plannotator/sessions` and removes a record file there only for a session that isn't running anymore. Start agent writes worktrees under `~/.herdr/worktrees`.
+  - the icons in `~/.config/herdr-app/data/herdr-ranch/icons`;
+  - Reviews: one file per review in `~/.config/herdr-app/data/herdr-ranch-reviews`, screenshots in its `img/`; finished ones are removed after 7 days.
+- **Files outside Herdr's folder:** Start agent writes worktrees under `~/.herdr/worktrees`. Reviews reads Claude Code's transcripts (`~/.claude/projects`, `~/.claude/sessions`) and Codex's logs (`~/.codex/sessions`), and `install.sh` links into `~/.local/bin` and `~/.claude/skills`.
 
 ## install.sh flags
 
@@ -35,7 +35,7 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
 
 | Flag | What it does |
 |---|---|
-| none | Links the three mods into `~/.config/herdr-app/mods` (or `$HERDR_APP_HOME/mods`). A name already taken by a real folder is skipped. |
+| none | Links the three mods into `~/.config/herdr-app/mods` (or `$HERDR_APP_HOME/mods`), `ranch-review` into `~/.local/bin`, and the Reviews skills into `~/.claude/skills`. A name already taken by a real file or folder is skipped. |
 | `--layout` | Also copies the mod-buttons layout. A layout file you changed is kept as `<name>.json.bak`. |
 | `--update` | Moves the clone to the latest release, then installs as before (the layout too when it's installed) and reloads the panels. |
 
@@ -47,7 +47,7 @@ From the three `keys.json` files, to merge into `~/.config/herdr-app/keys.json`:
 |---|---|---|
 | Cmd+Shift+J | anywhere | opens Issues |
 | Cmd+Shift+G | anywhere | opens Pull requests |
-| Cmd+Shift+I | anywhere | opens Inbox |
+| Cmd+Shift+I | anywhere | opens Reviews |
 | Cmd+R | in a list | refreshes it |
 | Cmd+O | in Issues or Pull requests | opens the item in the browser |
 

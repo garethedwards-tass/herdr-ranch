@@ -7,7 +7,7 @@ How to install, link and use the Herdr Ranch mods. Facts, paths and flags are in
 - [Connect Linear](#connect-linear)
 - [Issues](#issues)
 - [Pull requests](#pull-requests)
-- [Inbox](#inbox)
+- [Reviews](#reviews)
 - [Start agent](#start-agent)
 - [Your own prompts](#your-own-prompts)
 - [Automations](#automations)
@@ -19,7 +19,7 @@ How to install, link and use the Herdr Ranch mods. Facts, paths and flags are in
 **One mod at a time,** tell your agent in Herdr:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then add the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-inbox, and the layout mod-buttons, from github.com/jslowack/herdr-ranch
+Read ~/.config/herdr-app/AGENTS.md, then add the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-reviews (with its ranch-review CLI and skills), and the layout mod-buttons, from github.com/jslowack/herdr-ranch
 ```
 
 Leave out the ones you don't want.
@@ -28,7 +28,7 @@ Leave out the ones you don't want.
 
 Then:
 
-1. Merge the three `*/keys.json` into `~/.config/herdr-app/keys.json` (Cmd+Shift+J opens the issues, Cmd+Shift+G the pull requests, Cmd+Shift+I the inbox; all keys are in [the reference](reference.md#keys)).
+1. Merge the three `*/keys.json` into `~/.config/herdr-app/keys.json` (Cmd+Shift+J opens the issues, Cmd+Shift+G the pull requests, Cmd+Shift+I the reviews; all keys are in [the reference](reference.md#keys)).
 2. Switch to the layout: `herdr-app do layout.switch '{"name":"mod-buttons"}'`. `ctrl-shift-l` switches back to any other layout.
 
 **Without the layout,** open the lists with their keys or `herdr-app do mod.open '{"name":"herdr-ranch-issues"}'`. The cog in each list's header sets whether its button opens a side panel or a tab.
@@ -39,7 +39,7 @@ Then:
 
 ### Updating
 
-The cog in Issues, Pull requests or Inbox shows the installed version. When a newer release is out (checked once a day), it says so, once with a toast, and offers **Update**:
+The cog in Issues or Pull requests shows the installed version. When a newer release is out (checked once a day), it says so, once with a toast, and offers **Update**:
 
 - **Installed with `./install.sh` (a clone):** Update moves the clone to the latest release, copies the layout again and reloads the panels. Or in a terminal: `./install.sh --update` (it updates Automations too, when `install.sh` installed it).
 - **Installed by your agent (copied files):** Update copies a line for your agent to the clipboard; paste it in Herdr and the agent updates the mods.
@@ -82,18 +82,19 @@ GitHub issues work the same way as Jira ones:
 - **Filters:** Assigned, Created, Mentioned, Review requests and Recent.
 - **A page per pull request, like GitHub's:** tabs for the conversation, checks and changed files; the conversation ends in a merge box (checks, review required, mergeable); reviewers with their verdict, and the issues it closes or names (Jira keys too) in the sidebar. ⌘↵ reviews it with an agent, B copies the branch, 1 2 3 switch tabs.
 - **Review with agent:** starts an agent that checks the pull request out, builds, tests and reports, without writing to GitHub.
-- **Review in Plannotator:** with Plannotator installed, the page runs `plannotator review <url>` in a tab of the space; its page opens in your browser.
 
-## Inbox
+## Reviews
 
-![Inbox: the open Plannotator sessions](../herdr-ranch-inbox/preview.png)
+You ask for a review from the agent's terminal; it opens in Herdr; your comments go back to that agent, which waits for them.
 
-- **Every open [Plannotator](https://plannotator.ai) session:** the plans and documents agents opened for you to annotate, and the code reviews, newest first. **This space** shows the ones started in the space's folder or its worktrees; **All** shows every one.
-- **Always current:** it refreshes when a session opens or closes (it watches `~/.plannotator/sessions`) and when Herdr's window comes back to the front, for example after you answered in the browser.
-- **A click opens the page** in your default browser. Close one with its **×** after you confirm: a running session is stopped; for one that isn't running anymore, its stale record file is removed.
-- **A count on the button** and a toast when an agent opens a new session.
+- **Start one in Claude Code:** type `/herdr-ranch-review <file.md>` to review a Markdown file (a plan or document the agent wrote), or `/herdr-ranch-review-last` to review the agent's last answer in chat. Run `/herdr-ranch-review-last` right after the answer you want to review. Take your time: after two minutes Claude Code moves the waiting command to the background, and the agent picks up your answer when you send it. Don't interrupt it, or the review loses the agent that waits for it.
+- **Other agents:** tell the agent, or add to its `AGENTS.md`: "to ask me for a review, run `ranch-review annotate <file>` (or `ranch-review last`) and wait for its output". `ranch-review last` finds the last answer of Claude Code and Codex itself; for other agents, `ranch-review last --stdin` takes the text on stdin.
+- **Opening it:** when you start it from the agent you're looking at, the review opens right away. Otherwise its agent shows under **Needs you** in the Agents panel ("Review README.md in Herdr") and the Reviews button counts it: click the agent, and its review opens. The cog's **Opens** setting picks how: **On agent focus** (the default, as above) or **Immediately**. Both need the mod-buttons layout; in another layout a pane flashes beside the agent instead.
+- **Comment:** the review opens as a dialog beside the agent, rendered or as source. Click a block (a heading, a paragraph, one list item, a code block) to comment on it, or add a general comment. ⌘V pastes a screenshot into a comment. **👍 Looks good** marks a block as fine. Right-click a block to copy it, for example a message the agent drafted for someone else.
+- **Send:** **Send N comments** (⌘⇧↵), **Approve as is** when there's nothing to say, or **Discard** (the agent gets nothing back); hover a button for what it does. The agent waiting on the command gets the feedback; an agent that stopped waiting gets it typed into its prompt. **×** closes the dialog and keeps your comments for later.
+- **The Reviews button** lists the reviews waiting on you, with a count, and the ones you sent (kept 7 days). **This space | All** picks the space. The cog sets when a review opens (on agent focus, or immediately) and how many sent reviews show.
 
-Read only, and only through Plannotator's CLI (`plannotator sessions`) and that folder watch: you annotate and send your feedback in Plannotator's own page.
+`install.sh` links `ranch-review` into `~/.local/bin` (put that folder on your `PATH`) and the two skills into `~/.claude/skills` (start a new Claude Code session to see them). Code review isn't covered, and remote spaces aren't yet ([#2](https://github.com/jslowack/herdr-ranch/issues/2)).
 
 ## Start agent
 

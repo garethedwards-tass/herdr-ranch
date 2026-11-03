@@ -9,7 +9,6 @@ import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, set
 import { me, list, mentioned, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
-import { which } from "./inbox.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
 import { LinkDialog } from "./link-dialog.js";
 import { AgentDialog, PromptsDialog } from "./agent-dialog.js";
@@ -70,7 +69,6 @@ export default class PullRequests extends View {
     // Loaded pages by repository and number (the last PAGES), so opening one again is instant.
     this.pages = new Map();
     this.watch(cx);
-    which("plannotator").then((p) => { this.plannotator = p; });
 
     // Key commands from keys.json ("herdr-ranch-prs.down"), also reachable with `herdr-app do`.
     cx.spawn(async (cx) => { try { for (;;) this.command(await nextCommand(), cx); } catch { /* the copy is closing */ } });
@@ -81,7 +79,6 @@ export default class PullRequests extends View {
   pageOnly(p, cx) {
     this.prs = p.prs ?? []; this.where = p.where ?? null; this.login = p.login ?? null; this.pages = new Map(); this.page = null; this.pageError = null; this.pageW = 900;
     this.only = { at: Math.max(0, this.prs.findIndex((x) => x.number === p.number)) }; this.tab = p.tab ?? "conversation";
-    which("plannotator").then((path) => { this.plannotator = path; try { cx.notify(this.pageView); } catch { /* shown on the next change */ } });
     this.handle = cx.focus_handle();
     // Focus can't move inside a render, so right after: Up/Down then reach the dialog.
     cx.timer.after(0, () => { try { this.handle.focus(); } catch { /* the pointer still works */ } });
@@ -405,13 +402,6 @@ export default class PullRequests extends View {
     goToSpace(id);
   }
 
-  // Review in Plannotator: `plannotator review <PR URL>` (its documented CLI) in a new tab of
-  // the space; Plannotator opens its page in the default browser, and its result lands in the tab.
-  reviewInPlannotator(pr) {
-    run("tab.new", { name: `Plannotator #${pr.number}`.slice(0, 40), argv: [this.plannotator, "review", pr.url] });
-    if (this.only) closeOverlay(props().overlay);
-  }
-
   pickTab(tab, cx) { this.tab = tab; cx.notify(this.pageView); }
 
   copyBranch(cx) {
@@ -435,7 +425,6 @@ export default class PullRequests extends View {
         wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation",
         pickTab: (tab, cx) => this.pickTab(tab, cx), copyBranch: (cx) => this.copyBranch(cx), openUrl: (url) => openUrl(url),
         open: () => openUrl((this.page ?? this.picked).url),
-        plannotator: this.plannotator && page ? () => this.reviewInPlannotator(page) : null,
         review: this.where?.repo ? () => this.review(this.page) : null,
         keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3"], "tabs"],
           ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Review with agent"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],

@@ -1,6 +1,0 @@
-{
-  "global": { "cmd-shift-i": "mod.open:herdr-ranch-inbox" },
-  "mod:herdr-ranch-inbox": {
-    "cmd-r": "herdr-ranch-inbox.refresh"
-  }
-}

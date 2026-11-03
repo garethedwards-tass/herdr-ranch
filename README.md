@@ -1,6 +1,6 @@
 # Herdr Ranch
 
-![Herdr Ranch: issues, pull requests and your agents' questions next to your terminals](docs/images/social.png)
+![Herdr Ranch: issues, pull requests and reviews next to your terminals](docs/images/social.png)
 
 Three mods for the [Herdr](https://herdr.dev) desktop app. They show the work of the space you're in next to its terminals and agents. Plus a layout that gives each of them a button in the tab bar.
 
@@ -11,7 +11,7 @@ Three mods for the [Herdr](https://herdr.dev) desktop app. They show the work of
 Tell your agent, in Herdr:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then install everything from github.com/jslowack/herdr-ranch: the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-inbox, the mod-buttons layout, and their keys.json entries; then switch to the mod-buttons layout.
+Read ~/.config/herdr-app/AGENTS.md, then install everything from github.com/jslowack/herdr-ranch: the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-reviews (with its ranch-review CLI and skills), the mod-buttons layout, and their keys.json entries; then switch to the mod-buttons layout.
 ```
 
 Or in a terminal:
@@ -21,9 +21,9 @@ git clone https://github.com/jslowack/herdr-ranch && cd herdr-ranch && ./install
 herdr-app do layout.switch '{"name":"mod-buttons"}'
 ```
 
-You get **Issues**, **PRs** and **Inbox** buttons next to Files and Changes.
+You get **Issues**, **PRs** and **Reviews** buttons next to Files and Changes.
 
-**Needs:** [`gh`](https://cli.github.com) signed in, and `git`. Jira, Linear and [Plannotator](https://plannotator.ai) only for what you use. Tested on macOS; Linux and Windows follow their documented commands.
+**Needs:** [`gh`](https://cli.github.com) signed in, and `git`. Jira and Linear only for what you use; Node.js for Reviews. Tested on macOS; Linux and Windows follow their documented commands.
 
 One mod at a time, keyboard shortcuts and updating: see [Install and update](docs/guide.md#install-and-update).
 
@@ -43,13 +43,13 @@ The space's pull requests, grouped by what each one waits on: review requested, 
 
 More in [the guide](docs/guide.md#pull-requests).
 
-## Inbox
+## Reviews
 
-![Inbox: the open Plannotator sessions](herdr-ranch-inbox/preview.png)
+![Reviews: a document with comments beside it](herdr-ranch-reviews/preview.png)
 
-The open [Plannotator](https://plannotator.ai) sessions: the plans and code reviews your agents opened for you. A click opens the page in your browser. A count on the button tells you when an agent is waiting.
+Read what your agent wrote, comment on it in Herdr, and send the comments back to the agent. In Claude Code, type `/herdr-ranch-review <file>` for a plan or document the agent wrote to disk, or `/herdr-ranch-review-last` for the answer it just gave in chat. While the review waits, the agent shows under **Needs you**; click it there and the review opens. Click a block to comment on it, paste a screenshot, or give a 👍, then **Send N comments** (⌘⇧↵). The agent gets one message that quotes each block with your comment, and revises. **Approve as is** tells it to carry on; **Discard** sends nothing. The Reviews button counts what waits on you, in this space or all.
 
-More in [the guide](docs/guide.md#inbox).
+More in [the guide](docs/guide.md#reviews).
 
 ## The mod-buttons layout
 
@@ -77,7 +77,7 @@ Mods by others that go well with Herdr Ranch. Install them the way their own REA
 - [Guide](docs/guide.md): install options, linking a space, Start agent, your own prompts.
 - [Reference](docs/reference.md): what runs and what is stored, install flags, keys.
 - [CHANGELOG.md](CHANGELOG.md): what changed per version.
-- Each mod's `RECIPE.md`: the brief an agent builds it from ([Issues](herdr-ranch-issues/RECIPE.md), [Pull requests](herdr-ranch-prs/RECIPE.md), [Inbox](herdr-ranch-inbox/RECIPE.md), [mod-buttons](mod-buttons/RECIPE.md)).
+- Each mod's `RECIPE.md`: the brief an agent builds it from ([Issues](herdr-ranch-issues/RECIPE.md), [Pull requests](herdr-ranch-prs/RECIPE.md), [Reviews](herdr-ranch-reviews/RECIPE.md), [mod-buttons](mod-buttons/RECIPE.md)).
 - [CONTRIBUTING.md](CONTRIBUTING.md): tests, shared code, how the repository is laid out.
 
 ## License

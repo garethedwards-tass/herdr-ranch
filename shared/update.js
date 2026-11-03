@@ -68,7 +68,7 @@ export async function checkForUpdate(force = false) {
   const tag = await latest().catch(() => null);
   const next = { latest: tag ?? now.latest ?? null, checkedAt: Date.now(), toasted: now.toasted ?? null };
   if (tag && newer(tag, VERSION) && next.toasted !== tag) {
-    notify({ title: `Herdr Ranch ${tag} is available`, body: "Open the cog in Issues, Pull requests or Inbox to update.", level: "info", timeout: 8000 });
+    notify({ title: `Herdr Ranch ${tag} is available`, body: "Open the cog in Issues or Pull requests to update.", level: "info", timeout: 8000 });
     next.toasted = tag;
   }
   setShared(KEY, next);
@@ -82,7 +82,7 @@ export function updateState() {
 }
 
 // The line for an agent when the mods were copied rather than cloned.
-export const AGENT_LINE = `Update the Herdr Ranch mods (herdr-ranch-issues, herdr-ranch-prs, herdr-ranch-inbox and the mod-buttons layout) from github.com/${REPO} to the latest release.`;
+export const AGENT_LINE = `Update the Herdr Ranch mods (herdr-ranch-issues, herdr-ranch-prs, herdr-ranch-reviews and the mod-buttons layout) from github.com/${REPO} to the latest release.`;
 
 // Update a git install: fetch the tags, fast-forward to the latest release tag (the one the cog
 // announced, not whatever main is at), copy the layout again when it's installed, reload the

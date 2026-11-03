@@ -72,7 +72,7 @@ done
 # each keeps a copy): warn about a copy that differs from its source.
 for src in "$repo"/shared/*.js; do
   file=$(basename "$src")
-  for mod in herdr-ranch-prs herdr-ranch-issues herdr-ranch-inbox; do
+  for mod in herdr-ranch-prs herdr-ranch-issues; do
     cmp -s "$src" "$repo/$mod/mods/$mod/$file" || echo "stale $mod/mods/$mod/$file: copy shared/$file over it"
   done
 done
@@ -93,8 +93,26 @@ if [ "$layout" = yes ]; then
   echo "installed the mod-buttons layout: herdr-app do layout.switch '{\"name\":\"mod-buttons\"}'"
 fi
 
-# The lists were called space-issues and space-prs before: drop their old links.
-for old in space-issues space-prs; do
+# Reviews: the ranch-review CLI goes on the PATH, its skills into Claude Code. Links only, and
+# never over a real file.
+link_one() {
+  if [ -e "$2" ] && [ ! -L "$2" ]; then echo "skip $(basename "$2"): $2 exists and is not a link"; return; fi
+  mkdir -p "$(dirname "$2")" && ln -sfn "$1" "$2" && echo "linked $(basename "$2")"
+}
+link_one "$repo/herdr-ranch-reviews/bin/ranch-review.mjs" "$HOME/.local/bin/ranch-review"
+for skill in "$repo"/herdr-ranch-reviews/skills/*/; do
+  skill=${skill%/}
+  link_one "$skill" "$HOME/.claude/skills/$(basename "$skill")"
+done
+command -v ranch-review >/dev/null 2>&1 || echo "  add ~/.local/bin to your PATH for ranch-review"
+# The skills had other names before: drop their old links.
+for old in ranch-annotate ranch-last herdr-ranch-annotate herdr-ranch-last; do
+  if [ -L "$HOME/.claude/skills/$old" ]; then rm "$HOME/.claude/skills/$old" && echo "removed the old link $old"; fi
+done
+
+# The lists were called space-issues and space-prs before, and Inbox (Plannotator's sessions)
+# gave way to Reviews: drop their old links.
+for old in space-issues space-prs herdr-ranch-inbox; do
   if [ -L "$dest/$old" ]; then rm "$dest/$old" && echo "removed the old link $old"; fi
 done
 
