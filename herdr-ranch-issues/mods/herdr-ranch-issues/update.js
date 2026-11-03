@@ -6,7 +6,7 @@
 
 import { exec, appHome, shared, setShared, run, notify, window as appWindow } from "herdr";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 export const REPO = "jslowack/herdr-ranch";
 const KEY = "ranch-update", DAY = 24 * 3600 * 1000;
 const platform = () => { try { return appWindow().platform; } catch { return "macos"; } };
@@ -68,7 +68,7 @@ export async function checkForUpdate(force = false) {
   const tag = await latest().catch(() => null);
   const next = { latest: tag ?? now.latest ?? null, checkedAt: Date.now(), toasted: now.toasted ?? null };
   if (tag && newer(tag, VERSION) && next.toasted !== tag) {
-    notify({ title: `Herdr Ranch ${tag} is available`, body: "Open the cog in Issues or Pull requests to update.", level: "info", timeout: 8000 });
+    notify({ title: `Herdr Ranch ${tag} is available`, body: "Open the cog in Issues, Pull requests or Reviews to update.", level: "info", timeout: 8000 });
     next.toasted = tag;
   }
   setShared(KEY, next);

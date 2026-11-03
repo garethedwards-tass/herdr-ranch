@@ -30,6 +30,13 @@ CI runs the tests, checks that every mod file parses (`node --check`), that the 
 
 Test the pure logic (grouping, parsing, prompts, sites); the UI isn't tested. Import the module from its mod folder; the stubs answer `exec`, `fetch` and files through `state` in `tests/stubs/herdr.mjs`.
 
+## Releasing
+
+1. `scripts/release.sh 0.2.0` on a branch: sets the version in `shared/update.js` and every mod's copy, and in each `mod.json`; turns `## Unreleased` in the CHANGELOG into `## v0.2.0`; runs the tests. Commit it, open a pull request, merge it.
+2. `scripts/release.sh --publish 0.2.0` on `main` once merged: tags `v0.2.0`, pushes the tag, and creates the GitHub release with that CHANGELOG section as its notes.
+
+Every installed suite then sees the release within a day (the cog's **Check** at once) and offers **Update**.
+
 ## Style
 
 - Plain, short sentences in docs and comments.
