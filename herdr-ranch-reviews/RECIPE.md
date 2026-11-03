@@ -49,6 +49,7 @@ An agent runs `ranch-review annotate <file>` (or `ranch-review last`); in Claude
 
 - `bin/ranch-review.mjs` (the CLI), `mods/herdr-ranch-reviews/main.js` (the list and the dialog), `mods/herdr-ranch-reviews/reviews.js` (blocks, feedback text, transcripts; shared by both, tested in `tests/reviews.test.mjs`).
 - `skills/herdr-ranch-review/SKILL.md`, `skills/herdr-ranch-review-last/SKILL.md`.
+- The repository's `shared/` copied in, like every Herdr Ranch mod; Reviews uses `update.js`, for the cog's footer (the Herdr Ranch version, and **Update** or **Check**), as in Issues and Pull requests.
 - `mod.json`: `place: none`, a window overlay (70% × 85%), `button: { label: "Reviews", icon: "reviews.svg", opens: "panel", order: 35 }`.
 - herdr: `openOverlay`, `closeOverlay`, `run` (`pane.close`), `panes`, `props`, `exec`, `hc`, `readTextFile`, `writeTextFile`, `watchFolder`, `appHome`, `notify`, `shared`, `setShared`, `theme`.
 - gpui-base: `TextView.markdown`, `TextareaState` / `Textarea`.

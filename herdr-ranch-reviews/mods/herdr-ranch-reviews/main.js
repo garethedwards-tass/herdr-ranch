@@ -11,6 +11,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, TextView } from "gpui-base";
 import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
+import { VERSION, updateState, checkForUpdate, installKind, updateNow, AGENT_LINE } from "./update.js";
 import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, copyText, imageOnly } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
@@ -54,10 +55,25 @@ function settingsMenu(t) {
   const choice = (id, text, on, click) => div().id(id).px(8).py(3).rounded(5).text_size(12).cursor_pointer()
     .border_1().border_color(on ? t.accent : t.border).when(on, (e) => e.bg(t.selected))
     .hover((x) => x.bg(t.hover)).on_click((_e, cx) => { click(); cx.notify(); }).child(text);
+  // The suite's version, and Update when a newer release exists: the same footer as the cog in
+  // Issues and Pull requests (update.js is a copy of shared/update.js).
+  const u = updateState();
+  const update = (cx) => cx.spawn(async () => {
+    if ((await installKind(MOD)).kind !== "git") { cx.write_to_clipboard(AGENT_LINE); notify({ title: "Copied the update line for your agent", body: "Paste it to your agent in Herdr.", level: "info", timeout: 5000 }); return; }
+    notify({ title: "Updating Herdr Ranch…", level: "info", timeout: 3000 });
+    const failed = await updateNow();
+    notify(failed ? { title: "Update failed", body: failed, level: "error", timeout: 8000 } : { title: `Herdr Ranch is updated to ${u.latest}`, level: "success", timeout: 5000 });
+  });
+  const version = h_flex().mt(6).pt(8).gap(6).items_center().border_t_1().border_color(t.border).text_size(11.5).text_color(t.dim)
+    .child(div().flex_1().child(`Herdr Ranch v${VERSION}${u.available ? ` · ${u.latest} is out` : u.latest ? " · up to date" : ""}`))
+    .child(u.available
+      ? div().id("update").px(8).py(2).rounded(5).bg(t.ansi2).text_color(t.background).font_semibold().cursor_pointer().on_click((_e, cx) => update(cx)).child("Update")
+      : div().id("check-update").cursor_pointer().text_color(t.muted).hover((x) => x.text_color(t.foreground)).on_click(() => { checkForUpdate(true); }).child("Check"));
   return v_flex().size_full().p(10).gap(4).bg(t.background).text_color(t.foreground)
     .children(SETTINGS.map((d) => h_flex().min_h(28).gap(4).items_center().flex_wrap()
       .child(div().w(80).flex_none().text_size(11.5).text_color(t.muted).child(d.label))
-      .children(d.choices.map(([v, text]) => choice(`${d.key}-${v}`, text, pref(d.key, d.fallback) === v, () => setPref(d.key, v))))));
+      .children(d.choices.map(([v, text]) => choice(`${d.key}-${v}`, text, pref(d.key, d.fallback) === v, () => setPref(d.key, v))))))
+    .child(version);
 }
 
 // Whether a review belongs to a space: its agent ran there, or its folder is the space's.
@@ -589,7 +605,7 @@ export default class Reviews extends View {
   init(_props, cx) {
     // Opened by `ranch-review` as a pane beside the agent: open the review as a dialog, then
     // close that pane again (a mod can't open a dialog from outside).
-    if (props()?.settings) { this.settings = true; return; }
+    if (props()?.settings) { this.settings = true; checkForUpdate(); return; }
     if (props()?.background) { this.watch(cx); return; }
     const launch = props()?.launch;
     if (launch) {

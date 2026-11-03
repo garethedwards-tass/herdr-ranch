@@ -11,7 +11,7 @@ jobs:
       - name: The mods' copies of shared/ match
         run: |
           for f in shared/*.js; do
-            for m in herdr-ranch-issues herdr-ranch-prs; do
+            for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-reviews; do
               cmp -s "$f" "$m/mods/$m/$(basename "$f")" || { echo "stale copy: $m/mods/$m/$(basename "$f")"; exit 1; }
             done
           done
