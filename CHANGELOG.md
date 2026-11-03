@@ -6,6 +6,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 - **Reviews:** comment on a Markdown file or an agent's last answer in Herdr, and send the comments back to the agent ([#1](https://github.com/jslowack/herdr-ranch/issues/1)). Comment per block or on the whole document, paste screenshots, give a 👍, right-click to copy a block. The waiting agent shows under Needs you, going to it opens the review, and the button counts it; This space or All. Cmd+Shift+I opens it.
 - **Installed with it:** the `ranch-review` command (in `~/.local/bin`) and the Claude Code skills `/herdr-ranch-review` and `/herdr-ranch-review-last` (in `~/.claude/skills`), linked by `install.sh`. The feedback uses Plannotator's text format, so agents that know it keep working.
+- **Pull requests:** the list and the page show GitHub avatars instead of initials.
 - **Removed: Inbox** (Plannotator's sessions) and **Review in Plannotator** on a pull request. Reviews replaces them; `install.sh` removes the old Inbox link.
 
 ## v0.1.0

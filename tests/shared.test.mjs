@@ -6,6 +6,7 @@ import { state } from "./stubs/herdr.mjs";
 import { newer } from "../shared/update.js";
 import { fill, clean, DEFAULTS } from "../shared/prompts.js";
 import { storeSignIn, removeSignIn, credentials, forget, trustSite, call } from "../shared/jira-client.js";
+import { loadAvatars, avatarPics } from "../shared/links.js";
 
 const ok = (stdout = "") => ({ code: 0, stdout, stderr: "" });
 const fail = { code: 1, stdout: "", stderr: "" };
@@ -109,4 +110,29 @@ test("call: an answer from another host is a redirect", async () => {
   await assert.rejects(call("acme.atlassian.net", "/x", null, as), /redirects elsewhere/);
   state.fetch = async () => ({ ok: true, status: 200, url: "https://acme.atlassian.net/x", text: async () => "{}" });
   assert.deepEqual(await call("acme.atlassian.net", "/x", null, as), {});
+});
+
+test("loadAvatars: one try per GitHub login, bots, odd names and Enterprise skipped, 4 at a time", async () => {
+  const PR = "https://github.com/o/r/pull/1";
+  const calls = [];
+  let running = 0, most = 0;
+  state.exec = async (cmd, args) => {
+    calls.push([cmd, args]); most = Math.max(most, ++running);
+    await new Promise((r) => setTimeout(r, 1)); running--;
+    return args.at(-1).includes("/ghost.png") ? fail : ok();
+  };
+  assert.equal(await loadAvatars(["ada"], "https://ghe.acme.com/o/r/pull/1"), false, "Enterprise keeps the initials");
+  assert.equal(await loadAvatars(["ada"]), false, "no url, no download");
+  assert.equal(calls.length, 0);
+  assert.equal(await loadAvatars(["ada", "ada", "app/dependabot", "../x", null, "ghost"], PR), true);
+  assert.deepEqual(calls.map(([cmd, args]) => [cmd, args.at(-1)]), [["curl", "https://github.com/ada.png?size=64"], ["curl", "https://github.com/ghost.png?size=64"]]);
+  assert.ok(avatarPics.has("ada") && !avatarPics.has("ghost"));
+  calls.length = 0;
+  assert.equal(await loadAvatars(["ada", "ghost"], PR), false);
+  assert.equal(calls.length, 0, "a success and a failure are both not tried again");
+  const many = Array.from({ length: 10 }, (_, i) => `u${i}`);
+  assert.equal(await loadAvatars(many, PR), true);
+  assert.equal(calls.length, 10);
+  assert.equal(most, 4, "at most 4 downloads at once");
+  state.exec = null;
 });

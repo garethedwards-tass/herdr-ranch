@@ -12,7 +12,7 @@ import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
 import { LinkDialog } from "./link-dialog.js";
 import { AgentDialog, PromptsDialog } from "./agent-dialog.js";
-import { context, activeSpace, openLinkDialog, openSettings, settingsMenu, OPENS, PAGE, asSplit, pageMode, openPageDialog, pageDialog, splitView, drawn, openAgentDialog, writeIcons, icon, issueKind as issueKindOf, kindColor, avatar, segmented, fs, readSizes, openUrl, agentSpaces, agentChip, mostUrgent, liveAgent, AGENT_STATUS, goToSpace, migrateSettings } from "./links.js";
+import { context, activeSpace, openLinkDialog, openSettings, settingsMenu, OPENS, PAGE, asSplit, pageMode, openPageDialog, pageDialog, splitView, drawn, openAgentDialog, writeIcons, icon, issueKind as issueKindOf, kindColor, avatar, segmented, fs, readSizes, openUrl, agentSpaces, agentChip, mostUrgent, liveAgent, AGENT_STATUS, goToSpace, migrateSettings, loadAvatars, avatarPics } from "./links.js";
 
 const SPINNER = "mods/workspace-chrome/spinner.svg", COG = "mods/workspace-chrome/settings.svg";
 const WEEK = 7 * 24 * 3600 * 1000, WIDE = 720, ROOMY = 520, PAGES = 30;
@@ -78,6 +78,7 @@ export default class PullRequests extends View {
   // with Up/Down. No list, timers or commands here: the list's copy keeps those.
   pageOnly(p, cx) {
     this.prs = p.prs ?? []; this.where = p.where ?? null; this.login = p.login ?? null; this.pages = new Map(); this.page = null; this.pageError = null; this.pageW = 900;
+    for (const l of p.avatars ?? []) avatarPics.add(l);
     this.only = { at: Math.max(0, this.prs.findIndex((x) => x.number === p.number)) }; this.tab = p.tab ?? "conversation";
     this.handle = cx.focus_handle();
     // Focus can't move inside a render, so right after: Up/Down then reach the dialog.
@@ -175,6 +176,7 @@ export default class PullRequests extends View {
         // Stored when the list or where it comes from changed.
         const meta = JSON.stringify({ at, login });
         if (this.setPrs(prs) || meta !== this.meta) { this.meta = meta; remember(space.id, { where: at, login, prs }); }
+        cx.spawn(async (cx) => { if (await loadAvatars(prs.map((p) => p.author?.login), prs[0]?.url)) try { cx.notify(); } catch { /* shown on the next change */ } });
         this.publishBadge(space);
         if (this.filter === "mentioned") this.loadMentions(cx);
       } catch (e) { if (current()) { this.error = String(e?.message ?? e); this.publishBadge(space, 0); } }
@@ -248,6 +250,8 @@ export default class PullRequests extends View {
       try {
         const page = await this.fetchPage(number, where);
         if (still()) { this.page = page; this.pageError = null; }
+        const people = [page.author?.login, ...page.conversation.map((c) => c.who), ...(page.reviewers ?? []).map((r) => r.login), ...(page.assignees ?? [])];
+        cx.spawn(async (cx) => { if (await loadAvatars(people, page.url)) try { cx.notify(this.pageView); } catch { /* shown on the next change */ } });
       } catch (e) { if (still() && !this.page) this.pageError = String(e?.message ?? e); }
       cx.notify(this.pageView);
     });
@@ -285,7 +289,7 @@ export default class PullRequests extends View {
     // Overlay: the page opens in a dialog of its own, with what the list already has.
     if (pageMode("herdr-ranch-prs") === "overlay") {
       const flat = this.items().flat;
-      openPageDialog("herdr-ranch-prs", { number, prs: flat.length ? flat : this.prs, where: this.where, login: this.login, tab: this.tab, page: this.pages.get(`${this.where.github}#${number}`) ?? null });
+      openPageDialog("herdr-ranch-prs", { number, prs: flat.length ? flat : this.prs, where: this.where, login: this.login, avatars: [...avatarPics], tab: this.tab, page: this.pages.get(`${this.where.github}#${number}`) ?? null });
       cx.notify(); return;
     }
     this.open = number;

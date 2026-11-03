@@ -13,8 +13,8 @@ GitHub pull requests for each Herdr space, grouped by what they wait on, with a 
   - `#number` in `dim`, the title;
   - an `approved` (green) or `changes` (red) pill when the review has a verdict;
   - the checks as one icon and a count: ✗ failing (red), a clock while running (yellow), ✓ passing (green);
-  - `+add −del`, the author as initials in a tinted circle, and the age.
-  - Below 520px a row takes two lines: icon, number, title and age, then the author's initials and name, the diff, the checks and the pill.
+  - `+add −del`, the author's GitHub avatar (initials in a tinted circle until it loads, when it fails, for bots and on GitHub Enterprise), and the age.
+  - Below 520px a row takes two lines: icon, number, title and age, then the author's avatar and name, the diff, the checks and the pill.
 - **Page:** a dialog over the window (or under the list, or in its place, see **Page** below), laid out like GitHub's pull request page:
   - **Header:** ↑ ↓ and "1 of 8", **Open on GitHub** (`O`) and **Review with agent** as the green primary button (`⌘↵`, open pull requests only); the title large with `#number`; a badge (Open green, Draft gray, Merged purple, Closed red), "author wants to merge 3 commits into `base` from `head`" with the branches as code and a copy button (`B`).
   - **Tabs** (`1` `2` `3`): **Conversation** (count of comments), **Checks** (failing first, each with its icon and conclusion), **Files** (path, +, −; at most 300).
@@ -60,7 +60,7 @@ Save first asks Jira whether the filter parses and shows Jira's error instead of
 
 One template per mode (segmented), a monospace textarea, the placeholders as chips that insert at the cursor, a status line on whether the repository's `.herdr/prompts.md` overrides this mode, **Reset to default**, **Cancel** and **Save ⌘↵**. Saved in `shared("mod-settings")[mod].prompts`, only the changed modes.
 
-**Needs:** `gh` signed in and `git`. Optional: the [mod-buttons](../mod-buttons/RECIPE.md) layout for the **PRs** button in the tab bar; without it, open the list with `mod.open` or its key.
+**Needs:** `gh` signed in and `git`; `curl` for the avatars (without it, initials show). Optional: the [mod-buttons](../mod-buttons/RECIPE.md) layout for the **PRs** button in the tab bar; without it, open the list with `mod.open` or its key.
 
 ## How it behaves
 
@@ -72,16 +72,17 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 - **Search** matches every typed word across number, title, author and branch; a word with a capital is case-sensitive.
 - **Page:** the header shows at once from the row; the rest follows from `gh pr view`, worked out once. Opened pages are cached (the last 30), and the row under the pointer or the highlight fetches its page after 0.3 s. **Overlay** (the default) opens the page in a dialog (62% × 85% of the window): the mod opens itself with `props.dialog: "page"` and hands over the list in its order, the page when cached, and what loading needs (a dialog is a copy of its own and can't read the list's cache); Up/Down step through the list, Esc or × closes it. **Split** puts the page under the list in Herdr's `v_resizable` split; Up/Down step through the list with the page following. **Full** replaces the list, with **← Back**. An unknown stored value counts as Overlay.
 - **Start agent:** finds the main checkout, creates `~/.herdr/worktrees/<repo>/<branch>` (`git worktree add -b <branch> <path> HEAD`), then `space.new` with the agent and the prompt as its first message, and a toast. Nothing is pushed.
+- **Avatars:** Herdr shows images only from its own folder, so after each list or page load the mod downloads each new GitHub login's picture (`curl https://github.com/<login>.png?size=64`) to `data/herdr-ranch/avatars/`, once per session; at most 4 at a time; a failed download is not tried again that session, and the page dialog gets the list's downloaded logins. Logins other than letters, digits and `-` (bots like `app/dependabot`) keep their initials, and so does everyone on a pull request outside github.com.
 - **Keys:** Up/Down move the highlight, Enter opens, Esc goes back or closes. Commands `herdr-ranch-prs.<name>`: `down`, `up`, `open`, `refresh`, `browser`, `link`, `back`, `close`.
 
 ## Built from
 
 - `mods/herdr-ranch-prs/main.js` (the list), `data.js` (`gh` calls, grouping, search, the review prompt), `detail.js` (the page).
-- Shared with herdr-ranch-issues, identical copies of the repository's `shared/`: `links.js` (the space link, settings, split, icons, initials, segmented control, text sizes), `page-kit.js` (the page's header, timeline, sidebar, tabs and footer), `jira-client.js` (Jira summaries for linked keys), `link-dialog.js`, `agent-dialog.js` (Start agent and Prompts), `prompts.js` (modes, default templates, placeholders, `.herdr/prompts.md`).
+- Shared with herdr-ranch-issues, identical copies of the repository's `shared/`: `links.js` (the space link, settings, split, icons, initials and GitHub avatars, segmented control, text sizes), `page-kit.js` (the page's header, timeline, sidebar, tabs and footer), `jira-client.js` (Jira summaries for linked keys), `link-dialog.js`, `agent-dialog.js` (Start agent and Prompts), `prompts.js` (modes, default templates, placeholders, `.herdr/prompts.md`).
 - The dialogs are this mod too: it opens itself as an overlay with `props.dialog` (`"link"` or `"agent"`), like the cog's popup (`props.settings`), and renders only that.
 - `mod.json`: `place: none`, a window overlay (80%), `button: { label: "PRs", icon: "pr.svg", opens: "panel", order: 10 }` for mod-buttons.
 - herdr: `spaces`, `shared`, `setShared`, `theme`, `props`, `settings`, `exec`, `readTextFile`, `writeTextFile`, `appHome`, `knownAgents`, `run`, `notify`, `openOverlay`, `closeOverlay`, `nextCommand`.
-- Programs: `gh`, `git`; `security`, `secret-tool` or `powershell` for Jira summaries of linked keys; `open`, `xdg-open` or `rundll32` for the browser.
+- Programs: `gh`, `git`, `curl` for the avatars; `security`, `secret-tool` or `powershell` for Jira summaries of linked keys; `open`, `xdg-open` or `rundll32` for the browser.
 
 ## Watch out
 
@@ -91,12 +92,12 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 - **Width:** the list starts from the width it last had in the same place and takes a new width once it held for 200 ms, else it jumps between the narrow and the wide layout while a panel opens.
 - Checks: SUCCESS, NEUTRAL and SKIPPED pass; anything unfinished is running.
 - Wrap the `nextCommand()` loop in try/catch: a reload rejects it.
-- GitHub Enterprise works when `gh` is signed in to it for that remote.
+- GitHub Enterprise works when `gh` is signed in to it for that remote. Avatars are off there: a picture comes from github.com, where an Enterprise login can name someone else, so Enterprise pull requests keep the initials.
 
 ## Done when
 
 - `herdr-app check mods/herdr-ranch-prs` passes.
-- In a space on a GitHub repository, **PRs** lists its pull requests in the groups above, with state icons, checks, diff sizes and initials.
+- In a space on a GitHub repository, **PRs** lists its pull requests in the groups above, with state icons, checks, diff sizes and the authors' avatars (initials until they load).
 - `herdr-app do herdr-ranch-prs.down` then `herdr-ranch-prs.open` opens the first pull request's page in a dialog, with its description and checks; Down steps to the next one and Esc closes it.
 - The filters narrow the list; **All** shows everything.
 - **Review with agent** opens the dialog with the review branch and prompt and starts the agent in a new worktree space.

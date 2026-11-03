@@ -23,7 +23,7 @@ herdr-app do layout.switch '{"name":"mod-buttons"}'
 
 You get **Issues**, **PRs** and **Reviews** buttons next to Files and Changes.
 
-**Needs:** [`gh`](https://cli.github.com) signed in, and `git`. Jira and Linear only for what you use; Node.js for Reviews. Tested on macOS; Linux and Windows follow their documented commands.
+**Needs:** [`gh`](https://cli.github.com) signed in, and `git`. `curl` for the avatars in Pull requests. Jira and Linear only for what you use; Node.js for Reviews. Tested on macOS; Linux and Windows follow their documented commands.
 
 One mod at a time, keyboard shortcuts and updating: see [Install and update](docs/guide.md#install-and-update).
 

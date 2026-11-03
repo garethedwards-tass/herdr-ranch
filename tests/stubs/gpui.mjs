@@ -3,3 +3,4 @@ const el = () => new Proxy(function () {}, { get: (_t, k) => (k === "then" ? und
 export const div = el, svg = el, image = el, v_flex = el, h_flex = el, v_resizable = el, resizable_panel = el;
 export class View {}
 export const InputState = { new: () => el() }, Input = { new: el }, TextareaState = { new: () => el() }, Textarea = { new: el }, TextView = { markdown: el };
+export const Avatar = { new: el }, AvatarImage = { new: el }, AvatarFallback = { new: el };

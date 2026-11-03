@@ -10,7 +10,7 @@
 
 import { exec, shared, setShared, spaces, openOverlay, closeOverlay, props, theme, appHome, readTextFile, writeTextFile, settings, window as appWindow, run, notify } from "herdr";
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, v_resizable, resizable_panel } from "gpui-base";
+import { v_flex, h_flex, v_resizable, resizable_panel, Avatar, AvatarImage, AvatarFallback } from "gpui-base";
 
 const KEY = "space-links";
 
@@ -353,7 +353,36 @@ export function avatar(name, t, size = 18) {
   let h = 0;
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   const c = t[TINTS[h % TINTS.length]] ?? t.accent;
-  return base.bg(c + "2e").text_color(c).child(initials(name));
+  const tinted = base.bg(c + "2e").text_color(c).child(initials(name));
+  if (!pics.has(name)) return tinted;
+  return Avatar.new().size(size).flex_none().rounded_full().overflow_hidden()
+    .image(AvatarImage.new(`${AVATARS}/${name}.png`).size_full().rounded_full())
+    .fallback(AvatarFallback.new().size_full().rounded_full().child(tinted));
+}
+
+// GitHub avatars: Herdr shows images only from the app's folder, so each login's picture
+// is downloaded there once per session. Until then, and when it fails, the initials show.
+// `avatarPics`: the logins downloaded so far; the list hands them to its page dialog.
+const AVATARS = "data/herdr-ranch/avatars", AT_ONCE = 4;
+export const avatarPics = new Set();
+const pics = avatarPics, asked = new Set();
+// True when a picture arrived: redraw then. Only plain logins, so not bots ("app/dependabot"),
+// and only for a pull request on github.com (`url`): an Enterprise login can name someone
+// else on github.com. Each login is asked once per session; a failure keeps its initials.
+// At most AT_ONCE downloads run at a time.
+export async function loadAvatars(logins, url) {
+  if (!/^https:\/\/github\.com\//.test(url ?? "")) return false;
+  const todo = [...new Set(logins)].filter((l) => /^[A-Za-z0-9-]+$/.test(l ?? "") && !asked.has(l) && !pics.has(l));
+  for (const l of todo) asked.add(l);
+  let got = false;
+  const next = async () => {
+    for (let l; (l = todo.shift()) !== undefined;) {
+      const r = await exec("curl", ["-fsSL", "--create-dirs", "-o", `${appHome()}/${AVATARS}/${l}.png`, `https://github.com/${l}.png?size=64`]).catch(() => null);
+      if (r?.code === 0) { pics.add(l); got = true; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(AT_ONCE, todo.length) }, next));
+  return got;
 }
 
 // One segmented control: "All" and the filters, one picked at a time.

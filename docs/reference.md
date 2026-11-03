@@ -12,6 +12,7 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
 - **Works on macOS, Linux and Windows.** Remote spaces run `gh` and `git` on their own machine.
 - **Programs:**
   - `gh` and `git`;
+  - `curl` (Pull requests, for the GitHub avatars; without it, initials show), on this machine;
   - for the Jira and Linear sign-in: `security` (macOS), `secret-tool` (Linux) or PowerShell (Windows);
   - `open`, `xdg-open` or `rundll32` for the browser buttons;
   - for Reviews: `node` (the `ranch-review` CLI), `herdr-app` and `hc` (opening the review, pasting into an agent), `osascript` (screenshots from the clipboard, macOS);
@@ -19,13 +20,15 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
 - **Network:**
   - Jira: `https://<your-site>/rest/api/3` with your token;
   - Linear: `https://api.linear.app/graphql` with your API key;
-  - GitHub only through `gh`;
+  - GitHub's API only through `gh`;
+  - Pull requests: each person's avatar from `https://github.com/<login>.png?size=64` with `curl`, without a token, at most 4 at a time, once per session (a failure is not tried again), only for pull requests on github.com;
   - the update check, once a day: `gh api repos/jslowack/herdr-ranch/releases/latest`, else `git ls-remote --tags https://github.com/jslowack/herdr-ranch`.
 - **Stored:**
   - in the system's credential store, only after you press Connect: the Jira sign-in (item `herdr-jira:<site>`) and the Linear key (item `herdr-linear:linear.app`);
   - in Herdr's shared state: the space links, the lists' settings, your prompts and the last update check;
   - in the mod's local storage: the last list per space;
   - the icons in `~/.config/herdr-app/data/herdr-ranch/icons`;
+  - the GitHub avatars in `~/.config/herdr-app/data/herdr-ranch/avatars`, downloaded again each session. Nothing deletes them;
   - Reviews: one file per review in `~/.config/herdr-app/data/herdr-ranch-reviews`, screenshots in its `img/`; finished ones are removed after 7 days.
 - **Files outside Herdr's folder:** Start agent writes worktrees under `~/.herdr/worktrees`. Reviews reads Claude Code's transcripts (`~/.claude/projects`, `~/.claude/sessions`) and Codex's logs (`~/.codex/sessions`), and `install.sh` links into `~/.local/bin` and `~/.claude/skills`.
 

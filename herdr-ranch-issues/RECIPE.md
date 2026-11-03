@@ -81,7 +81,7 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 ## Built from
 
 - `mods/herdr-ranch-issues/main.js` (the list and page), `jira.js` (link file, search, slim rows), `github.js` (`gh`, same row shape), `rows.js` (grouping, nesting, search), `adf.js` (Atlassian Document Format to Markdown).
-- Shared with herdr-ranch-prs, identical copies of the repository's `shared/`: `links.js` (the space link, settings, split, icons, initials, segmented control, text sizes), `page-kit.js` (the page's header, timeline, sidebar, tabs and footer), `jira-client.js` (sign-in and REST), `link-dialog.js`, `agent-dialog.js` (Start agent and Prompts), `prompts.js` (modes, default templates, placeholders, `.herdr/prompts.md`).
+- Shared with herdr-ranch-prs, identical copies of the repository's `shared/`: `links.js` (the space link, settings, split, icons, initials and GitHub avatars, segmented control, text sizes), `page-kit.js` (the page's header, timeline, sidebar, tabs and footer), `jira-client.js` (sign-in and REST), `link-dialog.js`, `agent-dialog.js` (Start agent and Prompts), `prompts.js` (modes, default templates, placeholders, `.herdr/prompts.md`).
 - The dialogs are this mod too: it opens itself as an overlay with `props.dialog` (`"link"` or `"agent"`), like the cog's popup (`props.settings`), and renders only that.
 - `mod.json`: `place: none`, a window overlay (80%), `button: { label: "Issues", icon: "issue.svg", opens: "panel", order: 20 }` for mod-buttons.
 - herdr: `spaces`, `shared`, `setShared`, `theme`, `props`, `settings`, `exec`, `readTextFile`, `writeTextFile`, `appHome`, `knownAgents`, `run`, `notify`, `openOverlay`, `closeOverlay`, `nextCommand`; global `fetch`.

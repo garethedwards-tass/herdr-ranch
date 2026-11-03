@@ -122,7 +122,7 @@ export function detail(pr, t, a) {
     k.agents(a.agents, a.go),
     k.section("Reviewers", (pr.reviewers ?? []).length ? v_flex().gap(5).children(pr.reviewers.map((r) => {
       const [label, glyph, c] = VERDICT[r.state] ?? [r.state.toLowerCase(), "comment", "muted"];
-      return h_flex().gap(6).items_center().min_w(0).child(div().flex_1().min_w(0).child(k.person(r.login === a.login ? `${r.login} (you)` : r.login)))
+      return h_flex().gap(6).items_center().min_w(0).child(div().flex_1().min_w(0).child(k.person(r.login, r.login === a.login ? `${r.login} (you)` : r.login)))
         .child(h_flex().flex_none().gap(3).items_center().text_size(fs.tiny).text_color(t[c] ?? t.muted).child(icon(glyph, t[c] ?? t.muted, 12)).child(label));
     })) : div().text_size(fs.meta).text_color(t.dim).child("Nobody asked")),
     k.section("Assignees", people(pr.assignees)),

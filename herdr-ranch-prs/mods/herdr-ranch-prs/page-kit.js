@@ -37,8 +37,8 @@ export function kit(t) {
   k.section = (title, body, extra) => v_flex().gap(5).min_w(0)
     .child(h_flex().text_size(fs.tiny).font_semibold().text_color(t.muted).child(div().flex_1().child(title)).when(Boolean(extra), (e) => e.child(extra)))
     .child(body);
-  k.person = (name) => h_flex().gap(6).items_center().min_w(0).text_size(fs.meta)
-    .child(avatar(name, t, 20)).child(div().min_w(0).truncate().child(name ?? "Nobody"));
+  k.person = (name, label = name) => h_flex().gap(6).items_center().min_w(0).text_size(fs.meta)
+    .child(avatar(name, t, 20)).child(div().min_w(0).truncate().child(label ?? "Nobody"));
   // One entry of the timeline: initials in the left column, a box with a header bar.
   k.card = (id, who, verb, at, body) => h_flex().id(id).gap(10).items_start()
     .child(avatar(who, t, 28))
