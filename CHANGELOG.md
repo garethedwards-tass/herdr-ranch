@@ -2,7 +2,7 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
-## Unreleased
+## v0.2.1
 
 - **Reviews:** `/herdr-ranch-review @docs/foo.md` works: `ranch-review annotate` accepts the `@path` that Claude Code's file picker inserts.
 
