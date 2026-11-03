@@ -200,7 +200,9 @@ async function main() {
   let text, file = null, title;
   if (cmd === "annotate") {
     if (!target) fail("name a Markdown file: ranch-review annotate <file.md>");
-    file = path.resolve(target);
+    // Claude Code's file picker inserts `@path`; a slash command passes that through verbatim.
+    const named = target.startsWith("@") && !fs.existsSync(target) ? target.slice(1) : target;
+    file = path.resolve(named);
     try { text = fs.readFileSync(file, "utf8"); } catch { fail(`can't read ${target}: give the path of a Markdown file.`); }
     title = path.basename(file);
   } else {
