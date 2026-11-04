@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
+import { listExec } from "./stubs/pr-graphql.mjs";
 import { rows, haystack, words, matches } from "../herdr-ranch-issues/mods/herdr-ranch-issues/rows.js";
 import { adfToMarkdown } from "../herdr-ranch-issues/mods/herdr-ranch-issues/adf.js";
 import { search as githubSearch } from "../herdr-ranch-issues/mods/herdr-ranch-issues/github.js";
@@ -158,12 +159,9 @@ test("github: issues come in the shared shape, so rows groups them", async () =>
   assert.deepEqual(shape(rows(issues, all)), [["high", [["#2", 0]]], ["none", [["#1", 0]]]]);
 });
 
-// Pull requests come through `gh pr list`, once for open and once for closed.
+// Pull requests come through one GraphQL query for open and one for closed.
 async function prGroups(open, closed = [], login = "me") {
-  state.exec = (cmd, args) => {
-    const which = args[args.indexOf("--state") + 1];
-    return { code: 0, stdout: JSON.stringify(which === "open" ? open : closed), stderr: "" };
-  };
+  state.exec = listExec(open, closed);
   try { return await listPrs({ github: "o/r", cwd: "/repo", on: null }, login); } finally { state.exec = null; }
 }
 const ok = { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" };
@@ -201,4 +199,41 @@ test("prs: the groups the list shows, in order", () => {
 test("prs: checks are counted per state", async () => {
   const [p] = await prGroups([pr(1, { statusCheckRollup: [ok, failed, running, { __typename: "StatusContext", state: "PENDING" }, { __typename: "StatusContext", state: "SUCCESS" }] })]);
   assert.deepEqual(p.checks, { pass: 2, fail: 1, pending: 2 });
+});
+
+test("prs: the list asks GitHub for check counts, never every check run", async () => {
+  const asked = [];
+  state.exec = (cmd, args) => { asked.push([cmd, args]); return listExec([pr(1)])(cmd, args); };
+  try { await listPrs({ github: "o/r", cwd: "/repo", on: null }, "me"); } finally { state.exec = null; }
+  assert.equal(asked.length, 2, "open and closed");
+  for (const [cmd, args] of asked) {
+    assert.equal(cmd, "gh");
+    assert.deepEqual(args.slice(0, 2), ["api", "graphql"]);
+    const query = args.find((a) => a.startsWith("query="));
+    assert.match(query, /checkRunCountsByState/);
+    assert.doesNotMatch(query, /contexts\(first/, "no check runs one by one");
+    assert.ok(args.includes("owner=o") && args.includes("name=r"), "the repository as variables");
+  }
+});
+
+test("prs: no checks yet, a team asked to review, a deleted author", async () => {
+  const [p] = await prGroups([pr(1, { author: null, reviewDecision: null, reviewRequests: [{ name: "backend" }, { login: "me" }], assignees: [{ login: "ada" }] })]);
+  assert.deepEqual(p.checks, { pass: 0, fail: 0, pending: 0 });
+  assert.equal(p.author.login, null);
+  assert.deepEqual(p.reviewRequests.map((r) => r.login), [undefined, "me"]);
+  assert.deepEqual(p.assignees, ["ada"]);
+  assert.equal(p.reviewDecision, "", "GraphQL's null decision is gh's empty one");
+});
+
+test("prs: every check state counts as pass, fail or pending", async () => {
+  const run = (status, conclusion = null) => ({ __typename: "CheckRun", status, conclusion });
+  const ctx = (s) => ({ __typename: "StatusContext", state: s });
+  const rollup = [
+    ...["SUCCESS", "NEUTRAL", "SKIPPED"].map((c) => run("COMPLETED", c)),
+    ...["FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"].map((c) => run("COMPLETED", c)),
+    ...["IN_PROGRESS", "QUEUED", "PENDING", "WAITING", "REQUESTED"].map((st) => run(st)),
+    ctx("SUCCESS"), ctx("FAILURE"), ctx("ERROR"), ctx("PENDING"), ctx("EXPECTED"),
+  ];
+  const [p] = await prGroups([pr(1, { statusCheckRollup: rollup })]);
+  assert.deepEqual(p.checks, { pass: 4, fail: 8, pending: 7 });
 });

@@ -11,11 +11,17 @@ import { pref, setPref } from "./links.js";
 export const MODES = {
   issue: [["work", "Work on it"], ["plan", "Plan first"], ["investigate", "Investigate only"]],
   pr: [["review", "Review"], ["comments", "Address review comments"], ["checks", "Fix failing checks"]],
+  stack: [["stack-review", "Review stack"], ["stack-fix", "Fix stack to merge"]],
 };
 export const PLACEHOLDERS = {
   issue: ["key", "title", "url", "type", "status", "priority", "labels", "description", "branch", "tracker"],
   pr: ["number", "title", "url", "head", "base", "body", "failing", "repo", "branch"],
+  stack: ["title", "count", "trunk", "layers", "blockers", "top", "bottom", "repo", "branch"],
 };
+// The modes a list's Prompts dialog shows: the PRs list also starts agents on stacks.
+export const promptModes = (kind) => (kind === "pr" ? [...MODES.pr, ...MODES.stack] : MODES[kind]);
+// The placeholders of the kind a mode belongs to.
+export const placeholdersOf = (mode) => PLACEHOLDERS[Object.keys(MODES).find((k) => MODES[k].some(([id]) => id === mode)) ?? "issue"];
 // One line on what each mode does, for the dialog.
 export const ABOUT = {
   work: "Implement it, test it, commit on the branch.",
@@ -24,6 +30,8 @@ export const ABOUT = {
   review: "Read-only: check out, build, test and report. No push, no comments.",
   comments: "Make the changes the review asked for, on a branch of its own. Nothing is pushed.",
   checks: "Reproduce the failing checks and fix them, on a branch of its own. Nothing is pushed.",
+  "stack-review": "Read-only: check out the stack and review each layer, bottom first. No push, no comments.",
+  "stack-fix": "Fix what blocks the merge, bottom layer first, rebase the layers above and push. Never merges. Needs gh stack.",
 };
 
 const ISSUE_HEAD = `{tracker} issue {key}: {title}
@@ -70,6 +78,30 @@ Failing: {failing}
 3. Reproduce each one locally, fix it with a focused commit, and run it again.
 
 Do not push or write to GitHub. When done, summarize each failure, its cause and the fix.`,
+  "stack-review": `Review the stack of {count} pull requests "{title}" into {trunk} ({repo}). Layers, bottom first:
+{layers}
+
+This is a read-only review: do not push, comment, approve, request changes, or write to GitHub in any other way.
+
+1. Check out the top layer in this worktree: \`gh pr checkout {top} --detach\`.
+2. Review each layer on its own diff, bottom first: \`gh pr diff <number>\` and \`gh pr view <number> --comments\`.
+3. Check that each layer builds only on the layers below it, and that together they tell one story.
+4. Build the top layer and run the tests that cover the change.
+5. Report findings per layer, ranked by severity, each with a file:line reference and a concrete failure scenario.`,
+  "stack-fix": `Get the stack of {count} pull requests "{title}" into {trunk} ({repo}) ready to merge. Layers, bottom first:
+{layers}
+
+What blocks the merge:
+{blockers}
+
+Use the gh stack extension, always non-interactively (\`gh stack view --json\`, never the plain TUI).
+
+1. Check out the stack: \`gh stack checkout {top}\`. If another local stack claims these branches, run \`gh stack unstack --local\` first. If this isn't a gh stack yet, adopt its branches: \`git fetch origin\`, then \`gh stack init --base {trunk} <the branches, bottom first>\`. If a layer's branch is already checked out in another worktree (git refuses to check it out here), stop and tell me which branch and which worktree, so I can free it; don't work around it.
+2. Fix the blockers from the bottom layer up: failing checks (\`gh pr checks <number>\`, then \`gh run view <run> --log-failed\`) and review comments (\`gh api repos/{repo}/pulls/<number>/comments\`), each with a focused commit on that layer's branch.
+3. After changing a layer, run \`gh stack rebase --upstack\`, then the tests of the layers above.
+4. Push with \`gh stack push\`.
+
+Never merge, and do not comment, reply or resolve threads on GitHub. When done, list each blocker with what you changed, or why you didn't.`,
 };
 
 // Line ends become \n first (a lone \r would reach the agent's terminal as Enter), then control

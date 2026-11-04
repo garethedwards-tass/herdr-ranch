@@ -6,7 +6,7 @@
 
 import { exec, appHome, shared, setShared, run, notify, window as appWindow } from "herdr";
 
-export const VERSION = "0.2.1";
+export const VERSION = "0.3.0";
 export const REPO = "jslowack/herdr-ranch";
 const KEY = "ranch-update", DAY = 24 * 3600 * 1000;
 const platform = () => { try { return appWindow().platform; } catch { return "macos"; } };

@@ -1,6 +1,6 @@
 # Pull requests · Herdr Ranch
 
-GitHub pull requests for each Herdr space, grouped by what they wait on, with a merge box and a review agent. The shown space's pull requests in a side panel next to your terminals, grouped by what each one waits on, with a page per pull request in a dialog over the window. **Review with agent** starts a coding agent that reviews one in a fresh git worktree.
+GitHub pull requests for each Herdr space, grouped by what they wait on, with a merge box and a review agent. The shown space's pull requests in a side panel next to your terminals, grouped by what each one waits on, with a page per pull request in a dialog over the window. **Agent review** starts a coding agent that reviews one in a fresh git worktree.
 
 ![Pull requests](preview.png)
 
@@ -11,12 +11,13 @@ GitHub pull requests for each Herdr space, grouped by what they wait on, with a 
 - **List:** groups with a count: Review requested, Yours to fix, Ready to merge, Open, Recently closed (the last 10). One 30px row per pull request:
   - a state icon: open (green), draft (`dim`, with a `muted` title), merged (purple), closed (red);
   - `#number` in `dim`, the title;
-  - an `approved` (green) or `changes` (red) pill when the review has a verdict;
+  - one review pill on an open pull request: `draft` (`muted`), `needs review` (yellow), `approved` (green) or `changes` (red);
   - the checks as one icon and a count: ✗ failing (red), a clock while running (yellow), ✓ passing (green);
   - `+add −del`, the author's GitHub avatar (initials in a tinted circle until it loads, when it fails, for bots and on GitHub Enterprise), and the age.
   - Below 520px a row takes two lines: icon, number, title and age, then the author's avatar and name, the diff, the checks and the pill.
+- **Stacks:** a stack of dependent pull requests (each one's base is the head of the one below it) is one row in the group of its least ready layer: a chevron, the Lucide `layers` icon (`ansi4`), the bottom layer's title (semibold), and **Agent review** (green, as on a pull request's page). Each layer's own review pill and checks show which one holds the stack up. Its layers follow as a flat list, bottom first, indented once under the stack row with their place (1, 2, 3) in front; they don't show again as loose rows. The chevron collapses them. Under a search or filter the stack shows whole when any layer matches, the others dimmed. A stack counts as one in its group.
 - **Page:** a dialog over the window (or under the list, or in its place, see **Page** below), laid out like GitHub's pull request page:
-  - **Header:** ↑ ↓ and "1 of 8", **Open on GitHub** (`O`) and **Review with agent** as the green primary button (`⌘↵`, open pull requests only); the title large with `#number`; a badge (Open green, Draft gray, Merged purple, Closed red), "author wants to merge 3 commits into `base` from `head`" with the branches as code and a copy button (`B`).
+  - **Header:** ↑ ↓ and "1 of 8", **Open on GitHub** (`O`) and **Agent review** as the green primary button (`⌘↵`, open pull requests only); the title large with `#number`; a badge (Open green, Draft gray, Merged purple, Closed red), "author wants to merge 3 commits into `base` from `head`" with the branches as code and a copy button (`B`).
   - **Tabs** (`1` `2` `3`): **Conversation** (count of comments), **Checks** (failing first, each with its icon and conclusion), **Files** (path, +, −; at most 300).
   - **Conversation:** the description as the first card, comments and reviews (with their verdict as a pill) as cards, and review requests, labels, pushes, merging and closing (the issues timeline API) as small lines; it ends in the **merge box**: checks (all passed, n failing, n running; a click opens Checks), the review state ("You were asked to review" when you were), and mergeability (ready, conflicts, behind, blocked, merged), with "Merge on GitHub: these mods never write to GitHub."
   - **Sidebar:** Reviewers with their verdict ("(you)" for you), Assignees, Labels, **Development** (issues it closes, and Jira keys in its title, branch or description with their summary when the space links a Jira site), Changes.
@@ -48,7 +49,7 @@ Save first asks Jira whether the filter parses and shows Jira's error instead of
 - **Header:** "Start agent" (or "Review with agent"), the item's type icon, key and title.
 - **Agent:** a card per installed agent (initials in a tinted circle, "last used" for the one picked last time, kept in local storage), and "N more known agents aren't installed on this machine."
 - **Model** and **Effort** chips for agents that take them: Claude Code (`--model` fable / opus / sonnet / haiku, `--effort` low … max), Codex (`-m`, `-c model_reasoning_effort=`), OpenCode (`-m provider/model`, typed); others say they use their own settings. Remembered per agent in local storage; values are checked before they become arguments.
-- **Mode** (segmented), with a line on what it does. Issues: **Work on it**, **Plan first**, **Investigate only**. Pull requests: **Review** (read-only), **Address review comments**, **Fix failing checks** (these two get a branch of their own: `agent/fix-…`, `agent/checks-…`).
+- **Mode** (segmented), with a line on what it does. Issues: **Work on it**, **Plan first**, **Investigate only**. Pull requests: **Review** (read-only), **Address review comments**, **Fix failing checks** (these two get a branch of their own: `agent/fix-…`, `agent/checks-…`). Stacks: **Review stack** (read-only, `agent/stack-review-…`) and **Fix stack to merge** (`agent/stack-…`: checks out the stack with `gh stack`, fixes the blockers bottom up, rebases the layers above and pushes; never merges). **Agent review** opens on the mode for whose work it is: your own pull request on **Address review comments**, your stack (any layer yours) on **Fix stack to merge**, someone else's on **Review** or **Review stack**. Without the `gh stack` extension the dialog has no fix mode and opens on the review, with a toast on how to install it (`gh extension install github/gh-stack`).
 - **Branch** in monospace with "new" or "exists: reuses it" (`git show-ref`); a branch already checked out in another worktree (a second start on the same item) is renamed to the next free `…-2`, `…-3`. Under it the base (the main checkout's branch) and the worktree path. Issue modes get a branch each: `agent/<KEY>-…`, `agent/plan-<KEY>-…`, `agent/investigate-<KEY>-…`.
 - **Fork warning** (pull requests from a fork): the agent builds and runs that code on this machine.
 - **Repository prompts:** when the repository's `.herdr/prompts.md` has this mode and it isn't approved yet, "Show and use them"; approval is kept per repository with the file's hash, and a repository prompt is shown whole.
@@ -60,13 +61,14 @@ Save first asks Jira whether the filter parses and shows Jira's error instead of
 
 One template per mode (segmented), a monospace textarea, the placeholders as chips that insert at the cursor, a status line on whether the repository's `.herdr/prompts.md` overrides this mode, **Reset to default**, **Cancel** and **Save ⌘↵**. Saved in `shared("mod-settings")[mod].prompts`, only the changed modes.
 
-**Needs:** `gh` signed in and `git`; `curl` for the avatars (without it, initials show). Optional: the [mod-buttons](../mod-buttons/RECIPE.md) layout for the **PRs** button in the tab bar; without it, open the list with `mod.open` or its key.
+**Needs:** `gh` signed in and `git`; `curl` for the avatars (without it, initials show). Optional: the `gh stack` extension for **Fix stack to merge**. Optional: the [mod-buttons](../mod-buttons/RECIPE.md) layout for the **PRs** button in the tab bar; without it, open the list with `mod.open` or its key.
 
 ## How it behaves
 
 - **Which repository:** the space's link (set with **Link space…**), else the space folder's remote (`gh repo view`), on the space's machine. Worktree spaces use their repository's link.
-- **Listing:** `gh pr list --state open --limit 100` and `--state closed --limit 10`, every 60 seconds, on ↻, and when the space or its link changes. A newer load supersedes one still running; an unchanged answer only updates the ages.
+- **Listing:** `gh pr list --state open --limit 100` and `--state closed --limit 10`, every 60 seconds, on ↻, and when the space or its link changes. A GitHub 502, 503 or 504 is asked again once at once; when it fails again over a list already shown, a quiet `dim` note says GitHub didn't answer and the list stays. A newer load supersedes one still running; an unchanged answer only updates the ages.
 - **Groups:** Review requested (your review is asked directly), Yours to fix (yours, with changes requested or a failing check), Ready to merge (approved, not a draft, no failing or running check), Open, Recently closed.
+- **Stacks** (`stacks.js`, worked out at load): open pull requests of this repository (no forks) whose `baseRefName` is another one's `headRefName`, 2 layers or more, depth-first from the bottom with children by number; a base cycle makes no stack. The group: Review requested when any layer is, else Yours to fix when any layer is, else Ready to merge when every layer is, else Open. Up/Down step through the layers of open stacks; a stack row isn't a stop. `gh extension list` tells whether `gh stack` is installed, once per machine.
 - **Space switch:** shows that space's own list at once (kept for the last 20 spaces, else stored, else empty while loading), never the previous space's, then refreshes it.
 - **Filters**, one at a time, against `gh api user`: **Assigned** (any assignee), **Created** (the author), **Mentioned** (`mentions:@me`, fetched when picked and on each refresh), **Review requests** (asked of you directly; team requests don't count), **Recent** (updated in the last 7 days).
 - **Search** matches every typed word across number, title, author and branch; a word with a capital is case-sensitive.
@@ -77,7 +79,7 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 
 ## Built from
 
-- `mods/herdr-ranch-prs/main.js` (the list), `data.js` (`gh` calls, grouping, search, the review prompt), `detail.js` (the page).
+- `mods/herdr-ranch-prs/main.js` (the list), `data.js` (`gh` calls, grouping, search, the review prompt), `detail.js` (the page), `stacks.js` (stacks, their blocker and what Start agent gets for one).
 - Shared with herdr-ranch-issues, identical copies of the repository's `shared/`: `links.js` (the space link, settings, split, icons, initials and GitHub avatars, segmented control, text sizes), `page-kit.js` (the page's header, timeline, sidebar, tabs and footer), `jira-client.js` (Jira summaries for linked keys), `link-dialog.js`, `agent-dialog.js` (Start agent and Prompts), `prompts.js` (modes, default templates, placeholders, `.herdr/prompts.md`).
 - The dialogs are this mod too: it opens itself as an overlay with `props.dialog` (`"link"` or `"agent"`), like the cog's popup (`props.settings`), and renders only that.
 - `mod.json`: `place: none`, a window overlay (80%), `button: { label: "PRs", icon: "pr.svg", opens: "panel", order: 10 }` for mod-buttons.
@@ -100,4 +102,5 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 - In a space on a GitHub repository, **PRs** lists its pull requests in the groups above, with state icons, checks, diff sizes and the authors' avatars (initials until they load).
 - `herdr-app do herdr-ranch-prs.down` then `herdr-ranch-prs.open` opens the first pull request's page in a dialog, with its description and checks; Down steps to the next one and Esc closes it.
 - The filters narrow the list; **All** shows everything.
-- **Review with agent** opens the dialog with the review branch and prompt and starts the agent in a new worktree space.
+- **Agent review** opens the dialog with the review branch and prompt and starts the agent in a new worktree space.
+- In a repository with a stack of 3, **PRs** shows one stack row with its three layers under it, in the group of its least ready layer, and the blocker names the right pull request; **Fix stack to merge** opens Start agent on that mode with the blockers in the prompt.

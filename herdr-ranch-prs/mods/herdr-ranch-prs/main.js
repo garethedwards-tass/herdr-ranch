@@ -6,7 +6,8 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
-import { me, list, mentioned, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { me, list, mentioned, hasGhStack, TRANSIENT, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
@@ -29,16 +30,17 @@ const keepWidth = (w) => { try { localStorage.setItem(`width:${place()}`, String
 const contextKey = (space) => `${space?.id}|${JSON.stringify(shared("space-links") ?? {})}`;
 // What a space's list keeps in memory (the last SPACES spaces), so switching back shows it at once.
 const SPACES = 20;
-const KEPT = ["where", "login", "prs", "data", "hay", "saved", "meta", "version", "cache", "error", "unlinked", "cursor"];
+const KEPT = ["where", "login", "prs", "data", "hay", "stacks", "inStack", "saved", "meta", "version", "cache", "error", "unlinked", "cursor"];
 
 // What a row draws, worked out once per load: the row renderer runs inside layout, twice
 // for every frame Herdr draws (hover, scrolling, any spinner on screen), so it only reads.
 // Pills are [text, theme color] pairs.
-// A review verdict worth a pill; waiting for review is the usual state and gets none.
+// Where an open pull request is in review, as one pill: a draft, waiting for a review, or the verdict.
+// The same on every row, so a stack's layers say for themselves which one holds the stack up.
 const REVIEW = { APPROVED: ["approved", "ansi2"], CHANGES_REQUESTED: ["changes", "ansi1"] };
 function rowData(pr) {
   const c = pr.checks, pills = [];
-  if (REVIEW[pr.reviewDecision]) pills.push(REVIEW[pr.reviewDecision]);
+  if (pr.state === "OPEN") pills.push(pr.isDraft ? ["draft", "muted"] : REVIEW[pr.reviewDecision] ?? ["needs review", "ansi3"]);
   // The checks as one icon and a count: failing first, then running, then passing.
   const checks = c.fail > 0 ? ["x", c.fail] : c.pending > 0 ? ["pending", c.pending] : c.pass > 0 ? ["check", c.pass] : null;
   const state = pr.state === "MERGED" ? "merged" : pr.state === "CLOSED" ? "closed" : pr.isDraft ? "draft" : "pr";
@@ -58,7 +60,7 @@ export default class PullRequests extends View {
     if (dialog) { this.dialog = cx.new(dialog === "link" ? LinkDialog : dialog === "prompts" ? PromptsDialog : AgentDialog, props()); return; }
     this.prs = []; this.login = null; this.error = null; this.loading = false;
     this.query = ""; this.filter = null; this.mentions = null; this.mentionsVersion = 0; this.open = null; this.page = null; this.pageError = null; this.width = lastWidth(); this.version = 0;
-    this.gen = 0; this.data = new Map(); this.hay = new Map(); this.saved = null; this.versions = 0; this.kept = new Map();
+    this.gen = 0; this.data = new Map(); this.hay = new Map(); this.stacks = []; this.inStack = new Map(); this.collapsed = new Set(); this.saved = null; this.versions = 0; this.kept = new Map();
     this.handle = cx.focus_handle();
     cx.spawn(async (cx) => { await writeIcons(); cx.notify(); });
     // The open pull request's page is a view of its own: a live change redraws the list only,
@@ -177,6 +179,8 @@ export default class PullRequests extends View {
         const meta = JSON.stringify({ at, login });
         if (this.setPrs(prs) || meta !== this.meta) { this.meta = meta; remember(space.id, { where: at, login, prs }); }
         cx.spawn(async (cx) => { if (await loadAvatars(prs.map((p) => p.author?.login), prs[0]?.url)) try { cx.notify(); } catch { /* shown on the next change */ } });
+        // Fix stack to merge needs the gh stack extension on this machine (asked once per machine).
+        if (this.stacks.length) cx.spawn(async (cx) => { const has = await hasGhStack(at); if (current() && has !== this.ghStack) { this.ghStack = has; try { cx.notify(); } catch { /* shown on the next change */ } } });
         this.publishBadge(space);
         if (this.filter === "mentioned") this.loadMentions(cx);
       } catch (e) { if (current()) { this.error = String(e?.message ?? e); this.publishBadge(space, 0); } }
@@ -238,6 +242,7 @@ export default class PullRequests extends View {
     this.saved = saved; this.prs = prs; this.version = ++this.versions;
     this.data = new Map(prs.map((p) => [p.number, rowData(p)]));
     this.hay = new Map(prs.map((p) => [p.number, haystack(p)]));
+    this.stacks = stacks(prs); this.inStack = stackOf(this.stacks);
     return true;
   }
 
@@ -307,19 +312,28 @@ export default class PullRequests extends View {
   // change (agents, focus), so a render must stay cheap.
   items() {
     const branch = this.space()?.branch ?? "";
-    const k = `${this.version}|${this.query}|${this.filter}|${this.mentionsVersion}|${branch}`;
+    const k = `${this.version}|${this.query}|${this.filter}|${this.mentionsVersion}|${branch}|${[...this.collapsed].join(",")}`;
     if (this.cache?.k !== k) {
       const ws = words(this.query);
       const shown = this.prs.filter((p) => matches(this.hay.get(p.number), ws) && this.keep(p));
-      const groups = GROUPS.map(([id, label]) => ({ id, label, prs: shown.filter((p) => p.group === id) })).filter((g) => g.prs.length);
+      const passing = new Set(shown.map((p) => p.number)), byNumber = new Map(this.prs.map((p) => [p.number, p]));
+      // A stack shows whole when any layer passes the search and filter (the others dimmed),
+      // as one row in the group of its least ready layer; its layers aren't loose rows.
+      const stacks = this.stacks.filter((s) => s.layers.some((l) => passing.has(l.number)));
+      const loose = shown.filter((p) => !this.inStack.has(p.number));
+      const groups = GROUPS.map(([id, label]) => ({ id, label, stacks: stacks.filter((s) => s.group === id), prs: loose.filter((p) => p.group === id) }))
+        .filter((g) => g.stacks.length || g.prs.length);
+      const layers = (s) => (this.folded(s) ? [] : s.layers.map((l, n) => ({ key: `pr-${l.number}`, data: this.data.get(l.number), level: n + 1, dim: !passing.has(l.number) })));
       // The pull request of the shown branch, pinned on top (it stays in its own group too).
       // Only a branch of this repository (a fork's "main" isn't yours), and only when it passes the search and filter.
       const mine = branch && shown.find((p) => p.headRefName === branch && p.state === "OPEN" && !p.fork);
       const items = [...(mine ? [{ key: "group-here", group: { label: "This branch", count: "1" } }, { key: `here-${mine.number}`, data: this.data.get(mine.number) }] : []), ...groups.flatMap((g) => [
-        { key: `group-${g.id}`, group: { label: g.label, count: String(g.prs.length) } },
+        { key: `group-${g.id}`, group: { label: g.label, count: String(g.stacks.length + g.prs.length) } },
+        ...g.stacks.flatMap((s) => [{ key: s.key, stack: s, open: !this.folded(s) }, ...layers(s)]),
         ...g.prs.map((pr) => ({ key: `pr-${pr.number}`, data: this.data.get(pr.number) })),
       ])];
-      this.cache = { k, items, flat: shown.length ? groups.flatMap((g) => g.prs) : [] };
+      // Up and Down step through the rows in order: loose pull requests and the layers of open stacks.
+      this.cache = { k, items, flat: items.filter((i) => i.data && i.key.startsWith("pr-")).map((i) => byNumber.get(i.data.number)) };
     }
     return this.cache;
   }
@@ -342,11 +356,23 @@ export default class PullRequests extends View {
     const tail = `${pr.number}-${slug(pr.title)}-${hash(`github-pr-${pr.url}`)}`;
     const failing = (pr.statusCheckRollup ?? []).filter((c) => c.state === "fail").map((c) => c.name);
     openAgentDialog("herdr-ranch-prs", {
-      kind: "pr", repo: this.where.repo.main, on: this.where.on, key: `#${pr.number}`, title: pr.title, fork: Boolean(pr.isCrossRepository),
+      kind: "pr", mode: agentMode(pr, this.login), repo: this.where.repo.main, on: this.where.on, key: `#${pr.number}`, title: pr.title, fork: Boolean(pr.isCrossRepository),
       icon: pr.state === "MERGED" ? "merged" : pr.isDraft ? "draft" : "pr",
       vars: { number: pr.number, title: pr.title, url: pr.url, head: pr.headRefName ?? "", base: pr.baseRefName ?? "", body: pr.body ?? "", failing: failing.join(", ") || "none", repo: this.where.github },
       branches: { review: `agent/review-${tail}`, comments: `agent/fix-${tail}`, checks: `agent/checks-${tail}` },
       tabs: { review: `Review #${pr.number} ${pr.title}`.slice(0, 60), comments: `Fix #${pr.number} ${pr.title}`.slice(0, 60), checks: `Checks #${pr.number} ${pr.title}`.slice(0, 60) },
+    });
+  }
+
+  // One agent on a whole stack: on fixing it when a layer is yours, else on reviewing it.
+  // Fixing needs gh stack; without it the dialog has only the review, and a toast says how to get it.
+  startStack(stack) {
+    if (!this.where?.repo) return;
+    const prs = new Map(this.prs.map((p) => [p.number, p])), mode = agentMode(stack, this.login, prs);
+    if (mode === "stack-fix" && this.ghStack === false) notify({ title: "Fix stack to merge needs gh stack", body: "Install it with: gh extension install github/gh-stack", level: "info", timeout: 6000 });
+    openAgentDialog("herdr-ranch-prs", {
+      kind: "stack", mode, repo: this.where.repo.main, on: this.where.on, icon: "pr", fork: false, ghStack: this.ghStack !== false,
+      ...stackAgent(stack, prs, this.where.github),
     });
   }
 
@@ -431,7 +457,7 @@ export default class PullRequests extends View {
         open: () => openUrl((this.page ?? this.picked).url),
         review: this.where?.repo ? () => this.review(this.page) : null,
         keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3"], "tabs"],
-          ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Review with agent"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],
+          ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Agent review"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],
       });
     } catch (e) { return div().p(14).text_color(t.ansi1).child(`Cannot show this pull request: ${e?.stack ?? e}`); }
   }
@@ -439,18 +465,21 @@ export default class PullRequests extends View {
   // One row from its row data and the styles `render` picked once (`s`). Built once per
   // render: hover is a style (no script runs on it), and only entering a row calls back,
   // to fetch its page ahead.
-  row(d, s) {
-    const t = s.t;
+  // A stack's layer (`at`: { level, dim }) is indented once under its stack row, with its
+  // place in the stack in front; a layer the search or filter doesn't match is dimmed.
+  row(d, s, at = null) {
+    const t = s.t, dim = Boolean(at?.dim);
     const status = (e) => e.children(d.pills.map(([text, color]) => div().px(6).py(1).rounded(4).border_1().border_color(t.border).text_size(fs.tiny).text_color(t[color]).child(text)));
     const diff = h_flex().flex_none().gap(4).text_size(fs.meta).child(div().text_color(t.ansi2).child(d.adds)).child(div().text_color(t.ansi1).child(d.dels));
-    const number = div().w(36).flex_none().text_color(t.dim).text_size(fs.meta).child(d.label);
-    const state = icon(d.state, kindColor(d.state, t));
+    const number = div().w(36).flex_none().text_color(dim ? t.muted : t.dim).text_size(fs.meta).child(d.label);
+    const level = at?.level ? div().w(12).flex_none().text_size(fs.tiny).text_color(t.muted).child(String(at.level)) : null;
+    const state = level ? h_flex().flex_none().gap(4).items_center().child(level).child(icon(d.state, kindColor(d.state, t))) : icon(d.state, kindColor(d.state, t));
     const checks = (e) => (d.checks ? e.child(h_flex().flex_none().gap(2).items_center().text_size(fs.meta).text_color(kindColor(d.checks[0], t))
       .child(icon(d.checks[0], kindColor(d.checks[0], t), 12)).child(String(d.checks[1]))) : e);
-    const title = div().flex_1().min_w(0).truncate().text_color(d.draft ? t.muted : t.foreground).child(d.title);
+    const title = div().flex_1().min_w(0).truncate().text_color(d.draft || dim ? t.muted : t.foreground).child(d.title);
     const age = div().w(30).flex_none().text_right().text_size(fs.meta).text_color(t.dim).child(d.age);
     const agent = (e) => { const c = s.agents?.has(d.number) && agentChip(`agent-${d.number}`, s.agents.get(d.number), t); return c ? e.child(c) : e; };
-    const base = (e) => e.flex_none().px(10).rounded(6).cursor_pointer().hover((x) => x.bg(t.hover))
+    const base = (e) => e.flex_none().px(10).when(Boolean(at?.level), (e) => e.pl(24)).rounded(6).cursor_pointer().hover((x) => x.bg(t.hover))
       .when(s.keys && s.cursor === d.number, (e) => e.bg(t.selected));
     // Narrow (the side panel): two lines, so the title keeps the whole width.
     if (s.two) return base(v_flex()).h(fs.row2).justify_center().gap(3)
@@ -463,6 +492,33 @@ export default class PullRequests extends View {
       .child(div().w(70).flex_none().flex().justify_end().child(diff))
       .child(avatar(d.author, t))
       .child(age);
+  }
+
+  // A stack's own row: the chevron (collapses its layers), the stack icon, its name (the bottom
+  // layer's title) and Agent review. The layers under it show their own status. The
+  // actions always show: Herdr runs no script on hover, so they can't appear only then.
+  stackRow(i, s) {
+    // One button, as on a pull request's page; it needs this repository's main checkout.
+    const t = s.t, st = i.stack, local = Boolean(this.where?.repo);
+    const actions = div().id(`${st.key}-agent`).px(8).py(1).flex_none().rounded(6).text_size(fs.meta).border_1()
+      .border_color(local ? t.ansi2 : t.border).text_color(local ? t.ansi2 : t.muted)
+      .when(local, (e) => e.cursor_pointer().hover((x) => x.bg(t.hover)).on_click(() => this.startStack(st)))
+      .child("Agent review");
+    const chevron = div().id(`${st.key}-toggle`).w(14).flex_none().cursor_pointer().text_color(t.dim).hover((x) => x.text_color(t.foreground))
+      .on_click((_e, cx) => this.toggleStack(st, cx)).child(i.open ? "▾" : "▸");
+    const pill = icon("stack", t.ansi4);
+    const name = div().flex_1().min_w(0).truncate().font_semibold().child(st.name);
+    const base = (e) => e.id(i.key).flex_none().px(10).rounded(6).bg(t.surface);
+    return base(h_flex()).h(fs.row).gap(8).items_center().child(chevron).child(pill).child(name).child(actions);
+  }
+
+  // Collapsed stacks are kept per repository: stack numbers repeat across repositories.
+  foldKey(stack) { return `${this.where?.github ?? ""}#${stack.key}`; }
+  folded(stack) { return this.collapsed.has(this.foldKey(stack)); }
+  toggleStack(stack, cx) {
+    const key = this.foldKey(stack);
+    if (this.collapsed.has(key)) this.collapsed.delete(key); else this.collapsed.add(key);
+    cx.notify();
   }
 
   // The open page shows its agents' status, but redraws only on its own: a status change
@@ -520,7 +576,7 @@ export default class PullRequests extends View {
     const [shownItems, windowed] = this.keyWindow(items, (i) => i.data?.number === this.cursor, s.two ? fs.row2 : fs.row);
     const list = v_flex().w_full().flex_1().min_h(0)
       .when(items.length > 0, (e) => e.child(v_flex().id(windowed ? "pr-list-keys" : "pr-list").w_full().flex_1().min_h(0).px(6).overflow_y_scrollbar()
-        .children(shownItems.map((i) => (i.group ? heading(i.group) : this.row(i.data, s).id(i.key)
+        .children(shownItems.map((i) => (i.group ? heading(i.group) : i.stack ? this.stackRow(i, s) : this.row(i.data, s, i.level ? i : null).id(i.key)
           .on_click((_e, cx) => { this.handle.focus(); this.pick(i.data.number, cx); })
           .on_hover((on, cx) => {
             const n = i.data.number;
@@ -566,7 +622,10 @@ export default class PullRequests extends View {
           .when(Boolean(overlay), (e) => e.child(close)))
         .when(!wide, (e) => e.child(search.w_full()))
         .child(filters))
-      .when(Boolean(this.error && this.prs.length), (e) => e.child(div().px(14).py(4).text_size(fs.meta).text_color(t.ansi1).child(this.error)))
+      // Over a list already shown, a GitHub hiccup (5xx) is a quiet note: the list stays and the next minute retries.
+      .when(Boolean(this.error && this.prs.length), (e) => e.child(TRANSIENT.test(this.error)
+        ? div().px(14).py(4).text_size(fs.meta).text_color(t.dim).child("GitHub didn't answer in time. Showing the last list; it tries again in a minute (↻ now).")
+        : div().px(14).py(4).text_size(fs.meta).text_color(t.ansi1).child(this.error)))
       .child(v_flex().flex_1().min_h(0).child(list))
       .child(kit(t).footer([[["↑", "↓"], "move"], [["↵"], "open"], ...(overlay ? [[["Esc"], "close"]] : [])])))));
   }

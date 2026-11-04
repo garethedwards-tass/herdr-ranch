@@ -39,7 +39,7 @@ Link a space once from the cog: [Link a space](docs/guide.md#link-a-space), [Con
 
 ![Pull requests: the grouped list and a pull request's page with Review with agent](herdr-ranch-prs/preview.png)
 
-The space's pull requests, grouped by what each one waits on: review requested, yours to fix, ready to merge. A page per pull request with checks, files and a merge box. **Review with agent** checks it out, builds, tests and reports, without writing to GitHub.
+The space's pull requests, grouped by what each one waits on: review requested, yours to fix, ready to merge. A page per pull request with checks, files and a merge box. **Agent review** checks it out, builds, tests and reports, without writing to GitHub.
 
 More in [the guide](docs/guide.md#pull-requests).
 

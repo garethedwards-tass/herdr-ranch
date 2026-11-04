@@ -2,6 +2,13 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
+## v0.3.0
+
+- **Pull requests:** a stack of dependent pull requests shows as one row with its layers under it, numbered from the bottom. A search or filter keeps the whole stack and greys the layers that don't match. **Agent review** on the stack row starts one agent on the whole stack: **Review stack**, or **Fix stack to merge** (needs `gh stack`) ([#9](https://github.com/jslowack/herdr-ranch/issues/9)).
+- **Pull requests:** every open pull request shows its review state (`draft`, `needs review`, `approved`, `changes`), and **Agent review** opens on fixing your own pull request or stack, and on reviewing someone else's.
+- **Pull requests:** a GitHub timeout (502, 503, 504) is retried once, and a second one no longer shows a red error over the list.
+- **Pull requests:** the list refreshes about 40% faster: it asks GitHub how many checks pass, fail and run, instead of fetching every check run.
+
 ## v0.2.1
 
 - **Reviews:** `/herdr-ranch-review @docs/foo.md` works: `ranch-review annotate` accepts the `@path` that Claude Code's file picker inserts.

@@ -81,7 +81,7 @@ GitHub issues work the same way as Jira ones:
 - **At a glance:** a state icon (open, draft, merged), the checks as one icon and a count, the diff size, the review verdict and the author.
 - **Filters:** Assigned, Created, Mentioned, Review requests and Recent.
 - **A page per pull request, like GitHub's:** tabs for the conversation, checks and changed files; the conversation ends in a merge box (checks, review required, mergeable); reviewers with their verdict, and the issues it closes or names (Jira keys too) in the sidebar. ⌘↵ reviews it with an agent, B copies the branch, 1 2 3 switch tabs.
-- **Review with agent:** starts an agent that checks the pull request out, builds, tests and reports, without writing to GitHub.
+- **Agent review:** starts an agent that checks the pull request out, builds, tests and reports, without writing to GitHub.
 
 ## Reviews
 
@@ -98,7 +98,7 @@ You ask for a review from the agent's terminal; it opens in Herdr; your comments
 
 ## Start agent
 
-**Start agent** on an issue, or **Review with agent** on a pull request, opens a dialog: pick an installed agent (your last one is remembered), a **mode**, the branch and the prompt.
+**Start agent** on an issue, or **Agent review** on a pull request, opens a dialog: pick an installed agent (your last one is remembered), a **mode**, the branch and the prompt.
 
 - **Issues:** Work on it, Plan first, Investigate only.
 - **Pull requests:** Review (read-only), Address review comments, Fix failing checks.

@@ -136,3 +136,40 @@ test("loadAvatars: one try per GitHub login, bots, odd names and Enterprise skip
   assert.equal(most, 4, "at most 4 downloads at once");
   state.exec = null;
 });
+
+// The stack modes: Review stack and Fix stack to merge, next to the pull request modes.
+import { MODES, PLACEHOLDERS, promptModes, placeholdersOf, repoPrompts } from "../shared/prompts.js";
+
+test("prompts: stack modes fill every placeholder", () => {
+  const vars = Object.fromEntries(PLACEHOLDERS.stack.map((k) => [k, `v-${k}`]));
+  for (const mode of ["stack-review", "stack-fix"]) {
+    const out = fill(DEFAULTS[mode], vars);
+    assert.doesNotMatch(out, /\{[a-z]+\}/, `${mode} leaves no placeholder`);
+  }
+});
+
+test("prompts: the PRs mod's Prompts dialog lists the stack modes", () => {
+  assert.deepEqual(promptModes("pr").map(([id]) => id), ["review", "comments", "checks", "stack-review", "stack-fix"]);
+  assert.deepEqual(promptModes("issue"), MODES.issue);
+  assert.deepEqual(placeholdersOf("stack-fix"), PLACEHOLDERS.stack);
+  assert.deepEqual(placeholdersOf("review"), PLACEHOLDERS.pr);
+  assert.deepEqual(placeholdersOf("work"), PLACEHOLDERS.issue);
+});
+
+test('prompts: a "## Review stack" section in .herdr/prompts.md is the stack-review template', async () => {
+  state.files["/repo/.herdr/prompts.md"] = "## Review stack\nLook at {layers}.\n\n## Fix stack to merge\nFix {blockers}.\n";
+  try {
+    const r = await repoPrompts("/repo", null);
+    assert.equal(r.templates["stack-review"], "Look at {layers}.");
+    assert.equal(r.templates["stack-fix"], "Fix {blockers}.");
+  } finally { delete state.files["/repo/.herdr/prompts.md"]; }
+});
+
+test("prompts: stack-fix uses gh stack and never merges", () => {
+  const t = DEFAULTS["stack-fix"];
+  for (const s of ["gh stack checkout {top}", "gh stack rebase --upstack", "gh stack push", "Never merge"]) assert.ok(t.includes(s), s);
+});
+
+test("prompts: stack-fix says what to do with a layer checked out in another worktree", () => {
+  assert.match(DEFAULTS["stack-fix"], /checked out in another worktree/);
+});
