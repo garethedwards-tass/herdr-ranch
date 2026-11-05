@@ -19,5 +19,6 @@ The output will be one of:
 
 1. The exact text `The user approved.` The user approved your last message as it is. Acknowledge with one sentence ("Approved.") and stop. Do not begin any work.
 2. Empty. The user discarded the review. Acknowledge with one sentence ("Review discarded.") and stop. Do not begin any work.
+   `A newer review of the same document replaced this one.` means the same: a later review of it took over. Acknowledge with one sentence and stop.
 3. Feedback starting with `# Message Feedback`. Address it: the user reviewed your last message and left comments on specific parts of it.
 4. A `ranch-review:` error saying the last message can't be read (an agent other than Claude Code or Codex). Run `ranch-review last --stdin` yourself with your last message on stdin, then handle its output as in 1 to 3.

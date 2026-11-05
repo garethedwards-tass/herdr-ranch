@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MOD, MAX_TEXT, MAX_BYTES, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText } from "../mods/herdr-ranch-reviews/reviews.js";
+import { MOD, MAX_TEXT, MAX_BYTES, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText, docKey, splitBlocks, carryDraft } from "../mods/herdr-ranch-reviews/reviews.js";
 
 const HOME = os.homedir();
 const APP = process.env.HERDR_APP_HOME || path.join(HOME, ".config", "herdr-app");
@@ -218,9 +218,25 @@ async function main() {
   const review = {
     id, kind: cmd === "last" ? "last" : "file", title, path: file, cwd: process.cwd(), repo: repoOf(process.cwd()), text,
     agent, status: "open", createdAt: new Date().toISOString(), waiting: { pid: process.pid },   };
+  // One review per document: an open review of the same file (or this agent's last message) is
+  // replaced by this one, which takes over its unsent comments.
+  const older = [];
+  for (const f of fs.readdirSync(DIR)) {
+    if (!f.endsWith(".json")) continue;
+    const r = readReview(path.join(DIR, f));
+    if (r?.status === "open" && docKey(r) === docKey(review)) older.push(r);
+  }
+  older.sort((a, b) => (a.id < b.id ? 1 : -1));
+  const draft = older.find((r) => r.draft?.length)?.draft;
+  if (draft) review.draft = carryDraft(draft, splitBlocks(text));
   const bytes = Buffer.byteLength(JSON.stringify(review, null, 2));
   if (bytes > MAX_BYTES) fail(`the text is too big to review (${Math.round(bytes / 1024)} KB as a review file, at most ${MAX_BYTES / 1024} KB).`);
   writeAtomic(where, review);
+  for (const r of older) {
+    updateReview(path.join(DIR, `${r.id}.json`), (x) => (x.status === "open"
+      ? { ...x, status: "dismissed", supersededBy: { id, terminal: agent.terminal ?? null }, draft: null, finishedAt: new Date().toISOString(), result: { decision: "dismissed", comments: [] } }
+      : null));
+  }
   const tty = agentTty();
   reportStatus(tty, agent.app, "blocked", `Review ${title} in Herdr`);
 
@@ -258,6 +274,14 @@ async function main() {
     if (!r && fs.existsSync(where)) continue;
     if (!r) { process.stdout.write(json ? `${JSON.stringify({ decision: "dismissed" })}\n` : ""); reportStatus(tty, agent.app, "working"); return 0; }
     if (r.status === "open") continue;
+    // Replaced by a newer review of the same document: this one ends with no answer. Its agent's
+    // status stays as the newer review set it when that review is for the same agent.
+    if (r.supersededBy) {
+      fs.rmSync(where, { force: true });
+      process.stdout.write(json ? `${JSON.stringify({ decision: "superseded", by: r.supersededBy.id })}\n` : "A newer review of the same document replaced this one.\n");
+      if (r.supersededBy.terminal !== agent.terminal) reportStatus(tty, agent.app, "working");
+      return 0;
+    }
     // Approved and dismissed reviews are done with: removed. Sent feedback stays in Reviews for a week.
     if (r.status === "approved" || r.status === "dismissed") fs.rmSync(where, { force: true });
     else updateReview(where, (x) => ({ ...x, delivery: "cli", deliveredAt: new Date().toISOString(), waiting: null }));

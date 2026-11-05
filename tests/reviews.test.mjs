@@ -2,7 +2,7 @@
 // Run: cd tests && npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { imageOnly, copyText, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
+import { imageOnly, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
 
 const kinds = (md) => splitBlocks(md).map((b) => `${b.kind}:${b.start}-${b.end}`);
 
@@ -91,15 +91,62 @@ test("helpers: quoteOf trims and cuts, stateOf, newId sorts by time", () => {
   assert.ok(newId(1.7e12, () => 0.99) < newId(1.7e12 + 1, () => 0));
 });
 
-test("copyText: a quote loses its markers, other blocks stay Markdown", () => {
-  assert.equal(copyText({ kind: "quote", text: "> Hoi [A](https://x)\n>\n> 1. one\n>    more" }), "Hoi [A](https://x)\n\n1. one\n   more");
-  assert.equal(copyText({ kind: "item", text: "- **bold** item" }), "- **bold** item");
-  assert.equal(copyText(null), "");
-});
 
 test("imageOnly: a block of only images, linked or titled; anything else is null", () => {
   assert.deepEqual(imageOnly("![Issues: the list](herdr-ranch-issues/preview.png)"), [{ alt: "Issues: the list", src: "herdr-ranch-issues/preview.png" }]);
   assert.deepEqual(imageOnly('[![a](x.png "t")](https://e.x)\n![b](y.png)'), [{ alt: "a", src: "x.png" }, { alt: "b", src: "y.png" }]);
   assert.equal(imageOnly("Text with ![a](x.png) inside"), null);
   assert.equal(imageOnly(""), null);
+});
+
+test("matchBlocks: the visible text when rendered, the Markdown in Source; empty is null", () => {
+  const blocks = splitBlocks(["# Title", "", "See [the guide](https://example.com/Guide).", "", "**Bold** words"].join("\n"));
+  assert.equal(matchBlocks(blocks, "  "), null);
+  assert.deepEqual(matchBlocks(blocks, "GUIDE"), [1]);
+  assert.deepEqual(matchBlocks(blocks, "example.com"), []);
+  assert.deepEqual(matchBlocks(blocks, "example.com", true), [1]);
+  assert.deepEqual(matchBlocks(blocks, "bold words"), [2]);
+  assert.deepEqual(matchBlocks(blocks, "**bold", true), [2]);
+});
+
+test("countMatches: every occurrence, in the visible text or the Markdown", () => {
+  const blocks = splitBlocks(["Fox and fox", "", "[a fox](https://fox.dev)"].join("\n"));
+  assert.equal(countMatches(blocks, "fox"), 3);
+  assert.equal(countMatches(blocks, "fox", true), 4);
+  assert.equal(countMatches(blocks, " "), 0);
+});
+
+test("hitsIn: cuts a line around every match, case-insensitive", () => {
+  assert.deepEqual(hitsIn("a Foo b foo", "foo"), [["a ", false], ["Foo", true], [" b ", false], ["foo", true]]);
+  assert.deepEqual(hitsIn("nothing", "x"), [["nothing", false]]);
+  assert.deepEqual(hitsIn("abc", ""), [["abc", false]]);
+});
+
+test("docKey and newestPerDoc: one review per file, per agent's last message", () => {
+  const a = { id: "m1", kind: "file", path: "/r/a.md" }, a2 = { id: "m3", kind: "file", path: "/r/a.md" };
+  const l = { id: "m2", kind: "last", agent: { terminal: "t1" } }, odd = { id: "m4", kind: "last" };
+  assert.equal(docKey(a), "file:/r/a.md");
+  assert.equal(docKey(l), "last:t1");
+  assert.equal(docKey(odd), "id:m4");
+  assert.deepEqual(newestPerDoc([a, l, a2, odd]).map((r) => r.id).sort(), ["m2", "m3", "m4"]);
+});
+
+test("carryDraft: block comments follow their block, lost ones turn general", () => {
+  const blocks = splitBlocks(["# New title", "", "Kept paragraph here.", "", "Other"].join("\n"));
+  const draft = [
+    { key: "a", block: 0, start: 1, end: 1, quote: "Kept paragraph", text: "keep" },
+    { key: "b", block: 2, start: 5, end: 5, quote: "Gone text", text: "lost" },
+    { key: "c", text: "general" },
+  ];
+  const out = carryDraft(draft, blocks);
+  assert.deepEqual(out[0], { key: "a", block: 1, start: 3, end: 3, quote: "Kept paragraph", text: "keep" });
+  assert.equal(out[1].block, undefined);
+  assert.equal(out[1].text, '(line 5 before the update: "Gone text") lost');
+  assert.deepEqual(out[2], { key: "c", text: "general" });
+});
+
+test("markHits: marks matches, not code spans, link targets or tags", () => {
+  assert.equal(markHits("The Fox and the fox", "fox"), "The <mark>Fox</mark> and the <mark>fox</mark>");
+  assert.equal(markHits("`fox` and [fox](https://fox.dev) <b>fox</b>", "fox"), "`fox` and [<mark>fox</mark>](https://fox.dev) <b><mark>fox</mark></b>");
+  assert.equal(markHits("text", ""), "text");
 });

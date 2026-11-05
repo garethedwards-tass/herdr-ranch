@@ -1,1 +1,1 @@
-{"version": "0.3.0", "place": "none", "title": "Reviews · Herdr Ranch", "overlay": {"kind": "window", "key": "herdr-ranch-reviews", "width": 0.7, "height": 0.85}, "button": {"label": "Reviews", "icon": "reviews.svg", "opens": "panel", "order": 35}, "background": true}
+{"version": "0.4.0", "place": "none", "title": "Reviews · Herdr Ranch", "overlay": {"kind": "window", "key": "herdr-ranch-reviews", "width": 0.7, "height": 0.85}, "button": {"label": "Reviews", "icon": "reviews.svg", "opens": "panel", "order": 35}, "background": true}

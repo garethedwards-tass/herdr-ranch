@@ -2,6 +2,14 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
+## v0.4.0
+
+- **Reviews:** a review opens as a tab of its own in the shown space instead of a modal dialog; opening it again selects that tab. The cog's **Shows in** setting switches it back to **Modal**.
+- **Reviews:** one review per document. Asking again for the same file (or the same agent's last message) replaces the open review: the list shows one row, the tab or dialog already open switches to the newest version, and unsent comments move over (a comment whose block is gone becomes a general one). The replaced `ranch-review` prints "A newer review of the same document replaced this one." Older duplicates are cleaned up the same way.
+- **Reviews:** search the document: **⌘F** or the box in the header highlights the matching words in every block, with the number of matches beside the box; Esc or × clears it.
+- **Reviews:** select text in a rendered block and copy it with ⌘C. A drag or double-click selects; a single click still opens a comment on the block. Right-click no longer copies the whole block.
+- **Reviews:** the header's **Rendered | Source** switch shows icons, and **👍 Looks good** in the comment box is just **👍**: the agent gets "Ok" on the block (shown on hover).
+
 ## v0.3.0
 
 - **Pull requests:** a stack of dependent pull requests shows as one row with its layers under it, numbered from the bottom. A search or filter keeps the whole stack and greys the layers that don't match. **Agent review** on the stack row starts one agent on the whole stack: **Review stack**, or **Fix stack to merge** (needs `gh stack`) ([#9](https://github.com/jslowack/herdr-ranch/issues/9)).

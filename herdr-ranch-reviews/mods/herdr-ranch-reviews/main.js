@@ -9,10 +9,10 @@
 // more, the feedback is pasted into the agent's terminal once it is idle (`hc send --if idle`).
 
 import { View, div, image, svg } from "gpui-kit";
-import { v_flex, h_flex, TextareaState, Textarea, TextView } from "gpui-base";
+import { v_flex, h_flex, TextareaState, Textarea, TextView, InputState, Input } from "gpui-base";
 import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
 import { VERSION, updateState, checkForUpdate, installKind, updateNow, AGENT_LINE } from "./update.js";
-import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, copyText, imageOnly } from "./reviews.js";
+import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, imageOnly, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
 const fileOf = (id) => `${DIR()}/${id}.json`;
@@ -41,6 +41,8 @@ async function update(id, change) {
 //   open: "agent" (the default): the waiting agent shows under Needs you (the CLI reports it), the
 //         Reviews button counts it, and going to that agent opens the review; "open" opens the
 //         review right away. (Older values, "notify", "list" and "auto", count as these.)
+//   view: "tab" (the default): a review opens as a tab of its own in the shown space; "dialog"
+//         opens it as a modal dialog over the window.
 //   sent: how many sent reviews the list shows ("0" hides them).
 //   scope: "space" (the shown space's reviews) or "all".
 const PREFS = "mod-settings";
@@ -48,6 +50,7 @@ const pref = (key, fallback) => shared(PREFS)?.[MOD]?.[key] ?? fallback;
 const setPref = (key, value) => { const all = shared(PREFS) ?? {}; setShared(PREFS, { ...all, [MOD]: { ...all[MOD], [key]: value } }); };
 const SETTINGS = [
   { key: "open", label: "Opens", choices: [["agent", "On agent focus"], ["open", "Immediately"]], fallback: "agent" },
+  { key: "view", label: "Shows in", choices: [["tab", "Tab"], ["dialog", "Modal"]], fallback: "tab" },
   { key: "sent", label: "Sent shown", choices: [["0", "None"], ["10", "10"], ["25", "25"], ["50", "50"]], fallback: "10" },
 ];
 const openSettings = () => openOverlay({ mod: MOD, kind: "popup", width: 300, props: { settings: true } });
@@ -113,9 +116,44 @@ async function listReviews() {
   return (await Promise.all(ids.map((id) => load(id)))).filter(Boolean).map((got) => got.review);
 }
 
-// Opens a review as a dialog over the window, like the page of a pull request or an issue.
+// One tab (or dialog) per document (docKey: a file's path, an agent's last message), shared by
+// this mod's copies: { [doc key]: tab id } and { [doc key]: overlay id }. The page records its own
+// tab when it opens (run("tab.new") returns nothing to tell it by), and follows a newer review
+// of its document (see ReviewPage.follow).
+const TABS = `${MOD}-tabs`, DIALOGS = `${MOD}-dialogs`;
+const dialogOf = (key) => shared(DIALOGS)?.[key] ?? null;
+const rememberDialog = (key, overlay) => { const all = { ...(shared(DIALOGS) ?? {}) }; if (overlay) all[key] = overlay; else delete all[key]; setShared(DIALOGS, all); };
+const allTabs = () => spaces().flatMap((s) => (s.tabs ?? []).map((tab) => ({ ...tab, space: s.id })));
+const tabOf = (id) => { const tab = shared(TABS)?.[id]; return tab ? allTabs().find((x) => x.id === tab) ?? null : null; };
+function rememberTab(id, tab) {
+  const live = new Set(allTabs().map((x) => x.id));
+  const next = Object.fromEntries(Object.entries(shared(TABS) ?? {}).filter(([k, v]) => k !== id && live.has(v)));
+  if (tab) next[id] = tab;
+  setShared(TABS, next);
+}
+const tabName = (r) => { const s = r?.kind === "last" ? "Review: last message" : `Review: ${r?.title ?? "document"}`; return s.length > 40 ? `${s.slice(0, 39)}…` : s; };
+
+// Opens a review as a tab of its own in the shown space (the default), or, with Shows in: Modal,
+// as a dialog over the window, like the page of a pull request or an issue. When its document
+// already has a tab, that tab is selected (its page shows the newest review); an open dialog of
+// it stays the only one.
 function openReview(review) {
-  openOverlay({ mod: MOD, kind: "dialog", modal: true, width: 1240, height: 0.9, props: { review: review.id } });
+  const go = (r) => {
+    const key = docKey(r);
+    if (pref("view", "tab") === "dialog") {
+      if (!dialogOf(key)) openOverlay({ mod: MOD, kind: "dialog", modal: true, width: 1240, height: 0.9, props: { review: r.id } });
+      return;
+    }
+    const open = tabOf(key);
+    if (open) {
+      if (!spaces().find((s) => s.id === open.space)?.active) run("space.select", { id: open.space });
+      run("tab.select", { id: open.id });
+      return;
+    }
+    run("tab.new", { name: tabName(r), mod: MOD, props: { review: r.id, tabbed: true } });
+  };
+  if (review.kind) go(review);
+  else load(review.id).then((got) => go(got?.review ?? review), () => go(review));
 }
 
 class ReviewList {
@@ -155,7 +193,8 @@ class ReviewList {
   render(t, cx) {
     const scope = pref("scope", "space"), space = scope === "space" ? spaces().find((x) => x.active) ?? null : null;
     if (space) this.repoOf(space.folder, cx);
-    const shown = this.reviews.filter((r) => inSpace(r, space, this.repos));
+    // One row per document: its newest review.
+    const shown = newestPerDoc(this.reviews.filter((r) => inSpace(r, space, this.repos))).sort((a, b) => (a.id < b.id ? 1 : -1));
     const waiting = shown.filter((r) => r.status === "open");
     // Approved and dismissed reviews leave the list: only feedback you sent stays, for a week,
     // the newest `sent` of them.
@@ -219,10 +258,50 @@ class ReviewList {
   }
 }
 
-// Closes this copy's dialog (a review shown elsewhere stays).
-function closeSelf() { const o = props()?.overlay; if (o) closeOverlay(o); }
+// Closes this copy's dialog, or its tab (a review shown elsewhere stays).
+const tabbed = () => Boolean(props()?.tabbed);
+function closeSelf(key) {
+  const o = props()?.overlay;
+  if (o) { if (key && dialogOf(key) === o) rememberDialog(key, null); closeOverlay(o); return; }
+  if (!tabbed() || !key) return;
+  const tab = tabOf(key);
+  if (tab) { rememberTab(key, null); run("tab.close", { id: tab.id, confirmed: true }); }
+}
+
+// A review's tab records itself: the shown tab holding a Reviews pane that no other review owns
+// (tab.new selects the tab it makes). Tried for a second, while the tab settles.
+function claimTab(id, cx) {
+  cx.spawn(async (cx) => {
+    for (let i = 0; i < 20; i++) {
+      const owned = new Set(Object.entries(shared(TABS) ?? {}).filter(([k]) => k !== id).map(([, v]) => v));
+      const tab = spaces().find((s) => s.active)?.tabs?.find((x) => x.active);
+      if (tab && !owned.has(tab.id) && panes().some((p) => p.tab === tab.id && p.mod === MOD)) { rememberTab(id, tab.id); return; }
+      await new Promise((resolve) => cx.timer.after(50, () => resolve()));
+    }
+  });
+}
 
 // --- One review ------------------------------------------------------------------------------
+
+// The Rendered | Source icons (Lucide's eye and code, ISC license). svg() reads only real
+// files under the app's home, not a linked mod folder, so they are written to
+// data/herdr-ranch/icons once (again only when one differs). An icon takes the text color.
+const ICONS = "data/herdr-ranch/icons";
+const ICON_BODIES = {
+  "review-rendered": '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
+  "review-source": '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+};
+let iconsWritten = null;
+const writeIcons = () => iconsWritten ??= (async () => {
+  const dir = `${appHome()}/${ICONS}`;
+  await exec("mkdir", ["-p", dir]).catch(() => null);
+  for (const [name, body] of Object.entries(ICON_BODIES)) {
+    const path = `${dir}/${name}.svg`;
+    const text = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>\n`;
+    const now = await readTextFile(path).catch(() => null);
+    if (now !== text) await writeTextFile(path, text, now).catch(() => null);
+  }
+})();
 
 class ReviewPage {
   constructor(id) {
@@ -231,15 +310,30 @@ class ReviewPage {
     this.editing = null; // { key, block (index or null), state }
     this.source = false; this.busy = false; this.note = null;
     this.focus = null; // the block a clicked comment points at, highlighted
+    // Search: every block stays and the matching words are highlighted. No jump to a match:
+    // a mod can't scroll the document from code (see RECIPE, Watch out).
+    this.search = InputState.new({ placeholder: "Search  ⌘F" });
+    this.search.on("change", (_e, cx) => cx.notify());
   }
 
   load(cx) {
+    cx.spawn(async (cx) => { await writeIcons(); cx.notify(); });
     cx.spawn(async (cx) => {
       const got = await load(this.id);
-      if (!got) { this.missing = true; cx.notify(); return; }
-      this.review = got.review;
+      if (!got) {
+        // Gone before it showed: its tab still needs × to close it.
+        this.missing = true; this.key = `id:${this.id}`;
+        if (tabbed() && !tabOf(this.key)) claimTab(this.key, cx);
+        cx.notify(); return;
+      }
+      // Opened on a review that a newer one of its document replaced: show that one.
+      if (got.review.status !== "open" && (await this.follow(cx, got.review))) return;
+      this.review = got.review; this.key = docKey(got.review);
       this.blocks = splitBlocks(got.review.text);
       if (got.review.draft && !this.comments.length) this.comments = got.review.draft;
+      const o = props()?.overlay;
+      if (o) rememberDialog(this.key, o);
+      else if (tabbed() && !tabOf(this.key)) claimTab(this.key, cx);
       cx.notify();
     });
   }
@@ -295,11 +389,11 @@ class ReviewPage {
     this.saveDraft(cx); cx.notify();
   }
 
-  // 👍 on a block, from its comment box: a "Looks good" note on it (Plannotator's quick label).
+  // 👍 on a block, from its comment box: an "Ok" note on it (Plannotator's quick label).
   thumbs(i, cx) {
     if (this.review?.status !== "open") return;
     if (this.comments.some((c) => c.block === i && c.thumbs)) return;
-    { const b = this.blocks[i]; this.comments.push({ key: `t${Date.now().toString(36)}`, block: i, start: b.start, end: b.end, quote: quoteOf(b.text, 120), text: "👍 Looks good", thumbs: true }); }
+    { const b = this.blocks[i]; this.comments.push({ key: `t${Date.now().toString(36)}`, block: i, start: b.start, end: b.end, quote: quoteOf(b.text, 120), text: "👍 Ok", thumbs: true }); }
     this.saveDraft(cx); cx.notify();
   }
 
@@ -350,6 +444,7 @@ class ReviewPage {
   }
 
   cancelEdit(cx) { this.editing?.state.release?.(); this.editing = null; this.refocus(); cx.notify(); }
+  clearSearch(cx) { this.search.set_value(""); this.refocus(); cx.notify(); }
   refocus() { try { this.handle?.focus(); } catch { /* not shown yet */ } }
   removeComment(key, cx) { this.comments = this.comments.filter((c) => c.key !== key); this.saveDraft(cx); cx.notify(); }
 
@@ -372,7 +467,7 @@ class ReviewPage {
       // (deliver), so this dialog closes now. Without a watcher (another layout), it delivers.
       if (!(await watcherAlive())) await deliver(this.id, cx);
       this.busy = false; cx.notify();
-      closeSelf();
+      closeSelf(this.key);
     });
   }
 
@@ -380,7 +475,7 @@ class ReviewPage {
     if (this.missing) return h_flex().size_full().items_start().bg(t.background).p(16).gap(8)
       .child(div().flex_1().text_color(t.dim).child("This review is gone (removed, or older than a week)."))
       .child(div().id("close").size(26).flex_none().flex().items_center().justify_center().rounded(6).text_size(16).text_color(t.muted)
-        .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => closeSelf()).child("×"));
+        .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(() => closeSelf(this.key)).child("×"));
     const r = this.review;
     if (!r) return v_flex().size_full().bg(t.background).p(16).text_color(t.dim).child("Loading…");
     const open = r.status === "open";
@@ -389,15 +484,27 @@ class ReviewPage {
       .when(enabled && !this.busy, (e) => e.cursor_pointer().hover((s) => s.opacity(0.85)).on_click((_e, cx) => click(cx)))
       .when(!enabled || this.busy, (e) => e.opacity(0.5))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(label);
-    const toggle = h_flex().flex_none().rounded(6).border_1().border_color(t.border).text_size(12)
-      .child(div().id("rendered").px(8).py(2).cursor_pointer().when(!this.source, (e) => e.bg(t.selected)).on_click((_e, cx) => { this.source = false; cx.notify(); }).child("Rendered"))
-      .child(div().id("source").px(8).py(2).cursor_pointer().when(this.source, (e) => e.bg(t.selected)).on_click((_e, cx) => { this.source = true; cx.notify(); }).child("Source"));
+    // Rendered | Source, as icons (an eye, </>), named on hover. See ICONS.
+    const view = (id, tip, on, source) => div().id(id).tooltip(tip).h(24).w(28).flex().items_center().justify_center().cursor_pointer()
+      .text_color(on ? t.foreground : t.muted).when(on, (e) => e.bg(t.selected)).hover((s) => s.text_color(t.foreground))
+      .on_click((_e, cx) => { this.source = source; cx.notify(); }).child(svg(`${ICONS}/review-${id}.svg`).size(14).flex_none().text_color(on ? t.foreground : t.muted));
+    const toggle = h_flex().flex_none().rounded(6).border_1().border_color(t.border).overflow_hidden()
+      .child(view("rendered", "Rendered", !this.source, false))
+      .child(view("source", "Source (Markdown)", this.source, true));
     const n = this.comments.length;
+    const query = this.search.value().trim(), hits = matchBlocks(this.blocks, query, this.source) ?? [];
+    const matches = countMatches(this.blocks, query, this.source);
     const status = open ? (r.waiting ? "agent waiting" : "waiting") : stateOf(r) === "undelivered" ? "not delivered" : stateOf(r);
     const header = h_flex().flex_none().px(12).py(8).gap(8).items_center().border_b(1).border_color(t.border)
       .child(v_flex().flex_1().min_w(0)
         .child(div().font_semibold().truncate().child(r.kind === "last" ? "Last message" : r.title))
         .child(div().text_size(11).text_color(t.dim).truncate().child([r.agent?.app ?? "agent", status, r.kind === "file" ? r.path : null].filter(Boolean).join(" · "))))
+      .child(h_flex().id("search").flex_none().w(220).gap(6).items_center().px(8).py(3).rounded(6).border_1().border_color(query ? t.accent : t.border).text_size(12)
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .child(div().flex_1().min_w(0).child(Input.new(this.search)))
+        .when(Boolean(query), (e) => e.child(div().flex_none().text_size(11).text_color(hits.length ? t.dim : t.ansi1).child(`${matches} match${matches === 1 ? "" : "es"}`))
+          .child(div().id("search-clear").flex_none().cursor_pointer().text_color(t.dim).hover((s) => s.text_color(t.foreground))
+            .on_click((_e, cx) => this.clearSearch(cx)).child("×"))))
       .child(toggle)
       // No "approve with notes": a general comment plus Send covers it. ⌘⇧↵ sends, or approves with no comments.
       // What each button tells the agent, on hover too.
@@ -405,10 +512,10 @@ class ReviewPage {
         .when(!n, (e) => e.child(btn("approve", "Approve as is  ⌘⇧↵", (cx) => this.finish("approved", cx), true, true, "Tell the agent it's good as it is (no comments)")))
         .when(n > 0, (e) => e.child(btn("send", `Send ${n} comment${n === 1 ? "" : "s"}  ⌘⇧↵`, (cx) => this.finish("annotated", cx), true, true, "Send your comments to the agent"))))
       .when(!open && stateOf(r) === "undelivered", (e) => e.child(btn("copy", "Copy feedback", (cx) => { cx.write_to_clipboard(pastePrompt(r)); notify({ title: "Copied", level: "info", timeout: 2000 }); })))
-      // × closes the dialog only: the review keeps waiting, with its unsent comments, in Reviews.
-      .when(Boolean(props()?.overlay), (e) => e.child(div().id("close").size(26).flex_none().flex().items_center().justify_center().rounded(6).text_size(16)
+      // × closes the dialog or tab only: the review keeps waiting, with its unsent comments, in Reviews.
+      .when(Boolean(props()?.overlay) || tabbed(), (e) => e.child(div().id("close").size(26).flex_none().flex().items_center().justify_center().rounded(6).text_size(16)
         .text_color(t.muted).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { if (this.editing) this.saveEdit(cx); closeSelf(); }).child("×")));
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { if (this.editing) this.saveEdit(cx); closeSelf(this.key); }).child("×")));
 
     // The document: one row per block, with its source lines (and comment numbers) on the right.
     // A click on a block comments on it.
@@ -426,18 +533,22 @@ class ReviewPage {
             : div().id(`pic-${i}-${k}`).text_size(13).text_color(t.dim).child(`🖼 ${p.alt || p.src}`);
         }))
         : this.source || b.kind === "frontmatter"
-        ? v_flex().flex_1().min_w(0).text_size(12).text_color(t.foreground).children(b.text.split("\n").map((l, k) => div().id(`s-${i}-${k}`).min_h(16).child(l || " ")))
-        : div().flex_1().min_w(0).text_size("15px").line_height("24px").child(TextView.markdown(`b-${i}`, b.text).selectable(false));
+        ? v_flex().flex_1().min_w(0).text_size(12).text_color(t.foreground).children(b.text.split("\n").map((l, k) => (query && l.toLowerCase().includes(query.toLowerCase())
+          ? h_flex().id(`s-${i}-${k}`).min_h(16).children(hitsIn(l, query).map(([part, hit], m) => div().id(`s-${i}-${k}-${m}`).when(hit, (e) => e.bg(t.ansi3 + "55").rounded(2)).child(part)))
+          : div().id(`s-${i}-${k}`).min_h(16).child(l || " "))))
+        : div().flex_1().min_w(0).text_size("15px").line_height("24px").child(TextView.markdown(`b-${i}`, query && b.kind !== "code" ? markHits(b.text, query) : b.text).selectable(true));
       return h_flex().id(`blk-${i}`).w_full().gap(10).items_start().px(30).py(b.kind === "heading" ? 10 : item ? 1 : 6)
         .child(h_flex().flex_1().min_w(0).gap(10).items_start().px(10).py(2).rounded(6).border_1()
           .border_color(lit ? t.accent : "#00000000").when(Boolean(marks) || lit, (e) => e.bg(t.selected))
-          .when(open, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.focus = null; this.edit(i, cx); }))
-          // Right-click copies the block (text selection is off, see TextView above).
-          .on_mouse_down("right", (_e, cx) => {
-            cx.stop_propagation();
-            cx.write_to_clipboard(copyText(b));
-            notify({ title: `Copied ${lineLabel(b.start, b.end)}`, level: "info", timeout: 2000 });
-          })
+          // A click comments on the block; a drag (selecting text to copy with ⌘C) or a
+          // double-click (selecting a word) doesn't. Decided on release, from where it was pressed.
+          .when(open, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover))
+            .on_mouse_down("left", (ev) => { this.press = { i, x: ev.position.x, y: ev.position.y }; })
+            .on_mouse_up("left", (ev, cx) => {
+              const p = this.press; this.press = null;
+              if (!p || p.i !== i || ev.click_count > 1 || Math.hypot(ev.position.x - p.x, ev.position.y - p.y) > 4) return;
+              this.focus = null; this.edit(i, cx);
+            }))
           .child(content)
           // The comment numbers (or 👍) and the source lines, on one line.
           .child(h_flex().flex_none().min_w(52).gap(5).items_center().justify_end()
@@ -458,7 +569,7 @@ class ReviewPage {
           .child(div().id(`img-x-${k}`).absolute().top(0).right(0).px(3).rounded(3).bg(t.background).text_size(10).cursor_pointer()
             .on_click((_e, cx) => { this.editing.images.splice(k, 1); cx.notify(); }).child("×"))))))
       .child(h_flex().gap(6).justify_end()
-        .when(this.editing.block !== null, (e) => e.child(btn("thumbs", "👍 Looks good", (cx) => { const i = this.editing.block; this.cancelEdit(cx); this.thumbs(i, cx); })))
+        .when(this.editing.block !== null, (e) => e.child(btn("thumbs", "👍", (cx) => { const i = this.editing.block; this.cancelEdit(cx); this.thumbs(i, cx); }, false, true, "Sends \"Ok\" on this block")))
         .child(div().flex_1())
         .child(btn("cancel-edit", "Cancel", (cx) => this.cancelEdit(cx)))
         .child(btn("save-edit", "Save (⌘↵)", (cx) => this.saveEdit(cx), true)));
@@ -490,7 +601,9 @@ class ReviewPage {
       .when(Boolean(this.handle), (e) => e.track_focus(this.handle))
       .key_context("RanchReview")
       .on_action("ranch_review_send", (_e, cx) => { if (open) this.send(cx); })
+      .on_action("ranch_review_find", () => this.search.focus())
       .on_key_down((e, cx) => {
+        if (e.key === "escape" && query && !this.editing) { this.clearSearch(cx); cx.stop_propagation(); return; }
         const chord = e.keystroke === "cmd-shift-enter" || (e.key === "enter" && e.modifiers?.platform && e.modifiers?.shift);
         if (!open || !chord) return;
         this.send(cx);
@@ -562,7 +675,17 @@ function watcher(view, cx) {
   // `touch`: writeTextFile won't replace a file without its current text.
   const beat = () => exec("touch", [`${DIR()}/${HEARTBEAT}`]).catch(() => null);
   const scan = async (first) => {
-    const all = await listReviews();
+    let all = await listReviews();
+    // One open review per document: an older one is replaced by the newest (the CLI does this
+    // when it asks; this catches reviews from before, or from an older CLI).
+    const newest = new Map(newestPerDoc(all.filter((x) => x.status === "open")).map((x) => [docKey(x), x]));
+    const replaced = all.filter((x) => x.status === "open" && newest.get(docKey(x)) !== x);
+    for (const x of replaced) {
+      const n = newest.get(docKey(x));
+      if (x.draft?.length && !n.draft?.length) await update(n.id, (r) => (r.status === "open" && !r.draft?.length ? { ...r, draft: carryDraft(x.draft, splitBlocks(r.text)) } : r));
+      await update(x.id, (r) => (r.status === "open" ? { ...r, status: "dismissed", supersededBy: { id: n.id, terminal: n.agent?.terminal ?? null }, draft: null, finishedAt: new Date().toISOString(), result: { decision: "dismissed", comments: [] } } : r));
+    }
+    if (replaced.length) all = await listReviews();
     waiting = all.filter((x) => x.status === "open");
     await publishBadge(all);
     for (const x of all) if (x.status !== "open" && !x.delivery) cx.spawn(async (cx) => { await deliver(x.id, cx); });
@@ -582,6 +705,7 @@ function watcher(view, cx) {
   };
   cx.spawn(async () => {
     await exec("mkdir", ["-p", DIR()]).catch(() => null);
+    setShared(DIALOGS, {}); // dialogs don't outlive Herdr; the watcher starts with it
     await beat(); await scan(true);
     try { for (;;) { const changed = await watchFolder(DIR()); if (changed.some((f) => f.endsWith(".json"))) await scan(false); } } catch { /* reloading */ }
   });
@@ -602,6 +726,9 @@ function watcher(view, cx) {
 export default class Reviews extends View {
   watch(cx) { this.watching = true; watcher(this, cx); }
 
+  // A dialog closed any way (Esc, a click outside) is no longer its document's.
+  async close() { const o = props()?.overlay, k = this.page?.key; if (o && k && dialogOf(k) === o) rememberDialog(k, null); }
+
   init(_props, cx) {
     // Opened by `ranch-review` as a pane beside the agent: open the review as a dialog, then
     // close that pane again (a mod can't open a dialog from outside).
@@ -619,14 +746,16 @@ export default class Reviews extends View {
       cx.spawn(async () => { await publishBadge(); });
       // No watcher runs (the CLI splits a launcher only then), so nothing could open it later:
       // open it now.
+      const before = new Set(allTabs().map((x) => x.id)), reviewTabs = new Set(Object.values(shared(TABS) ?? {}));
       openReview({ id: String(launch) });
-      // Reviews never live in a pane any more, so every Reviews pane in the agent's tab is a
-      // launcher (this one, or one left over): close them once the new pane exists.
+      // A Reviews pane split into a tab is a launcher (this one, or one left over): close the
+      // ones in the agent's tab once the new pane exists. A review's own tab (Shows in: Tab) is
+      // not one: it is new, or already a review's.
       cx.spawn(async (cx) => {
         const tab = (await load(String(launch)))?.review?.agent?.tab ?? null;
         for (let i = 0; i < 10; i++) {
           await new Promise((resolve) => cx.timer.after(100, () => resolve()));
-          const mine = panes().filter((p) => p.mod === MOD && (!tab || p.tab === tab));
+          const mine = panes().filter((p) => p.mod === MOD && before.has(p.tab) && !reviewTabs.has(p.tab) && (!tab || p.tab === tab));
           if (mine.length) { for (const p of mine) run("pane.close", { pane: p.pane }); return; }
         }
       });
@@ -638,10 +767,10 @@ export default class Reviews extends View {
       this.page.handle = cx.focus_handle(); // so ⌘⇧↵ reaches the page when no editor has focus
       // ⌘⇧↵ as a key binding: it reaches the page through the comment box, which a key-down
       // handler on the page doesn't (the box takes Enter with any modifier).
-      try { cx.bind_keys([{ keystroke: "cmd-shift-enter", action: "ranch_review_send", context: "RanchReview" }]); } catch { /* the key-down fallback */ }
+      try { cx.bind_keys([{ keystroke: "cmd-shift-enter", action: "ranch_review_send", context: "RanchReview" }, { keystroke: "cmd-f", action: "ranch_review_find", context: "RanchReview" }]); } catch { /* the key-down fallback */ }
       this.page.load(cx);
       // The CLI or the list may change it (a dismiss from the list, the CLI marking delivery).
-      cx.spawn(async (cx) => { try { for (;;) { const changed = await watchFolder(DIR()); if (changed.some((p) => p.endsWith(`/${id}.json`))) this.page.refresh(cx); } } catch { /* closing */ } });
+      cx.spawn(async (cx) => { try { for (;;) { const changed = await watchFolder(DIR()); if (changed.some((p) => p.endsWith(`/${this.page.id}.json`))) this.page.refresh(cx); } } catch { /* closing */ } });
       return;
     }
     this.list = new ReviewList(this);
@@ -667,11 +796,31 @@ export default class Reviews extends View {
 ReviewPage.prototype.refresh = function refresh(cx) {
   cx.spawn(async (cx) => {
     const got = await load(this.id);
+    // Replaced by a newer review of the same document: show that one, in this tab or dialog.
+    if (!this.busy && (!got || got.review.status === "dismissed") && (await this.follow(cx, got?.review))) return;
     // Gone while shown: finished elsewhere (the CLI removes approved and discarded reviews).
-    if (!got) { if (this.review) { closeSelf(); return; } this.missing = true; cx.notify(); return; }
+    if (!got) { if (this.review) { closeSelf(this.key); return; } this.missing = true; cx.notify(); return; }
     const before = this.review?.status;
     this.review = got.review;
-    if (before === "open" && got.review.status === "dismissed" && !this.busy) closeSelf();
+    if (before === "open" && got.review.status === "dismissed" && !this.busy) closeSelf(this.key);
     cx.notify();
   });
+};
+
+// The newest open review of this page's document, newer than the one shown (its `supersededBy`,
+// or found in the folder: the replaced file may be gone already). Switches the page to it, with
+// the new review's comments (the CLI moved the unsent ones over). True when it switched.
+ReviewPage.prototype.follow = async function follow(cx, old) {
+  const key = this.key ?? (old ? docKey(old) : null);
+  if (!key) return false;
+  let next = old?.supersededBy?.id ? (await load(old.supersededBy.id))?.review : null;
+  if (!next || next.status !== "open") next = (await listReviews()).filter((r) => r.status === "open" && docKey(r) === key && r.id > this.id).sort((a, b) => (a.id < b.id ? 1 : -1))[0];
+  if (!next) return false;
+  this.editing?.state.release?.(); this.editing = null; this.focus = null; this.note = null;
+  this.id = next.id; this.review = next; this.key = key;
+  this.blocks = splitBlocks(next.text);
+  this.comments = next.draft ?? [];
+  notify({ title: "Showing the newest version of this document", body: next.title, level: "info", timeout: 3000 });
+  cx.notify();
+  return true;
 };

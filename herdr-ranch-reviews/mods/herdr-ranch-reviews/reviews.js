@@ -199,13 +199,6 @@ export function imageOnly(text) {
   return out.length ? out : null;
 }
 
-// A block as it is copied (right-click): its Markdown, with a quote's "> " markers taken off so
-// a quoted message pastes as the message itself.
-export function copyText(block) {
-  const text = String(block?.text ?? "");
-  return (block?.kind === "quote" ? text.split("\n").map((l) => l.replace(/^\s{0,3}> ?/, "")).join("\n") : text).trim();
-}
-
 // A review id: sortable by time, unique enough for one machine.
 export function newId(now = Date.now(), rand = Math.random) {
   return `${now.toString(36)}-${Math.floor(rand() * 36 ** 6).toString(36).padStart(6, "0")}`;
@@ -225,4 +218,74 @@ export function ago(iso, now = Date.now()) {
   const s = Math.max(0, (now - Date.parse(iso)) / 1000);
   if (!Number.isFinite(s)) return "";
   return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`;
+}
+
+// Search in a review. Rendered, a block matches on the text you see (no link targets, no `*_#>`
+// markers); in Source, on its Markdown. Case-insensitive; an empty query matches nothing (null).
+const visible = (text) => text.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>]/g, "");
+export function matchBlocks(blocks, query, source = false) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return null;
+  return blocks.flatMap((b, i) => ((source ? b.text : visible(b.text)).toLowerCase().includes(q) ? [i] : []));
+}
+
+// How many times `query` occurs in the blocks, counted as matchBlocks matches (0 when empty).
+export function countMatches(blocks, query, source = false) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return 0;
+  return blocks.reduce((n, b) => n + (source ? b.text : visible(b.text)).toLowerCase().split(q).length - 1, 0);
+}
+
+// A line cut into [text, hit] pieces around each match of `query`, for highlighting.
+export function hitsIn(line, query) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return [[line, false]];
+  const out = [], low = line.toLowerCase();
+  let at = 0;
+  for (let k = low.indexOf(q); k >= 0; k = low.indexOf(q, at)) {
+    if (k > at) out.push([line.slice(at, k), false]);
+    out.push([line.slice(k, k + q.length), true]);
+    at = k + q.length;
+  }
+  if (at < line.length || !out.length) out.push([line.slice(at), false]);
+  return out;
+}
+
+// One review per document: a file by its absolute path, a last message by its agent's terminal.
+// A newer review of the same document replaces an older open one (`superseded`).
+export function docKey(r) {
+  if (r?.kind === "file" && r.path) return `file:${r.path}`;
+  if (r?.kind === "last" && r.agent?.terminal) return `last:${r.agent.terminal}`;
+  return `id:${r?.id}`;
+}
+// Ids sort by time (newId), so the largest id is the newest.
+export function newestPerDoc(reviews) {
+  const best = new Map();
+  for (const r of reviews) { const k = docKey(r), b = best.get(k); if (!b || String(r.id) > String(b.id)) best.set(k, r); }
+  return [...best.values()];
+}
+
+// Unsent comments of a replaced review, moved onto the new text: a block comment goes to the
+// first block that still starts with its quote (lines updated), else it becomes a general
+// comment that says where it was. General comments move as they are.
+export function carryDraft(draft, blocks) {
+  const head = (s) => String(s ?? "").replace(/…$/, "").trim();
+  return (draft ?? []).map((c) => {
+    if (c.block == null) return c;
+    const q = head(c.quote), i = q ? blocks.findIndex((b) => b.text.trim().startsWith(q)) : -1;
+    if (i >= 0) return { ...c, block: i, start: blocks[i].start, end: blocks[i].end };
+    const { block: _b, start: _s, end: _e, ...rest } = c;
+    return { ...rest, text: `(${lineLabel(c.start, c.end)} before the update: "${quoteOf(c.quote, 60)}") ${c.text}` };
+  });
+}
+
+// A block's Markdown with each match of `query` wrapped in <mark> (Herdr's TextView shows it
+// highlighted). Code spans, link targets and HTML tags are left alone; a match that crosses
+// Markdown markers (`**Bold** words`) isn't marked, though the block still matches.
+export function markHits(markdown, query) {
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return markdown;
+  return String(markdown).split(/(`+[^`]*`+|\]\([^)]*\)|<[^>\n]+>)/).map((part, k) => (k % 2
+    ? part
+    : hitsIn(part, q).map(([text, hit]) => (hit ? `<mark>${text}</mark>` : text)).join(""))).join("");
 }
