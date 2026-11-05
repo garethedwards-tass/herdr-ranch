@@ -6,13 +6,14 @@
 // ~/.config/herdr-app/data/herdr-ranch-reviews/<id>.json, opens the Reviews mod beside the
 // agent's pane, and waits until the review is sent, approved or dismissed. The output is the
 // same as `plannotator annotate` and `plannotator last`: the feedback, "The user approved.", or
-// nothing. Exit codes: 0 done, 2 can't start a review, 130 stopped.
+// nothing. Exit codes: 0 done, 2 can't start a review, 130 stopped (the review is then closed
+// as abandoned).
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MOD, MAX_TEXT, MAX_BYTES, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText, docKey, splitBlocks, carryDraft } from "../mods/herdr-ranch-reviews/reviews.js";
+import { MOD, MAX_TEXT, MAX_BYTES, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText, docKey, splitBlocks, carryDraft, abandon, orphaned } from "../mods/herdr-ranch-reviews/reviews.js";
 
 const HOME = os.homedir();
 const APP = process.env.HERDR_APP_HOME || path.join(HOME, ".config", "herdr-app");
@@ -160,18 +161,35 @@ function lastMessage(app) {
 
 // --- Main ------------------------------------------------------------------------------------
 
+// Whether a process runs: EPERM means it does (another user's); ESRCH that it is gone.
+const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+
 function prune() {
   const old = Date.now() - KEEP_DAYS * 86400000;
   for (const f of fs.readdirSync(DIR)) {
     if (!f.endsWith(".json")) continue;
-    const r = readReview(path.join(DIR, f));
-    if (r && r.status !== "open" && Date.parse(r.createdAt) < old) fs.rmSync(path.join(DIR, f), { force: true });
+    const file = path.join(DIR, f), r = readReview(file);
+    if (r && r.status !== "open" && Date.parse(r.createdAt) < old) fs.rmSync(file, { force: true });
+    // Open, but its `ranch-review` is gone (killed, or its session ended without a signal):
+    // nobody will read the answer, so it is closed as abandoned.
+    else if (orphaned(r, isAlive)) updateReview(file, (x) => (orphaned(x, isAlive) ? abandon(x) : null));
   }
   // Screenshots pasted into comments: kept as long as reviews, since the agent may open them later.
   const img = path.join(DIR, "img");
   for (const f of fs.existsSync(img) ? fs.readdirSync(img) : []) {
     if (fs.statSync(path.join(img, f)).mtimeMs < old) fs.rmSync(path.join(img, f), { force: true });
   }
+}
+
+// The newest review of a document that you sent feedback on (status "sent"), or null.
+function lastSent(key) {
+  let best = null;
+  for (const f of fs.readdirSync(DIR)) {
+    if (!f.endsWith(".json")) continue;
+    const r = readReview(path.join(DIR, f));
+    if (r?.status === "sent" && typeof r.text === "string" && docKey(r) === key && (!best || r.id > best.id)) best = r;
+  }
+  return best;
 }
 
 const HELP = `ranch-review: ask for a review in Herdr, and wait for the answer.
@@ -184,7 +202,8 @@ const HELP = `ranch-review: ask for a review in Herdr, and wait for the answer.
 The review opens in Herdr's Reviews mod. This command waits until you send, approve or
 discard it, then prints the feedback, "The user approved.", or nothing (discarded).
 Run it in a Herdr terminal. Exit: 0 answered, 2 couldn't start, 130 stopped (the
-feedback is then typed into the agent's prompt once it's idle).
+review is then closed as abandoned).
+A file reviewed again after you sent feedback on it shows what changed since then.
 `;
 
 async function main() {
@@ -229,25 +248,35 @@ async function main() {
   older.sort((a, b) => (a.id < b.id ? 1 : -1));
   const draft = older.find((r) => r.draft?.length)?.draft;
   if (draft) review.draft = carryDraft(draft, splitBlocks(text));
+  // Reviewed before, and you sent feedback on it: the text you saw then, so the mod can show what
+  // changed (new and changed blocks; the rest folded). Left out when it would make the file too big.
+  if (review.kind === "file") {
+    const sent = lastSent(docKey(review));
+    if (sent) {
+      review.base = { id: sent.id, text: sent.text, sentAt: sent.finishedAt ?? sent.createdAt };
+      if (Buffer.byteLength(JSON.stringify(review, null, 2)) > MAX_BYTES) delete review.base;
+    }
+  }
   const bytes = Buffer.byteLength(JSON.stringify(review, null, 2));
   if (bytes > MAX_BYTES) fail(`the text is too big to review (${Math.round(bytes / 1024)} KB as a review file, at most ${MAX_BYTES / 1024} KB).`);
+  const tty = agentTty();
+  // Stopped (the agent's call timed out or was stopped, Ctrl+C, the session ended): nobody will
+  // read the answer, so the review is closed as abandoned and leaves the list; the agent stops
+  // showing under Needs you.
+  const stop = () => {
+    updateReview(where, (r) => abandon(r));
+    reportStatus(tty, agent.app, "idle");
+    process.exit(130);
+  };
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, stop);
+  // (Set before the file exists, so a signal right after it is written still closes it.)
   writeAtomic(where, review);
   for (const r of older) {
     updateReview(path.join(DIR, `${r.id}.json`), (x) => (x.status === "open"
       ? { ...x, status: "dismissed", supersededBy: { id, terminal: agent.terminal ?? null }, draft: null, finishedAt: new Date().toISOString(), result: { decision: "dismissed", comments: [] } }
       : null));
   }
-  const tty = agentTty();
   reportStatus(tty, agent.app, "blocked", `Review ${title} in Herdr`);
-
-  // Stopped (the agent's call timed out, Ctrl+C): nobody waits now, so the mod's watcher pastes the
-  // answer into the agent instead; the agent stops showing under Needs you.
-  const stop = () => {
-    updateReview(where, (r) => (r.status === "open" ? { ...r, waiting: null } : null));
-    reportStatus(tty, agent.app, "idle");
-    process.exit(130);
-  };
-  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, stop);
 
   // The mod's watcher (an invisible copy in the mod-buttons layout) sees the new file and shows
   // the toast. Without a live watcher (its heartbeat is older than a minute), a launcher pane

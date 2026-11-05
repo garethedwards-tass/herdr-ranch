@@ -204,11 +204,12 @@ export function newId(now = Date.now(), rand = Math.random) {
   return `${now.toString(36)}-${Math.floor(rand() * 36 ** 6).toString(36).padStart(6, "0")}`;
 }
 
-// Where a review stands, for the list: "waiting" (open, an agent or the CLI waits), "sent",
+// Where a review stands, for the list: "waiting" (open, an agent or the CLI waits), "abandoned"
+// (open, but the mod found its `ranch-review` gone: `orphan` set), "sent",
 // "approved", "dismissed", or "undelivered" (sent, but neither the CLI nor a paste took it).
 export function stateOf(review) {
   if (!review) return "dismissed";
-  if (review.status === "open") return "waiting";
+  if (review.status === "open") return review.orphan ? "abandoned" : "waiting";
   if (review.delivery === "kept" && review.status !== "dismissed") return "undelivered";
   return review.status;
 }
@@ -288,4 +289,64 @@ export function markHits(markdown, query) {
   return String(markdown).split(/(`+[^`]*`+|\]\([^)]*\)|<[^>\n]+>)/).map((part, k) => (k % 2
     ? part
     : hitsIn(part, q).map(([text, hit]) => (hit ? `<mark>${text}</mark>` : text)).join(""))).join("");
+}
+
+// --- Nobody waiting -------------------------------------------------------------------------
+
+// A review whose `ranch-review` stopped (a signal, or the agent's session ended): closed as
+// abandoned, so it leaves the list and nobody is asked to answer it. null when it isn't open.
+export function abandon(review, now = Date.now()) {
+  if (review?.status !== "open") return null;
+  return { ...review, status: "dismissed", waiting: null, finishedAt: new Date(now).toISOString(), result: { decision: "abandoned", comments: [] } };
+}
+
+// True for an open review whose waiting `ranch-review` is gone: its pid is set and `isAlive`
+// says no. A review with no pid (`waiting: null`) isn't: its answer is pasted into the agent.
+export function orphaned(review, isAlive) {
+  const pid = review?.waiting?.pid;
+  return review?.status === "open" && Number.isInteger(pid) && !isAlive(pid);
+}
+
+// How long a review has been open: "under a minute", "12 min", "3 h 47 min", "2 d 4 h".
+export function openFor(iso, now = Date.now()) {
+  const m = Math.floor(Math.max(0, now - Date.parse(iso)) / 60000);
+  if (!Number.isFinite(m)) return "";
+  if (m < 1) return "under a minute";
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h} h ${m % 60} min` : `${h} h`;
+  return h % 24 ? `${Math.floor(h / 24)} d ${h % 24} h` : `${Math.floor(h / 24)} d`;
+}
+
+// --- Changes since the last sent review ------------------------------------------------------
+
+// Which blocks are new or changed against an earlier text (the last review you sent of the same
+// file): true for a block whose kind and text (trimmed) the earlier text doesn't have. Each
+// earlier block matches once, so a duplicated paragraph counts as new.
+export function changedBlocks(blocks, baseText) {
+  const left = new Map();
+  const key = (b) => `${b.kind}\n${b.text.trim()}`;
+  for (const b of splitBlocks(baseText ?? "")) left.set(key(b), (left.get(key(b)) ?? 0) + 1);
+  return blocks.map((b) => {
+    const n = left.get(key(b)) ?? 0;
+    if (n > 0) { left.set(key(b), n - 1); return false; }
+    return true;
+  });
+}
+
+// What the document shows with unchanged blocks folded: { block: i } rows and { fold: [from, to] }
+// rows (inclusive block indices). A run of two or more unchanged blocks folds; a single one
+// shows. `shown` (a Set of indices) stays visible: blocks with comments, the one being
+// commented, search hits. `unfolded` holds the `from` of folds opened by a click.
+export function foldRuns(changed, shown = new Set(), unfolded = new Set()) {
+  const out = [];
+  for (let i = 0; i < changed.length;) {
+    if (changed[i] || shown.has(i)) { out.push({ block: i }); i++; continue; }
+    let j = i;
+    while (j + 1 < changed.length && !changed[j + 1] && !shown.has(j + 1)) j++;
+    if (j > i && !unfolded.has(i)) out.push({ fold: [i, j] });
+    else for (let k = i; k <= j; k++) out.push({ block: k });
+    i = j + 1;
+  }
+  return out;
 }

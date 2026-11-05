@@ -12,7 +12,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, TextView, InputState, Input } from "gpui-base";
 import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
 import { VERSION, updateState, checkForUpdate, installKind, updateNow, AGENT_LINE } from "./update.js";
-import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, imageOnly, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits } from "./reviews.js";
+import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, imageOnly, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, orphaned, openFor, changedBlocks, foldRuns } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
 const fileOf = (id) => `${DIR()}/${id}.json`;
@@ -98,9 +98,10 @@ function inSpace(r, space, repos) {
 
 const opensAtOnce = () => ["open", "auto"].includes(pref("open", "agent"));
 
-// The count on the Reviews button (mod-buttons): open reviews.
+// The count on the Reviews button (mod-buttons): open reviews someone waits on.
+const waitedOn = (r) => r.status === "open" && !r.orphan;
 async function publishBadge(reviews = null) {
-  const count = (reviews ?? (await listReviews())).filter((r) => r.status === "open").length;
+  const count = (reviews ?? (await listReviews())).filter(waitedOn).length;
   const all = shared("mod-badges") ?? {};
   if ((all[MOD] ?? 0) !== count) setShared("mod-badges", { ...all, [MOD]: count });
 }
@@ -113,7 +114,18 @@ async function listReviews() {
   const r = await exec("ls", ["-1", DIR()]).catch(() => null);
   if (!r || r.code !== 0) return [];
   const ids = r.stdout.split("\n").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort().reverse().slice(0, 100);
-  return (await Promise.all(ids.map((id) => load(id)))).filter(Boolean).map((got) => got.review);
+  const all = (await Promise.all(ids.map((id) => load(id)))).filter(Boolean).map((got) => got.review);
+  await markOrphans(all);
+  return all;
+}
+
+// Sets `orphan` (not saved) on open reviews whose waiting `ranch-review` is gone: they show as
+// "nobody is waiting", greyed, and don't count as waiting on you. The CLI closes them as
+// abandoned on its next run (prune).
+async function markOrphans(reviews) {
+  const pids = [...new Set(reviews.filter((r) => r.status === "open" && Number.isInteger(r.waiting?.pid)).map((r) => r.waiting.pid))];
+  const live = new Set((await Promise.all(pids.map(async (p) => ((await alive(p)) ? p : null)))).filter((p) => p != null));
+  for (const r of reviews) r.orphan = orphaned(r, (p) => live.has(p));
 }
 
 // One tab (or dialog) per document (docKey: a file's path, an agent's last message), shared by
@@ -195,7 +207,8 @@ class ReviewList {
     if (space) this.repoOf(space.folder, cx);
     // One row per document: its newest review.
     const shown = newestPerDoc(this.reviews.filter((r) => inSpace(r, space, this.repos))).sort((a, b) => (a.id < b.id ? 1 : -1));
-    const waiting = shown.filter((r) => r.status === "open");
+    const waiting = shown.filter(waitedOn);
+    const orphans = shown.filter((r) => r.status === "open" && r.orphan);
     // Approved and dismissed reviews leave the list: only feedback you sent stays, for a week,
     // the newest `sent` of them.
     const limit = Number(pref("sent", "10")) || 0;
@@ -207,20 +220,23 @@ class ReviewList {
       const state = stateOf(r), last = r.kind === "last", asking = this.confirming === r.id;
       const color = last ? t.ansi4 : t.ansi5;
       const badge = state === "waiting" ? pill(r.waiting ? "agent waiting" : "waiting", t.ansi3)
+        : state === "abandoned" ? pill("nobody is waiting", t.dim)
         : state === "undelivered" ? pill("not delivered", t.ansi1)
         : state === "approved" ? pill("approved", t.ansi2) : state === "sent" ? pill("feedback sent", t.ansi2) : pill("discarded", t.dim);
       const comments = (r.result?.comments ?? []).length;
-      const meta = [r.agent?.app ?? "agent", `${state === "waiting" ? "asked" : "done"} ${ago(r.finishedAt ?? r.createdAt)} ago`, comments ? `${comments} comment${comments === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ");
+      const when = r.status === "open" ? `open for ${openFor(r.createdAt)}` : `done ${ago(r.finishedAt ?? r.createdAt)} ago`;
+      const meta = [r.agent?.app ?? "agent", when, comments ? `${comments} comment${comments === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ");
       const x = asking
         ? h_flex().flex_none().gap(4)
           .child(div().id(`yes-${r.id}`).px(8).py(2).rounded(5).bg(t.ansi1).text_color(t.background).text_size(11).font_semibold().cursor_pointer()
-            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.remove(r, cx); }).child(r.status === "open" ? "Discard" : "Remove"))
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.remove(r, cx); }).child(r.orphan ? "Dismiss" : r.status === "open" ? "Discard" : "Remove"))
           .child(div().id(`no-${r.id}`).px(6).py(2).rounded(5).text_size(11).text_color(t.muted).cursor_pointer().hover((e) => e.bg(t.hover))
             .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.confirming = null; cx.notify(); }).child("Cancel"))
         : div().id(`x-${r.id}`).size(20).flex_none().flex().items_center().justify_center().rounded(5).text_color(t.dim).cursor_pointer()
           .hover((e) => e.bg(t.hover).text_color(t.foreground))
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => { cx.stop_propagation(); this.remove(r, cx); }).child("×");
       return h_flex().id(`r-${r.id}`).flex_none().gap(8).items_start().px(10).py(7).rounded(6).cursor_pointer().hover((e) => e.bg(t.hover))
+        .when(Boolean(r.orphan), (e) => e.opacity(0.55))
         .on_click((_e, cx) => cx.spawn(async (cx) => {
           if (await load(r.id)) openReview(r);
           else { notify({ title: "That review is gone", level: "info", timeout: 3000 }); this.refresh(cx); }
@@ -250,8 +266,9 @@ class ReviewList {
         .when(Boolean(overlay), (e) => e.child(div().id("close").px(6).cursor_pointer().text_color(t.dim).on_click(() => closeOverlay(overlay)).child("×"))))
       .child(v_flex().id("reviews-list").flex_1().min_h(0).px(6).overflow_y_scrollbar()
         .when(waiting.length > 0, (e) => e.child(heading("Waiting on you", waiting.length)).children(waiting.map(row)))
+        .when(orphans.length > 0, (e) => e.child(heading("Nobody waiting", orphans.length)).children(orphans.map(row)))
         .when(limit > 0 && done.length > 0, (e) => e.child(heading("Sent", Math.min(done.length, limit))).children(done.slice(0, limit).map(row)))
-        .when(!waiting.length && (!limit || !done.length) && this.reviews.length > 0 && !this.loading, (e) => e.child(div().p(12).text_color(t.dim)
+        .when(!waiting.length && !orphans.length && (!limit || !done.length) && this.reviews.length > 0 && !this.loading, (e) => e.child(div().p(12).text_color(t.dim)
           .child(space ? "Nothing waiting on you in this space." : "Nothing waiting on you.")))
         .when(!this.reviews.length, (e) => e.child(div().p(12).text_color(t.dim)
           .child(this.loading ? "Loading…" : "No reviews yet. Ask an agent for one with /herdr-ranch-review <file.md> or /herdr-ranch-review-last."))));
@@ -329,7 +346,8 @@ class ReviewPage {
       // Opened on a review that a newer one of its document replaced: show that one.
       if (got.review.status !== "open" && (await this.follow(cx, got.review))) return;
       this.review = got.review; this.key = docKey(got.review);
-      this.blocks = splitBlocks(got.review.text);
+      this.setBlocks(got.review);
+      this.checkWaiting(cx);
       if (got.review.draft && !this.comments.length) this.comments = got.review.draft;
       const o = props()?.overlay;
       if (o) rememberDialog(this.key, o);
@@ -422,6 +440,26 @@ class ReviewPage {
     return null;
   }
 
+  // The review's blocks, and which of them changed since the review of this file you last sent
+  // (`base`, written by the CLI): those show, runs of unchanged ones fold.
+  setBlocks(review) {
+    this.blocks = splitBlocks(review.text);
+    this.changed = typeof review.base?.text === "string" ? changedBlocks(this.blocks, review.base.text) : null;
+    this.unfolded = new Set(); this.showAll = false;
+  }
+
+  // Whether the `ranch-review` that asked still waits: when its process is gone, the header
+  // says "nobody is waiting" (sending still pastes the answer into the agent).
+  checkWaiting(cx) {
+    const r = this.review;
+    if (r?.status !== "open" || !Number.isInteger(r.waiting?.pid)) { if (this.orphan) { this.orphan = false; cx.notify(); } return; }
+    cx.spawn(async (cx) => {
+      const live = await alive(r.waiting.pid);
+      const now = orphaned(r, () => live);
+      if (now !== Boolean(this.orphan)) { this.orphan = now; cx.notify(); }
+    });
+  }
+
   // Highlights the block a comment is on.
   reveal(block) {
     if (block == null) return;
@@ -494,7 +532,7 @@ class ReviewPage {
     const n = this.comments.length;
     const query = this.search.value().trim(), hits = matchBlocks(this.blocks, query, this.source) ?? [];
     const matches = countMatches(this.blocks, query, this.source);
-    const status = open ? (r.waiting ? "agent waiting" : "waiting") : stateOf(r) === "undelivered" ? "not delivered" : stateOf(r);
+    const status = open ? (this.orphan ? "nobody is waiting" : r.waiting ? "agent waiting" : "waiting") : stateOf(r) === "undelivered" ? "not delivered" : stateOf(r);
     const header = h_flex().flex_none().px(12).py(8).gap(8).items_center().border_b(1).border_color(t.border)
       .child(v_flex().flex_1().min_w(0)
         .child(div().font_semibold().truncate().child(r.kind === "last" ? "Last message" : r.title))
@@ -537,7 +575,9 @@ class ReviewPage {
           ? h_flex().id(`s-${i}-${k}`).min_h(16).children(hitsIn(l, query).map(([part, hit], m) => div().id(`s-${i}-${k}-${m}`).when(hit, (e) => e.bg(t.ansi3 + "55").rounded(2)).child(part)))
           : div().id(`s-${i}-${k}`).min_h(16).child(l || " "))))
         : div().flex_1().min_w(0).text_size("15px").line_height("24px").child(TextView.markdown(`b-${i}`, query && b.kind !== "code" ? markHits(b.text, query) : b.text).selectable(true));
+      const fresh = Boolean(this.changed?.[i]);
       return h_flex().id(`blk-${i}`).w_full().gap(10).items_start().px(30).py(b.kind === "heading" ? 10 : item ? 1 : 6)
+        .when(fresh, (e) => e.border_l(3).border_color(t.ansi2))
         .child(h_flex().flex_1().min_w(0).gap(10).items_start().px(10).py(2).rounded(6).border_1()
           .border_color(lit ? t.accent : "#00000000").when(Boolean(marks) || lit, (e) => e.bg(t.selected))
           // A click comments on the block; a drag (selecting text to copy with ⌘C) or a
@@ -552,12 +592,35 @@ class ReviewPage {
           .child(content)
           // The comment numbers (or 👍) and the source lines, on one line.
           .child(h_flex().flex_none().min_w(52).gap(5).items_center().justify_end()
+            .when(fresh, (e) => e.child(div().flex_none().px(4).rounded(4).bg(t.ansi2 + "22").text_size(10).text_color(t.ansi2).child("new")))
             .when(Boolean(marks), (e) => e.child(div().flex_none().px(5).rounded(4).bg(t.accent).text_size(10).text_color(t.accent_foreground).child(marks.join(","))))
             .child(div().flex_none().text_size(11).text_color(t.dim).child(b.start === b.end ? String(b.start) : `${b.start}-${b.end}`))));
     };
+    // Reviewed before: the blocks new or changed since the review you sent show; runs of unchanged
+    // ones fold into one row (a click unfolds it). Blocks with comments, the one being commented
+    // and search hits always show.
+    const folding = Boolean(this.changed) && !this.showAll;
+    const keep = new Set([...counted.keys(), ...(query ? hits : []), this.editing?.block, this.focus].filter((x) => x != null));
+    const rows = folding ? foldRuns(this.changed, keep, this.unfolded) : this.blocks.map((_b, i) => ({ block: i }));
+    const fold = ([from, to]) => {
+      const a = this.blocks[from], z = this.blocks[to];
+      return div().id(`fold-${from}`).mx(40).my(4).px(10).py(4).rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.dim)
+        .cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => { this.unfolded.add(from); cx.notify(); })
+        .child(`⋯ ${to - from + 1} unchanged blocks, lines ${a.start}-${z.end}`);
+    };
+    const nChanged = this.changed ? this.changed.filter(Boolean).length : 0;
+    const since = this.changed ? h_flex().flex_none().mx(40).mb(6).px(10).py(6).gap(8).items_center().rounded(6).bg(t.ansi2 + "14").text_size(12)
+      .child(div().flex_1().min_w(0).child(nChanged
+        ? `${nChanged} new or changed block${nChanged === 1 ? "" : "s"} since the review you sent ${ago(r.base.sentAt)} ago.`
+        : `Nothing changed since the review you sent ${ago(r.base.sentAt)} ago.`))
+      .child(div().id("fold-toggle").flex_none().px(6).rounded(4).text_color(t.accent).cursor_pointer().hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => { this.showAll = !this.showAll; this.unfolded = new Set(); cx.notify(); })
+        .child(this.showAll ? "Fold unchanged" : "Show all")) : null;
     const doc = v_flex().id("doc").flex_1().min_w(0).min_h(0).py(12).overflow_y_scrollbar()
-      .children(this.blocks.slice(0, MAX_BLOCKS).map((_b, i) => row(i)))
-      .when(this.blocks.length > MAX_BLOCKS, (e) => e.child(div().p(10).text_color(t.dim).child(`${this.blocks.length - MAX_BLOCKS} more blocks are not shown.`)));
+      .when(Boolean(since), (e) => e.child(since))
+      .children(rows.slice(0, MAX_BLOCKS).map((x) => (x.fold ? fold(x.fold) : row(x.block))))
+      .when(rows.length > MAX_BLOCKS, (e) => e.child(div().p(10).text_color(t.dim).child(`${rows.length - MAX_BLOCKS} more blocks are not shown.`)));
 
     // The comments column.
     const editor = (label) => v_flex().gap(6).p(8).rounded(6).border_1().border_color(t.accent).bg(t.background)
@@ -626,7 +689,8 @@ const HEARTBEAT = ".watcher";
 async function claimOnce(id, key, ms = Infinity) {
   const got = await load(id);
   if (!got || got.review.status !== "open") return false;
-  const at = got.review[key];
+  // `focusOpenedAt`: opened on arrival by an older version, which counts as announced.
+  const at = got.review[key] ?? (key === "announced" ? got.review.focusOpenedAt : undefined);
   if (at && (at === true || Date.now() - at < ms)) return false;
   try { await writeTextFile(fileOf(id), JSON.stringify({ ...got.review, [key]: Date.now() }, null, 2), got.raw); return true; } catch { return false; }
 }
@@ -686,10 +750,10 @@ function watcher(view, cx) {
       await update(x.id, (r) => (r.status === "open" ? { ...r, status: "dismissed", supersededBy: { id: n.id, terminal: n.agent?.terminal ?? null }, draft: null, finishedAt: new Date().toISOString(), result: { decision: "dismissed", comments: [] } } : r));
     }
     if (replaced.length) all = await listReviews();
-    waiting = all.filter((x) => x.status === "open");
+    waiting = all.filter(waitedOn);
     await publishBadge(all);
     for (const x of all) if (x.status !== "open" && !x.delivery) cx.spawn(async (cx) => { await deliver(x.id, cx); });
-    for (const r of all.filter((x) => x.status === "open")) {
+    for (const r of all.filter(waitedOn)) {
       if (seen.has(r.id)) continue;
       seen.add(r.id);
       // The CLI may not have known the agent's space, tab or app: Herdr's agents() does.
@@ -711,7 +775,9 @@ function watcher(view, cx) {
   });
   cx.timer.every(20000, () => { beat(); });
   // Going to an agent that waits for a review (a click on it under Needs you, or any other way
-  // there) opens that review. Only on arrival: closing the review leaves you with the agent.
+  // there) opens that review, once: the same `announced` claim as a new review's, so a review
+  // that opened already (on arrival, or right away) doesn't open again when you come back to its
+  // agent. The Reviews list opens it again; a new `ranch-review` is a new review and opens.
   // Moving into a dialog (no agent focused) isn't leaving: only another agent counts.
   let focused = agents().find((a) => a.focused)?.address ?? null;
   cx.timer.every(400, () => {
@@ -719,7 +785,7 @@ function watcher(view, cx) {
     if (!now || now === focused) return;
     focused = now;
     const r = waiting.find((x) => sameTerminal(now, x.agent?.terminal));
-    if (r) cx.spawn(async () => { if (await claimOnce(r.id, "focusOpenedAt", 3000)) openReview(r); });
+    if (r) cx.spawn(async () => { if (await claimAnnounce(r.id)) openReview(r); });
   });
 }
 
@@ -803,6 +869,7 @@ ReviewPage.prototype.refresh = function refresh(cx) {
     const before = this.review?.status;
     this.review = got.review;
     if (before === "open" && got.review.status === "dismissed" && !this.busy) closeSelf(this.key);
+    this.checkWaiting(cx);
     cx.notify();
   });
 };
@@ -818,7 +885,8 @@ ReviewPage.prototype.follow = async function follow(cx, old) {
   if (!next) return false;
   this.editing?.state.release?.(); this.editing = null; this.focus = null; this.note = null;
   this.id = next.id; this.review = next; this.key = key;
-  this.blocks = splitBlocks(next.text);
+  this.setBlocks(next);
+  this.checkWaiting(cx);
   this.comments = next.draft ?? [];
   notify({ title: "Showing the newest version of this document", body: next.title, level: "info", timeout: 3000 });
   cx.notify();

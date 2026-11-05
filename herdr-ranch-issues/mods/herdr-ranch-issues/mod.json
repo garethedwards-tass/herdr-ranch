@@ -1,1 +1,1 @@
-{"version": "0.4.0", "place": "none", "title": "Issues \u00b7 Herdr Ranch", "overlay": {"kind": "window", "key": "herdr-ranch-issues", "width": 0.8, "height": 0.8}, "button": {"label": "Issues", "icon": "issue.svg", "opens": "panel", "order": 20}}
+{"version": "0.4.1", "place": "none", "title": "Issues \u00b7 Herdr Ranch", "overlay": {"kind": "window", "key": "herdr-ranch-issues", "width": 0.8, "height": 0.8}, "button": {"label": "Issues", "icon": "issue.svg", "opens": "panel", "order": 20}}

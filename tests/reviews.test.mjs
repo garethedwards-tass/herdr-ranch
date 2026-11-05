@@ -2,7 +2,12 @@
 // Run: cd tests && npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { imageOnly, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
+import { imageOnly, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, abandon, orphaned, openFor, changedBlocks, foldRuns } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const kinds = (md) => splitBlocks(md).map((b) => `${b.kind}:${b.start}-${b.end}`);
 
@@ -149,4 +154,97 @@ test("markHits: marks matches, not code spans, link targets or tags", () => {
   assert.equal(markHits("The Fox and the fox", "fox"), "The <mark>Fox</mark> and the <mark>fox</mark>");
   assert.equal(markHits("`fox` and [fox](https://fox.dev) <b>fox</b>", "fox"), "`fox` and [<mark>fox</mark>](https://fox.dev) <b><mark>fox</mark></b>");
   assert.equal(markHits("text", ""), "text");
+});
+
+test("abandon: an open review closes as abandoned; a finished one is left alone", () => {
+  const open = { id: "a", status: "open", waiting: { pid: 42 }, draft: [{ key: "k", text: "x" }] };
+  const out = abandon(open, Date.UTC(2026, 10, 5, 12));
+  assert.equal(out.status, "dismissed");
+  assert.equal(out.waiting, null);
+  assert.equal(out.finishedAt, "2026-11-05T12:00:00.000Z");
+  assert.deepEqual(out.result, { decision: "abandoned", comments: [] });
+  assert.equal(abandon({ ...open, status: "sent" }), null);
+  assert.equal(abandon(null), null);
+});
+
+test("ranch-review: SIGTERM marks its review abandoned and exits 130", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "ranch-review-"));
+  const bin = path.join(home, "bin"), dir = path.join(home, "app", "data", "herdr-ranch-reviews");
+  fs.mkdirSync(bin); fs.mkdirSync(dir, { recursive: true });
+  // A stand-in Herdr: `ls` knows no panes, `status` no window, `do` does nothing; no `hc`.
+  fs.writeFileSync(path.join(bin, "herdr-app"), '#!/bin/sh\ncase "$1" in ls) echo \'{"spaces":[]}\';; status) echo "{}";; esac\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(dir, ".watcher"), ""); // a fresh heartbeat: no launcher pane
+  const cli = fileURLToPath(new URL("../herdr-ranch-reviews/bin/ranch-review.mjs", import.meta.url));
+  const child = spawn(process.execPath, [cli, "last", "--stdin"], {
+    env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, HERDR_APP_HOME: path.join(home, "app"), HC_TERMINAL_ID: "t-test" },
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+  child.stdin.end("Please review this.");
+  const exited = new Promise((resolve) => child.on("exit", (code) => resolve(code)));
+  let file = null;
+  for (let i = 0; i < 100 && !file; i++) {
+    await new Promise((r) => setTimeout(r, 50));
+    file = fs.readdirSync(dir).find((f) => f.endsWith(".json")) ?? null;
+  }
+  assert.ok(file, "the CLI wrote a review");
+  const before = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+  assert.equal(before.status, "open");
+  assert.equal(before.waiting.pid, child.pid);
+  child.kill("SIGTERM");
+  assert.equal(await exited, 130);
+  const after = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+  assert.equal(after.status, "dismissed");
+  assert.equal(after.result.decision, "abandoned");
+  assert.equal(after.waiting, null);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test("orphaned and stateOf: a dead waiting pid shows as abandoned; no pid is not", () => {
+  const dead = () => false, live = () => true;
+  const r = { status: "open", waiting: { pid: 58985 } };
+  assert.equal(orphaned(r, dead), true);
+  assert.equal(orphaned(r, live), false);
+  assert.equal(orphaned({ status: "open", waiting: null }, dead), false); // stopped by an older CLI: pasted later
+  assert.equal(orphaned({ ...r, status: "sent" }, dead), false);
+  assert.equal(stateOf({ ...r, orphan: true }), "abandoned");
+  assert.equal(stateOf(r), "waiting");
+});
+
+test("openFor: minutes, hours and minutes, days and hours", () => {
+  const at = Date.UTC(2026, 10, 5, 12);
+  const iso = (min) => new Date(at - min * 60000).toISOString();
+  assert.equal(openFor(iso(0.5), at), "under a minute");
+  assert.equal(openFor(iso(12), at), "12 min");
+  assert.equal(openFor(iso(3 * 60 + 47), at), "3 h 47 min");
+  assert.equal(openFor(iso(120), at), "2 h");
+  assert.equal(openFor(iso(52 * 60 + 5), at), "2 d 4 h");
+});
+
+test("changedBlocks and foldRuns: new and changed blocks show, unchanged runs fold", () => {
+  const sent = ["# Plan", "", "Step one.", "", "Step two.", "", "Step three.", "", "Old ending."].join("\n");
+  const now = ["# Plan", "", "Step one.", "", "Step two.", "", "Step three.", "", "New ending.", "", "Step one."].join("\n");
+  const blocks = splitBlocks(now);
+  const changed = changedBlocks(blocks, sent);
+  // The repeated "Step one." matches the earlier block only once: the second is new.
+  assert.deepEqual(changed, [false, false, false, false, true, true]);
+  assert.deepEqual(foldRuns(changed), [{ fold: [0, 3] }, { block: 4 }, { block: 5 }]);
+  // A commented block stays; a single unchanged block between shown ones doesn't fold.
+  assert.deepEqual(foldRuns(changed, new Set([2])), [{ fold: [0, 1] }, { block: 2 }, { block: 3 }, { block: 4 }, { block: 5 }]);
+  // A clicked fold opens.
+  assert.deepEqual(foldRuns(changed, new Set(), new Set([0])), [0, 1, 2, 3, 4, 5].map((block) => ({ block })));
+  // No earlier text: everything is new.
+  assert.deepEqual(changedBlocks(blocks, ""), blocks.map(() => true));
+});
+
+test("carryDraft with a diff: comments land on the right blocks of the grown file", () => {
+  const sent = ["# Plan", "", "Step one.", "", "Step two."].join("\n");
+  const grown = ["# Plan", "", "Intro added.", "", "Step one.", "", "Step two.", "", "Step three."].join("\n");
+  const blocks = splitBlocks(grown);
+  const draft = carryDraft([{ key: "a", block: 2, start: 5, end: 5, quote: "Step two.", text: "why?" }], blocks);
+  assert.deepEqual(draft[0], { key: "a", block: 3, start: 7, end: 7, quote: "Step two.", text: "why?" });
+  const changed = changedBlocks(blocks, sent);
+  assert.deepEqual(changed, [false, true, false, false, true]);
+  // The commented block is unchanged but stays visible; the rest of the unchanged run folds.
+  assert.deepEqual(foldRuns(changed, new Set([draft[0].block])), [{ block: 0 }, { block: 1 }, { block: 2 }, { block: 3 }, { block: 4 }]);
+  assert.deepEqual(foldRuns(changed), [{ block: 0 }, { block: 1 }, { fold: [2, 3] }, { block: 4 }]);
 });

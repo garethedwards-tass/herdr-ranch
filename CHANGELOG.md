@@ -2,6 +2,13 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
+## v0.4.1
+
+- **Reviews:** a review opens by itself only once. Coming back to its agent from another tab or space no longer opens it again; a new `ranch-review` call (a new review) still does, and the Reviews list always does.
+- **Reviews:** a stopped `ranch-review` (the agent stopped it or its call timed out, Ctrl+C, the session ended) closes its review as abandoned and exits 130, so it no longer stays in the list as a review to answer. A review whose `ranch-review` is gone without a signal shows greyed under **Nobody waiting**, with **Dismiss**; it doesn't count on the Reviews button, and the next `ranch-review` closes it.
+- **Reviews:** a file reviewed again after you sent feedback on it shows what changed since then: new and changed blocks are marked, and runs of unchanged blocks fold into one row (a click opens it; **Show all** in the banner opens them all).
+- **Reviews:** open reviews in the list show how long they have been open ("open for 3 h 47 min").
+
 ## v0.4.0
 
 - **Reviews:** a review opens as a tab of its own in the shown space instead of a modal dialog; opening it again selects that tab. The cog's **Shows in** setting switches it back to **Modal**.
