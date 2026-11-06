@@ -2,7 +2,7 @@
 // Run: cd tests && npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { imageOnly, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, abandon, orphaned, openFor, changedBlocks, foldRuns } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
+import { imageOnly, diagramOf, isDrawioFile, hashOf, isDark, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, abandon, orphaned, openFor, changedBlocks, foldRuns } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -247,4 +247,30 @@ test("carryDraft with a diff: comments land on the right blocks of the grown fil
   // The commented block is unchanged but stays visible; the rest of the unchanged run folds.
   assert.deepEqual(foldRuns(changed, new Set([draft[0].block])), [{ block: 0 }, { block: 1 }, { block: 2 }, { block: 3 }, { block: 4 }]);
   assert.deepEqual(foldRuns(changed), [{ block: 0 }, { block: 1 }, { fold: [2, 3] }, { block: 4 }]);
+});
+
+test("diagramOf: mermaid and draw.io fences; other code and empty fences are null", () => {
+  const code = (text) => ({ kind: "code", text });
+  assert.deepEqual(diagramOf(code("```mermaid\nflowchart LR\n  A --> B\n```")), { kind: "mermaid", source: "flowchart LR\n  A --> B" });
+  assert.deepEqual(diagramOf(code("~~~ Mermaid\ngraph TD\n~~~")), { kind: "mermaid", source: "graph TD" });
+  assert.deepEqual(diagramOf(code("```mermaid\ngraph TD")), { kind: "mermaid", source: "graph TD" }, "unclosed fence");
+  assert.deepEqual(diagramOf(code("```drawio\n<mxfile/>\n```")), { kind: "drawio", source: "<mxfile/>" });
+  assert.deepEqual(diagramOf(code("```xml\n<mxGraphModel><root/></mxGraphModel>\n```")), { kind: "drawio", source: "<mxGraphModel><root/></mxGraphModel>" });
+  assert.equal(diagramOf(code("```xml\n<note/>\n```")), null);
+  assert.equal(diagramOf(code("```js\nmermaid()\n```")), null);
+  assert.equal(diagramOf(code("```mermaid\n\n```")), null);
+  assert.equal(diagramOf({ kind: "paragraph", text: "```mermaid" }), null);
+});
+
+test("isDrawioFile, hashOf, isDark", () => {
+  assert.ok(isDrawioFile("docs/arch.drawio") && isDrawioFile("a.drawio.svg") && isDrawioFile("a.DIO"));
+  assert.ok(!isDrawioFile("a.drawio.png") && !isDrawioFile("a.svg"));
+  assert.equal(hashOf("graph TD"), hashOf("graph TD"));
+  assert.notEqual(hashOf("graph TD"), hashOf("graph LR"));
+  assert.match(hashOf(""), /^[0-9a-z]+$/);
+  assert.equal(isDark("#1e1e1e"), true);
+  assert.equal(isDark("#fafafa"), false);
+  assert.equal(isDark("#fff"), false);
+  assert.equal(isDark("#ffffffcc"), false);
+  assert.equal(isDark(undefined), true);
 });

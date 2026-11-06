@@ -199,6 +199,48 @@ export function imageOnly(text) {
   return out.length ? out : null;
 }
 
+// The diagram a code block draws: a ```mermaid fence, or a draw.io one (```drawio, or ```xml
+// holding an <mxfile> or <mxGraphModel>): { kind: "mermaid" | "drawio", source }, or null.
+// Herdr's Markdown view shows these as code, so the review renders them itself.
+export function diagramOf(block) {
+  if (block?.kind !== "code") return null;
+  const lines = String(block.text).split("\n");
+  const open = lines[0].match(/^\s{0,3}(`{3,}|~{3,})\s*([^\s`{]*)/);
+  if (!open) return null;
+  const lang = open[2].toLowerCase();
+  const closed = lines.length > 1 && /^\s{0,3}(`{3,}|~{3,})\s*$/.test(lines[lines.length - 1]);
+  const source = lines.slice(1, closed ? -1 : undefined).join("\n");
+  if (!source.trim()) return null;
+  if (lang === "mermaid") return { kind: "mermaid", source };
+  if (lang === "drawio" || lang === "draw.io" || lang === "dio" || (lang === "xml" && /<(mxfile|mxGraphModel)\b/.test(source))) return { kind: "drawio", source };
+  return null;
+}
+
+// A draw.io file an image line points at (`![](arch.drawio)`, `.drawio.svg`, `.dio`): exported to
+// PNG, since Herdr can't draw the file and draws a draw.io SVG's labels (HTML in the SVG) as
+// nothing. A `.drawio.png` is a plain PNG and shows as one.
+export const isDrawioFile = (src) => /\.(drawio|dio)(\.svg)?$/i.test(String(src ?? ""));
+
+// A short, stable name for a text (two 32-bit FNV-1a style hashes), for a diagram's cached image.
+export function hashOf(text) {
+  let a = 0x811c9dc5, b = 0x5bd1e995;
+  for (const ch of String(text ?? "")) {
+    const c = ch.codePointAt(0);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x5bd1e995) >>> 0;
+  }
+  return a.toString(36) + b.toString(36);
+}
+
+// Whether a theme color ("#rrggbb", "#rrggbbaa", "#rgb") is dark; anything unreadable counts as dark.
+export function isDark(color) {
+  let h = String(color ?? "").trim().replace(/^#/, "");
+  if (/^[0-9a-f]{3}$/i.test(h)) h = h.replace(/./g, (c) => c + c);
+  if (!/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(h)) return true;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+}
+
 // A review id: sortable by time, unique enough for one machine.
 export function newId(now = Date.now(), rand = Math.random) {
   return `${now.toString(36)}-${Math.floor(rand() * 36 ** 6).toString(36).padStart(6, "0")}`;

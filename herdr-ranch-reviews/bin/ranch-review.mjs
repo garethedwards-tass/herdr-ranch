@@ -174,7 +174,8 @@ function prune() {
     // nobody will read the answer, so it is closed as abandoned.
     else if (orphaned(r, isAlive)) updateReview(file, (x) => (orphaned(x, isAlive) ? abandon(x) : null));
   }
-  // Screenshots pasted into comments: kept as long as reviews, since the agent may open them later.
+  // Screenshots pasted into comments (kept as long as reviews, since the agent may open them later)
+  // and rendered diagrams (drawn again when needed).
   const img = path.join(DIR, "img");
   for (const f of fs.existsSync(img) ? fs.readdirSync(img) : []) {
     if (fs.statSync(path.join(img, f)).mtimeMs < old) fs.rmSync(path.join(img, f), { force: true });

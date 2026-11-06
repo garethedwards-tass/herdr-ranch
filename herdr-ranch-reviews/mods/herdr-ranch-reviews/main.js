@@ -12,7 +12,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, TextView, InputState, Input } from "gpui-base";
 import { theme, props, exec, hc, appHome, readTextFile, writeTextFile, watchFolder, panes, agents, run, notify, shared, setShared, openOverlay, closeOverlay, spaces } from "herdr";
 import { VERSION, updateState, checkForUpdate, installKind, updateNow, AGENT_LINE } from "./update.js";
-import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, imageOnly, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, orphaned, openFor, changedBlocks, foldRuns } from "./reviews.js";
+import { MOD, splitBlocks, formatFeedback, quoteOf, lineLabel, pastePrompt, stateOf, ago, imageOnly, diagramOf, isDrawioFile, hashOf, isDark, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, orphaned, openFor, changedBlocks, foldRuns } from "./reviews.js";
 
 const DIR = () => `${appHome()}/data/${MOD}`;
 const fileOf = (id) => `${DIR()}/${id}.json`;
@@ -298,6 +298,49 @@ function claimTab(id, cx) {
   });
 }
 
+// --- Diagrams --------------------------------------------------------------------------------
+
+// Mermaid and draw.io diagrams, drawn to a PNG by the tools you have installed (mermaid-cli's
+// `mmdc`, draw.io's `drawio`) and kept in data/<mod>/img/diagram-<key>.png, so a diagram renders
+// once (each takes about 3 s). Herdr's PATH may lack Homebrew's folders, so they are added.
+const TOOL_PATH = 'PATH="$PATH:/opt/homebrew/bin:/usr/local/bin:/Applications/draw.io.app/Contents/MacOS"; export PATH';
+const DIAGRAM_CMD = {
+  mermaid: 'command -v mmdc >/dev/null || exit 127; mmdc -q -i "$1" -o "$2" -t "$3" -b transparent -s 2 2>&1',
+  drawio: 'D=$(command -v drawio || command -v draw.io) || exit 127; "$D" -x -f png -s 2 -o "$2" "$1" 2>&1',
+};
+const MISSING = {
+  mermaid: "mmdc not found (brew install mermaid-cli)",
+  drawio: "draw.io not found (brew install --cask drawio)",
+};
+const rendering = new Map();
+const renderDiagram = (kind, input, key, theme = "") => {
+  if (rendering.has(key)) return rendering.get(key);
+  const job = (async () => {
+    const rel = `data/${MOD}/img/diagram-${key}.png`, out = `${appHome()}/${rel}`;
+    const made = () => exec("test", ["-s", out]).then((r) => r.code === 0, () => false);
+    if (!(await made())) {
+      await exec("mkdir", ["-p", `${DIR()}/img`]).catch(() => null);
+      const r = await exec("sh", ["-c", `${TOOL_PATH}; ${DIAGRAM_CMD[kind]}`, "sh", input, out, theme]).catch((e) => ({ code: 1, stdout: String(e) }));
+      if (!(await made())) {
+        if (r.code === 127) return { error: MISSING[kind] };
+        const lines = `${r.stdout ?? ""}\n${r.stderr ?? ""}`.split("\n").map((l) => l.trim()).filter(Boolean);
+        const why = lines.find((l) => /error/i.test(l)) ?? lines[0] ?? `exit code ${r.code}`;
+        return { error: why.length > 200 ? `${why.slice(0, 200)}…` : why };
+      }
+    }
+    // Drawn at 2x for a sharp picture: shown at half its pixels, at most 720 px wide.
+    const size = await exec("sips", ["-g", "pixelWidth", "-g", "pixelHeight", out]).catch(() => null);
+    const pw = (Number(size?.stdout.match(/pixelWidth: (\d+)/)?.[1]) || 1280) / 2, ph = (Number(size?.stdout.match(/pixelHeight: (\d+)/)?.[1]) || 640) / 2;
+    const w = Math.round(Math.min(720, pw)), h = Math.round((ph * w) / pw);
+    return { rel, w, h };
+  })();
+  // Shared only while it runs: a later call checks the PNG again, so a diagram renders again after
+  // prune removed its PNG, and a failure is tried again (say, once mmdc is installed).
+  rendering.set(key, job);
+  job.finally(() => rendering.delete(key)).catch(() => null);
+  return job;
+};
+
 // --- One review ------------------------------------------------------------------------------
 
 // The Rendered | Source icons (Lucide's eye and code, ISC license). svg() reads only real
@@ -423,9 +466,19 @@ class ReviewPage {
     if (this.pictures.has(src)) return this.pictures.get(src);
     this.pictures.set(src, null);
     const r = this.review;
-    if (!r || /^[a-z]+:/i.test(src) || !/\.(png|jpe?g|gif|webp|svg)$/i.test(src)) return null;
+    if (!r || /^[a-z]+:/i.test(src) || !/\.(png|jpe?g|gif|webp|svg|drawio|dio)$/i.test(src)) return null;
     const file = r.kind === "file" && r.path ? (r.path.startsWith("/") ? r.path : `${r.cwd}/${r.path}`) : `${r.cwd}/x`;
     const abs = src.startsWith("/") ? src : `${file.slice(0, file.lastIndexOf("/"))}/${src}`;
+    if (isDrawioFile(src)) {
+      // Exported again when the file changes (its modification time is part of the name).
+      cx.spawn(async (cx) => {
+        const st = await exec("stat", ["-f", "%m", abs]).catch(() => null);
+        if (st?.code !== 0) return;
+        const got = await renderDiagram("drawio", abs, hashOf(`${abs}\n${st.stdout.trim()}`));
+        if (got.rel) { this.pictures.set(src, got); cx.notify(); }
+      });
+      return null;
+    }
     let h = 0; for (const ch of abs) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     const rel = `data/${MOD}/img/view-${h.toString(36)}${abs.slice(abs.lastIndexOf("."))}`;
     cx.spawn(async (cx) => {
@@ -438,6 +491,36 @@ class ReviewPage {
       cx.notify();
     });
     return null;
+  }
+
+  // A diagram block's picture: { rel, w, h }, { error } when it didn't render, or null while it
+  // renders. Its source goes to a file next to the cached PNG (both named by the hash of the
+  // source and the Mermaid theme), so the same diagram renders once.
+  diagram(d, dark, cx) {
+    const theme = d.kind === "mermaid" ? (dark ? "dark" : "default") : "";
+    const key = hashOf(`${d.kind}\n${theme}\n${d.source}`);
+    this.diagrams ??= new Map();
+    if (this.diagrams.has(key)) return this.diagrams.get(key);
+    this.diagrams.set(key, null);
+    cx.spawn(async (cx) => {
+      await exec("mkdir", ["-p", `${DIR()}/img`]).catch(() => null);
+      const input = `${DIR()}/img/diagram-${key}.${d.kind === "mermaid" ? "mmd" : "drawio"}`;
+      const now = await readTextFile(input).catch(() => null);
+      if (now !== d.source) await writeTextFile(input, d.source, now).catch(() => null);
+      this.diagrams.set(key, await renderDiagram(d.kind, input, key, theme));
+      cx.notify();
+    });
+    return null;
+  }
+
+  // A diagram block, rendered: the picture, else a note (rendering, or why it didn't) above the code.
+  diagramView(d, b, i, t, cx) {
+    const got = this.diagram(d, isDark(t.background), cx);
+    if (got?.rel) return v_flex().flex_1().min_w(0).child(image(got.rel).w(got.w).h(got.h).rounded(4));
+    const name = d.kind === "mermaid" ? "Mermaid" : "draw.io";
+    return v_flex().flex_1().min_w(0).gap(4)
+      .child(div().id(`dia-${i}`).text_size(12).text_color(got?.error ? t.ansi1 : t.dim).child(got?.error ? `${name} diagram didn't render: ${got.error}` : `Rendering the ${name} diagram…`))
+      .child(div().text_size("15px").line_height("24px").child(TextView.markdown(`b-${i}`, b.text).selectable(true)));
   }
 
   // The review's blocks, and which of them changed since the review of this file you last sent
@@ -564,7 +647,9 @@ class ReviewPage {
       const b = this.blocks[i], marks = counted.get(i), item = b.kind === "item";
       const lit = this.editing?.block === i || this.focus === i;
       const pics = this.source ? null : imageOnly(b.text);
-      const content = pics
+      const dia = this.source ? null : diagramOf(b);
+      const content = dia ? this.diagramView(dia, b, i, t, cx)
+        : pics
         ? v_flex().flex_1().min_w(0).gap(6).children(pics.map((p, k) => {
           const got = this.picture(p.src, cx);
           return got ? image(got.rel).w(got.w).h(got.h).rounded(4)
