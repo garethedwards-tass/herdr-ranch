@@ -2,6 +2,8 @@
 // space folder's remote), grouped by what each waits on, with a page per pull request
 // and "Review with agent". A selected pull request's page takes the list's place (the
 // list's row at once, the rest when it loads); Back (or Esc) shows the list again.
+// Linked (xref.js): History and Issues open a pull request here; its issues open in Issues and
+// its commits in History.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
@@ -13,6 +15,7 @@ import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
+import { MODS, openIn, takeOpen, sameRepo } from "./xref.js";
 import { LinkDialog } from "./link-dialog.js";
 import { AgentDialog, PromptsDialog } from "./agent-dialog.js";
 import { context, activeSpace, openLinkDialog, openSettings, settingsMenu, OPENS, PAGE, asSplit, pageMode, openPageDialog, pageDialog, splitView, drawn, openAgentDialog, writeIcons, icon, issueKind as issueKindOf, kindColor, avatar, segmented, fs, readSizes, openUrl, agentSpaces, agentChip, mostUrgent, liveAgent, AGENT_STATUS, goToSpace, migrateSettings, loadAvatars, avatarPics } from "./links.js";
@@ -67,6 +70,8 @@ export default class PullRequests extends View {
     this.query = ""; this.filter = null; this.mentions = null; this.mentionsVersion = 0; this.open = null; this.page = null; this.pageError = null; this.width = lastWidth(); this.version = 0;
     this.gen = 0; this.data = new Map(); this.hay = new Map(); this.stacks = []; this.inStack = new Map(); this.collapsed = new Set(); this.saved = null; this.versions = 0; this.kept = new Map();
     this.diffMode = savedDiffMode();
+    // A request from History or Issues (xref.js): the last one handled, and one waiting for the list.
+    this.xseen = null; this.pendingOpen = null;
     this.handle = cx.focus_handle();
     cx.spawn(async (cx) => { await writeIcons(); cx.notify(); });
     // The open pull request's page is a view of its own: a live change redraws the list only,
@@ -181,6 +186,7 @@ export default class PullRequests extends View {
         const login = await me(at), prs = await list(at, login);
         if (!current()) return;
         this.where = at; this.login = login; this.error = null;
+        if (this.pendingOpen) { const w = this.pendingOpen; this.pendingOpen = null; this.openRequest(w, cx); }
         // Stored when the list or where it comes from changed.
         const meta = JSON.stringify({ at, login });
         if (this.setPrs(prs) || meta !== this.meta) { this.meta = meta; remember(space.id, { where: at, login, prs }); }
@@ -189,7 +195,14 @@ export default class PullRequests extends View {
         if (this.stacks.length) cx.spawn(async (cx) => { const has = await hasGhStack(at); if (current() && has !== this.ghStack) { this.ghStack = has; try { cx.notify(); } catch { /* shown on the next change */ } } });
         this.publishBadge(space);
         if (this.filter === "mentioned") this.loadMentions(cx);
-      } catch (e) { if (current()) { this.error = String(e?.message ?? e); this.publishBadge(space, 0); } }
+      } catch (e) {
+        if (current()) {
+          this.error = String(e?.message ?? e); this.publishBadge(space, 0);
+          // No repository to show it in: a waiting request opens on GitHub instead.
+          const w = this.pendingOpen; this.pendingOpen = null;
+          if (w?.github && w.number) openUrl(`https://github.com/${w.github}/pull/${w.number}`);
+        }
+      }
       finally { if (current()) { this.loading = false; cx.notify(); } }
     });
   }
@@ -296,14 +309,31 @@ export default class PullRequests extends View {
     });
   }
 
+  // Another mod asks to show a pull request (xref.js). Until this space's repository is known it
+  // waits for the list; one of another repository opens on GitHub.
+  openRequest(w, cx) {
+    const number = Number(w.number);
+    if (!number) return;
+    if (!this.where) { this.pendingOpen = w; return; }
+    if (w.github && !sameRepo(w.github, this.where.github)) { openUrl(`https://github.com/${w.github}/pull/${number}`); return; }
+    this.pick(number, cx);
+  }
+  // Opens an issue or a commit in Issues or History; a page dialog closes first, so it doesn't cover them.
+  openOther(mod, what) {
+    if (this.only) closeOverlay(props().overlay);
+    openIn(mod, what);
+  }
+
   // A pull request's page takes the list's place; the list keeps its search and highlight.
   pick(number, cx) {
     if (!this.where) return;
     this.cursor = number; this.keys = false;
-    // Overlay: the page opens in a dialog of its own, with what the list already has.
+    // Overlay: the page opens in a dialog of its own, with what the list already has. One the
+    // list doesn't show (asked for by another mod) opens alone.
     if (pageMode("herdr-ranch-prs") === "overlay") {
-      const flat = this.items().flat;
-      openPageDialog("herdr-ranch-prs", { number, prs: flat.length ? flat : this.prs, where: this.where, login: this.login, avatars: [...avatarPics], tab: this.tab, page: this.pages.get(`${this.where.github}#${number}`) ?? null });
+      const flat = this.items().flat, inList = flat.some((p) => p.number === number);
+      const prs = inList ? flat : [this.prs.find((p) => p.number === number) ?? { number, title: "", state: "OPEN", url: `https://github.com/${this.where.github}/pull/${number}` }];
+      openPageDialog("herdr-ranch-prs", { number, prs, where: this.where, login: this.login, avatars: [...avatarPics], tab: this.tab, page: this.pages.get(`${this.where.github}#${number}`) ?? null });
       cx.notify(); return;
     }
     this.open = number;
@@ -590,6 +620,8 @@ export default class PullRequests extends View {
       copy: (sha, cx) => { cx.write_to_clipboard(sha); notify({ title: `Copied ${sha.slice(0, 7)}`, level: "success", timeout: 2000 }); },
       url: (sha) => `https://github.com/${github}/commit/${sha}`, openUrl: (url) => openUrl(url),
       diff: open ? this.diffProps() : null,
+      // History needs this repository checked out here or on the space's machine.
+      history: this.where?.repo?.main ? (sha) => this.openOther(MODS.history, { sha, cwd: this.where.repo.main, on: this.where.on ?? null }) : null,
     };
   }
 
@@ -613,6 +645,7 @@ export default class PullRequests extends View {
         error: this.pageError, nav, login: this.login, agents: working, go: (id) => this.go(id), jiraKey: this.where?.jiraKey, github: this.where?.github, jira: this.where?.jira, jiraIssues: page?.jiraIssues,
         wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation", diff: this.diffProps(), commits: this.commitProps(),
         pickTab: (tab, cx) => this.pickTab(tab, cx), copyBranch: (cx) => this.copyBranch(cx), openUrl: (url) => openUrl(url),
+        openIssue: (what) => this.openOther(MODS.issues, what),
         open: () => openUrl((this.page ?? this.picked).url),
         review: this.where?.repo ? () => this.review(this.page) : null,
         keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3", "4"], "tabs"], ...(this.tab === "files" || (this.tab === "commits" && this.commitOpen()) ? [[["S"], "unified / split"], [["E"], "expand / collapse all"]] : []),
@@ -705,6 +738,8 @@ export default class PullRequests extends View {
       });
     }
     if (props()?.settings) return settingsMenu("herdr-ranch-prs", [OPENS, PAGE]);
+    const req = takeOpen(MODS.prs, this.xseen);
+    if (req) { this.xseen = req.seq; try { cx.timer.after(0, (cx) => this.openRequest(req.what ?? {}, cx)); } catch { this.xseen = null; } }
     // A space switch shows that space's list in this very render, and loads it right after.
     const space = this.space();
     if ((space?.id ?? null) !== this.spaceId) {

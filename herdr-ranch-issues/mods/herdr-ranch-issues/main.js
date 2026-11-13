@@ -6,6 +6,8 @@
 // branch name or recent commits, on a site another space links to), else the space's
 // GitHub repository.
 // A selected issue's page takes the list's place; Back (or Esc) shows the list again.
+// Linked (xref.js): History and Pull requests open an issue here by its key; its page lists the
+// commits that name it (opening in History) and its pull requests open in Pull requests.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextView } from "gpui-base";
@@ -18,6 +20,7 @@ import { rows, haystack, words, matches, ago, hash, slug } from "./rows.js";
 import { adfToMarkdown } from "./adf.js";
 import { kit, pageLayout, PAGE_WIDE } from "./page-kit.js";
 import { checkForUpdate } from "./update.js";
+import { MODS, openIn, takeOpen, commitsMentioning, repoOfUrl, sameRepo } from "./xref.js";
 import { LinkDialog } from "./link-dialog.js";
 import { AgentDialog, PromptsDialog } from "./agent-dialog.js";
 import { context, activeSpace, knownSites, openLinkDialog, pref, openSettings, settingsMenu, OPENS, PAGE, asSplit, pageMode, openPageDialog, pageDialog, splitView, drawn, openAgentDialog, writeIcons, icon, issueKind, kindColor, avatar, segmented, fs, readSizes, openUrl, agentSpaces, agentChip, mostUrgent, liveAgent, AGENT_STATUS, goToSpace, migrateSettings, imagesAsLinks } from "./links.js";
@@ -101,6 +104,8 @@ export default class SpaceIssues extends View {
     this.keys = false;
     // Loaded pages (the last PAGES), so opening one again is instant.
     this.pages = new Map();
+    // A request from History or Pull requests (xref.js): the last one handled, and one waiting for the list.
+    this.xseen = null; this.pendingOpen = null;
     this.handle = cx.focus_handle();
     // The open issue's page is a view of its own: a live change redraws the list only,
     // and a page that loads redraws the page only (one long render was cut off).
@@ -145,7 +150,9 @@ export default class SpaceIssues extends View {
   // Overlay: the page opens in a dialog of its own, with what the list already has.
   openPage(i) {
     const byKey = new Map(this.issues.map((x) => [x.key, x]));
-    const list = this.items().items.filter((x) => !x.group).map((x) => byKey.get(x.data.key)).filter(Boolean);
+    const shown = this.items().items.filter((x) => !x.group).map((x) => byKey.get(x.data.key)).filter(Boolean);
+    // One the list doesn't show (asked for by another mod) opens alone.
+    const list = shown.some((x) => x.key === i.key) ? shown : [i];
     const kids = {};
     for (const x of this.issues) if (x.fields.parent) (kids[x.fields.parent.key] ??= []).push({ key: x.key, summary: x.fields.summary, done: false });
     openPageDialog("herdr-ranch-issues", { key: i.key, list: list.length ? list : [i], repo: this.repo, github: this.github, kids, page: this.pages.get(pageKey(i)) ?? null });
@@ -237,8 +244,44 @@ export default class SpaceIssues extends View {
         // 401: no sign-in, or one Jira refuses (an expired or a scoped token).
         this.signIn = e?.status === 401 ? e.site ?? (this.projects.some(isLinear) ? linear.SITE : this.projects[0]?.site) : null;
       }
-      finally { if (current()) { this.loading = false; cx.notify(); } }
+      finally {
+        if (current()) {
+          this.loading = false; cx.notify();
+          if (this.pendingOpen) { const w = this.pendingOpen; this.pendingOpen = null; this.openRequest(w, cx); }
+        }
+      }
     });
+  }
+
+  // Another mod asks to show an issue by its key (xref.js): one in the list, else one made from
+  // the key and this space's projects (a Jira or Linear key, or #12 on GitHub). Until the space's
+  // projects are known it waits for the list.
+  openRequest(w, cx) {
+    if (!w.key) return;
+    if (this.loading && !this.projects.length) { this.pendingOpen = w; return; }
+    const i = this.issueFor(w);
+    if (i) this.pick(i, cx);
+    else if (w.url) openUrl(w.url);
+    else notify({ title: `No tracker linked here has ${w.key}`, body: "Link a Jira project, a Linear team or a GitHub repository with Link space.", level: "info", timeout: 5000 });
+  }
+  issueFor(w) {
+    const key = w.key, listed = this.issues.find((x) => x.key === key);
+    if (listed) return listed;
+    if (key.startsWith("#")) {
+      const repo = w.github ?? this.projects.find(isGithub)?.repo ?? this.github;
+      const number = Number(key.slice(1));
+      return repo && number ? { provider: "github", site: github.SITE, repo, key, number, fields: { summary: "" } } : null;
+    }
+    const prefix = key.split("-")[0].toUpperCase();
+    if (this.projects.some((p) => isLinear(p) && (p.key ?? "").toUpperCase() === prefix)) return { provider: "linear", site: linear.SITE, key, fields: { summary: "" } };
+    const jira = this.projects.filter((p) => !isGithub(p) && !isLinear(p));
+    const site = jira.find((p) => (p.key ?? "").toUpperCase() === prefix)?.site ?? w.site ?? jira[0]?.site ?? knownSites()[0];
+    return site ? { site, key, fields: { summary: "" } } : null;
+  }
+  // Opens a commit or a pull request in History or Pull requests; a page dialog closes first.
+  openOther(mod, what) {
+    if (this.only) closeOverlay(props().overlay);
+    openIn(mod, what);
   }
 
   // The keys for Mentioned (GitHub `mentions:@me`) or Watching (Jira), fetched when that
@@ -311,11 +354,14 @@ export default class SpaceIssues extends View {
   }
 
   async fetchPage(i) {
-    // Jira names no pull requests: the space's repository is searched for the key.
-    const [page, prs] = await Promise.all([
+    // Jira names no pull requests: the space's repository is searched for the key. And the
+    // commits on any branch of the space's repository whose message names it.
+    const [page, prs, commits] = await Promise.all([
       isGithub(i) ? github.issue(i, where(this.repo, i)) : isLinear(i) ? linear.issue(i) : issue(i.site, i.key),
       !isGithub(i) && this.github ? github.prsFor(i.key, this.github, where(this.repo, { repo: this.github })).catch(() => []) : null,
+      this.repo && (!isGithub(i) || sameRepo(i.repo, this.github)) ? commitsMentioning(i.key, this.repo) : null,
     ]);
+    page.commits = commits;
     // Linear names its pull requests itself (GitHub attachments); else the search's.
     if (prs && !(isLinear(i) && page.prs?.length)) page.prs = prs;
     // Converted once here, not on every render (Herdr renders on any live change): the
@@ -456,6 +502,21 @@ export default class SpaceIssues extends View {
     return this.issues.filter((x) => x.fields.parent?.key === key).map((x) => ({ key: x.key, summary: x.fields.summary, done: false }));
   }
 
+  // The commits whose message names the issue, newest first, from any branch of the space's
+  // repository: each opens in History, and the last line searches History for the key.
+  commitList(i, commits, t) {
+    const at = { cwd: this.repo?.main, on: this.repo?.on ?? null }, SHOW = 8;
+    const all = div().id("commits-all").text_size(fs.tiny).text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.accent))
+      .on_click(() => this.openOther(MODS.history, { search: i.key, ...at }))
+      .child(commits.length > SHOW ? `All ${commits.length >= 20 ? "20+" : commits.length} in History` : "Search History");
+    if (!commits.length) return v_flex().gap(4).child(div().text_size(fs.meta).text_color(t.dim).child(`No commit names ${i.key}.`)).child(all);
+    return v_flex().gap(4).children(commits.slice(0, SHOW).map((c) => h_flex().id(`commit-${c.sha}`).gap(6).items_center().text_size(fs.meta).min_w(0)
+      .cursor_pointer().hover((s) => s.text_color(t.accent)).on_click(() => this.openOther(MODS.history, { sha: c.sha, ...at }))
+      .child(div().flex_none().font_family("Menlo").text_color(t.dim).child(c.short))
+      .child(div().flex_1().min_w(0).truncate().child(c.title || "(no message)"))
+      .child(div().flex_none().text_size(fs.tiny).text_color(t.dim).child(ago(c.at))))).child(all);
+  }
+
   // The page's own keys (Up, Down and Esc are the dialog's or the list's): ⌘↵ Start agent, O open, C copy the key.
   pageKey(e, cx) {
     const i = this.open, p = this.page, m = e.modifiers ?? {};
@@ -509,8 +570,10 @@ export default class SpaceIssues extends View {
             .child(icon(x.done ? "done" : "circle", x.done ? t.ansi2 : t.dim, 13))
             .child(div().flex_none().text_color(t.dim).child(x.key))
             .child(div().min_w(0).truncate().when(x.done, (e) => e.line_through().text_color(t.muted)).child(x.summary)))))),
+      // A pull request of the space's repository opens in Pull requests; another one on GitHub.
       p && k.section("Development", prs.length ? v_flex().gap(4).children(prs.map((x) => h_flex().id(`pr-${x.number}`).gap(6).items_center().text_size(fs.meta).min_w(0)
-          .cursor_pointer().hover((s) => s.text_color(t.accent)).on_click(() => openUrl(x.url))
+          .cursor_pointer().hover((s) => s.text_color(t.accent))
+          .on_click(() => (this.github && sameRepo(repoOfUrl(x.url), this.github) ? this.openOther(MODS.prs, { number: x.number, github: this.github }) : openUrl(x.url)))
           .child(icon(prIcon(x.state), kindColor(prIcon(x.state), t), 13))
           .child(div().flex_none().text_color(t.dim).child(`#${x.number}`))
           .child(div().flex_1().min_w(0).truncate().child(x.title))
@@ -519,6 +582,7 @@ export default class SpaceIssues extends View {
             return e.child(h_flex().flex_none().gap(2).items_center().text_color(kindColor(st, t)).child(icon(st, kindColor(st, t), 11)).child(String(c.fail || c.pending || c.pass)));
           })))
         : div().text_size(fs.meta).text_color(t.dim).child(gh ? "No pull request mentions this issue." : this.github ? `No pull request names ${i.key}.` : "Link a GitHub repository to see pull requests.")),
+      p?.commits && k.section("Commits", this.commitList(i, p.commits, t)),
     ];
     const keys = [...(this.only || split() ? [[["↑", "↓"], "previous / next"]] : []), ...(lead ? [[["⌘", "↵"], "go to agent"]] : this.repo && p ? [[["⌘", "↵"], "Start agent"]] : []),
       [["O"], `open in ${home(i)}`], [["C"], "copy key"], [["Esc"], this.only ? "close" : "back"]];
@@ -572,6 +636,8 @@ export default class SpaceIssues extends View {
       });
     }
     if (props()?.settings) return settingsMenu("herdr-ranch-issues", [OPENS, ORDER, PAGE]);
+    const req = takeOpen(MODS.issues, this.xseen);
+    if (req) { this.xseen = req.seq; try { cx.timer.after(0, (cx) => this.openRequest(req.what ?? {}, cx)); } catch { this.xseen = null; } }
     // A space switch shows that space's list in this very render, and loads it right after.
     const space = this.space();
     if ((space?.id ?? null) !== this.spaceId) {

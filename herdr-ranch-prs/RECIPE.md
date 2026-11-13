@@ -118,3 +118,8 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 - On a page, `3` shows **Files**: the first files open with their diffs, `S` switches to split with old and new side by side, a file marked **Viewed** closes and counts in "n of m viewed", and a binary file says it has no diff.
 - **Agent review** opens the dialog with the review branch and prompt and starts the agent in a new worktree space.
 - In a repository with a stack of 3, **PRs** shows one stack row with its three layers under it, in the group of its least ready layer, and the blocker names the right pull request; **Fix stack to merge** opens Start agent on that mode with the blockers in the prompt.
+
+
+## Linked
+
+Through `xref.js` (shared with History and Issues): History and Issues open a pull request here by number (`ranch-open` shared state; one of another repository, or with no repository for the space, opens on GitHub). On the page, Development's issues of this repository and Jira keys open in Issues; a commit in the Commits tab has **History**, opening it in the History panel when the repository is checked out.

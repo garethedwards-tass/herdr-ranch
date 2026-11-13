@@ -13,13 +13,37 @@ async function git(args, where, timeout = 20000) {
   return r.stdout;
 }
 
-// The repository of a folder: its top level and current branch, or null outside one.
+// The repository of a folder: its top level, current branch and main checkout (a worktree's is
+// the repository it was made from), or null outside one.
 export async function repoOf(cwd, on) {
   try {
-    const out = await git(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"], { cwd, on });
-    const [top, branch] = out.trim().split("\n");
-    return top ? { top, branch: branch === "HEAD" ? null : branch, on: on ?? null } : null;
+    const out = await git(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD", "--path-format=absolute", "--git-common-dir"], { cwd, on });
+    const [top, branch, common] = out.trim().split("\n");
+    return top ? { top, branch: branch === "HEAD" ? null : branch, main: (common ?? "").replace(/\/\.git\/?$/, "") || top, on: on ?? null } : null;
   } catch { return null; }
+}
+
+// The origin remote's URL, or "".
+export async function remoteUrl(repo) {
+  return (await git(["remote", "get-url", "origin"], { cwd: repo.top, on: repo.on }).catch(() => "")).trim();
+}
+
+// One commit by sha (any length git accepts), in the log's shape; throws when this checkout lacks it.
+export async function one(repo, sha) {
+  const out = await git(["log", "--date=iso-strict", "--no-color", `--format=%H${US}%h${US}%an${US}%ad${US}%P${US}%D${US}%s${RS}`, "-1", sha, "--"], { cwd: repo.top, on: repo.on });
+  const [c] = parseLog(out);
+  if (!c) throw new Error(`No commit ${sha.slice(0, 7)} here.`);
+  return c;
+}
+
+// The pull requests on GitHub that contain a commit (merged ones first, as GitHub lists them),
+// through gh on the repository's machine; [] when gh can't tell.
+export async function prsOf(repo, github, sha) {
+  const r = await exec("gh", ["api", `repos/${github}/commits/${sha}/pulls`, "--jq", ".[] | {number, title, state, merged_at, draft}"], { cwd: repo.top, on: repo.on ?? undefined, timeout: 20000 }).catch(() => null);
+  if (!r || r.code !== 0) return [];
+  return r.stdout.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l)).map((p) => ({
+    number: p.number, title: (p.title ?? "").trim(), state: p.merged_at ? "MERGED" : p.state === "closed" ? "CLOSED" : p.draft ? "DRAFT" : "OPEN",
+  }));
 }
 
 // What HEAD (and with `all`, every branch) points at now: a cheap check before reloading.

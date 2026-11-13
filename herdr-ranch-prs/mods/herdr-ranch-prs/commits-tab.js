@@ -16,7 +16,8 @@ const dayLabel = (day) => {
 };
 
 // `c`: { list (null while loading), total, error, open (the open commit), at (its index),
-// pick(sha, cx), back(cx), step(by, cx), retry(cx), copy(sha, cx), url(sha), openUrl, diff }.
+// pick(sha, cx), back(cx), step(by, cx), retry(cx), copy(sha, cx), url(sha), openUrl, diff,
+// history (opens a sha in the History panel; null without a local checkout) }.
 export function commitsTab(t, k, c) {
   if (c.error) return [h_flex().gap(8).items_center().text_size(fs.meta).text_color(t.ansi1).child(`Commits didn't load: ${c.error}`).child(k.button("commits-retry", "Retry", (cx) => c.retry(cx)))];
   if (!c.list) return [div().text_size(fs.meta).text_color(t.dim).child("Loading the commits…")];
@@ -52,6 +53,7 @@ function commitPage(t, k, c) {
       .child(div().text_color(t.muted).child(`${c.at + 1} of ${n}`))
       .child(div().flex_1())
       .child(k.button("commit-copy", x.short, (cx) => c.copy(x.sha, cx), { icon: "copy" }))
+      .when(Boolean(c.history), (e) => e.child(k.button("commit-history", "History", () => c.history(x.sha))))
       .child(k.button("commit-github", "Open on GitHub", () => c.openUrl(c.url(x.sha)))))
     .child(div().font_semibold().text_size(fs.body).child(x.title || "(no message)"))
     .when(Boolean(x.body), (e) => e.child(div().text_size(fs.meta).text_color(t.muted).font_family(MONO).child(x.body.length > 1500 ? `${x.body.slice(0, 1500)}…` : x.body)))
