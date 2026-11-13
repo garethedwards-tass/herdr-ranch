@@ -11,13 +11,13 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { props, closeOverlay, theme, spaces, panes, exec, run, notify, knownAgents } from "herdr";
+import { props, closeOverlay, theme, spaces, panes, exec, run, notify, knownAgents, settings } from "herdr";
 import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage, workIn, checkoutAt, base, notPushed } from "./git.js";
 import { openRemove } from "./actions.js";
 import { accountOf, argvAs, runAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
-const MAX_FILES = 300, MAX_BRANCHES = 100;
+const MAX_FILES = 300, MAX_BRANCHES = 100, DETAIL_LINES = 400;
 const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
 const GROUPS = [["conflict", "Conflicts", "blocked"], ["staged", "Staged", "ansi2"], ["both", "Staged and changed", "ansi3"], ["changed", "Changes", "ansi3"], ["untracked", "Untracked", "dim"]];
 
@@ -36,6 +36,9 @@ export class GitDialog extends View {
     this.input = InputState.new({ placeholder: "Filter branches, or type a new branch name" });
     this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.at = 0; cx.notify(); });
     this.input.on("submit", (_e, cx) => this.pick(this.rows()[this.at], cx));
+    // A detached worktree's new branch name.
+    this.nameInput = InputState.new({ placeholder: "new branch name, e.g. TASS-1234-graalvm" });
+    this.nameInput.on("submit", (_e, cx) => this.makeBranch(cx));
     this.load(cx);
   }
 
@@ -68,6 +71,14 @@ export class GitDialog extends View {
     const argv = agent ? (a ? runAs(a, agent.run) : agent.run) : a ? argvAs(a) : null;
     this.close();
     run("space.new", { folder: this.g.top, machine: this.on ?? "", ...(argv ? { argv } : {}) });
+  }
+
+  // A detached worktree: a new branch at HEAD with the typed name.
+  makeBranch(cx) {
+    const name = this.nameInput.value().trim();
+    if (!name) return;
+    this.naming = false;
+    this.git(`Made branch ${name}`, ["switch", "-c", name], cx, () => this.nameInput.set_value(""));
   }
 
   // Its last commit, what isn't pushed anywhere, and whether it's locked.
@@ -201,7 +212,7 @@ export class GitDialog extends View {
       return cx.stop_propagation();
     }
     if (e.key === "escape") this.close();
-    else if (e.key === "tab") this.setTab(this.tab === "status" ? "branches" : "status", cx);
+    else if (e.key === "tab" && !this.folder) this.setTab(this.tab === "status" ? "branches" : "status", cx);
     else if (this.tab === "branches" && (e.key === "down" || e.key === "up") && n) { this.at = (this.at + (e.key === "down" ? 1 : n - 1)) % n; cx.notify(); }
     else return;
     cx.stop_propagation();
@@ -236,6 +247,12 @@ export class GitDialog extends View {
       .child(line("Not pushed", i ? (i.unpushed == null ? "?" : i.unpushed === 0 ? "nothing: every commit is on a remote" : `${i.unpushed} commit${i.unpushed === 1 ? "" : "s"} only in this worktree`) : "…", i?.unpushed > 0 ? t.accent : t.ansi2))
       // Detached with commits nowhere else: deleting the worktree leaves nothing pointing at them.
       .when(i?.unpushed > 0 && !st?.branch, (el) => el.child(line("", "detached: push them or make a branch before deleting it", t.ansi3)))
+      // Detached: put HEAD on a new branch (`git switch -c`), so its commits have a name.
+      .when(!st?.branch, (el) => el.child(line("", this.naming
+        ? h_flex().flex_1().min_w(0).gap(6).items_center()
+          .child(div().flex_1().h(28).px(8).flex().items_center().rounded(6).border_1().border_color(t.accent).bg(t.popover).child(Input.new(this.nameInput)))
+          .child(this.button("git-make-branch-go", "Make", t, (cx) => this.makeBranch(cx), { primary: true }))
+        : h_flex().child(this.button("git-make-branch", "Make a branch…", t, (cx) => { this.naming = true; cx.notify(); cx.timer.after(30, () => { try { this.nameInput.focus(); } catch { /* closed */ } }); })))))
       .child(line("Last commit", i?.hash ? i.subject : i ? "none" : "…"))
       .when(Boolean(i?.hash), (el) => el.child(line("", `${i.hash} · ${i.author} · ${ago(i.at)}`, t.dim)))
       .when(Boolean(i?.locked), (el) => el.child(line("Locked", "git won't prune or remove it without --force", t.ansi3)))
@@ -245,6 +262,33 @@ export class GitDialog extends View {
           .hover((s) => s.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => { cx.write_to_clipboard(g.top); this.copied = true; cx.notify(); })
           .child(this.copied ? "Copied" : "Copy"))));
+  }
+
+  // A file's diff or a commit, opened under its row (a click again closes it).
+  toggle(key, args, cx) {
+    if (this.open?.key === key) { this.open = null; cx.notify(); return; }
+    this.open = { key, lines: null };
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const r = await exec("git", args, { cwd: this.g.top, on: this.on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e?.message ?? e) }));
+      if (this.open?.key !== key) return;
+      // diff --no-index exits 1 when the files differ: its output is still the diff.
+      const text = (r.stdout || r.stderr || "").replace(/\n$/, "");
+      const lines = text ? text.split("\n") : ["(no differences)"];
+      this.open = { key, lines: lines.slice(0, DETAIL_LINES), more: Math.max(0, lines.length - DETAIL_LINES) };
+      cx.notify();
+    });
+  }
+
+  detailView(key, t) {
+    if (this.open?.key !== key) return [];
+    const o = this.open, font = settings()?.font_family;
+    const color = (l) => (l.startsWith("+++") || l.startsWith("---") ? t.muted : l.startsWith("+") ? t.ansi2 : l.startsWith("-") ? t.ansi1 : l.startsWith("@@") ? t.accent : /^(diff |index |commit |Author:|Date:)/.test(l) ? t.dim : t.foreground);
+    return [v_flex().id(`detail-${key}`).ml(6).mr(2).my(2).px(10).py(6).rounded(6).border_1().border_color(t.border).bg(t.background).text_size(11.5)
+      .when(Boolean(font), (el) => el.font_family(font))
+      .when(!o.lines, (el) => el.child(div().text_color(t.dim).child("…")))
+      .children((o.lines ?? []).map((l, n) => div().id(`dl-${n}`).min_h(16).whitespace_nowrap().truncate().text_color(color(l)).child(l || " ")))
+      .when(o.more > 0, (el) => el.child(div().pt(4).text_color(t.dim).child(`and ${o.more} more lines`)))];
   }
 
   statusView(t) {
@@ -259,18 +303,24 @@ export class GitDialog extends View {
       left -= shown.length;
       return v_flex().gap(1).flex_none()
         .child(h_flex().gap(6).py(4).text_size(11).text_color(t.muted).child(label).child(div().text_color(t[color] ?? t.dim).child(String(files.length))))
-        .children(shown.map((f, i) => h_flex().id(`file-${kind}-${i}`).gap(8).h(22).px(6).rounded(4).items_center().hover((s) => s.bg(t.hover))
+        .children(shown.flatMap((f, i) => [h_flex().id(`file-${kind}-${i}`).gap(8).h(22).px(6).rounded(4).items_center().cursor_pointer()
+          .when(this.open?.key === `f:${f.path}`, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => this.toggle(`f:${f.path}`, f.kind === "untracked" ? ["--no-pager", "diff", "--no-color", "--no-index", "--", "/dev/null", f.path] : ["--no-pager", "diff", "--no-color", "HEAD", "--", f.path], cx))
           .child(div().w(18).flex_none().text_size(11).text_color(t[color] ?? t.dim).child(`${f.x}${f.y}`.replace(/ /g, "·")))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(f.path))));
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(f.path)),
+          ...this.detailView(`f:${f.path}`, t)]));
     }).filter(Boolean);
     const ago = (x) => { if (!x) return ""; const d = Date.now() / 1000 - x; return d < 3600 ? `${Math.max(1, Math.round(d / 60))}m` : d < 86400 ? `${Math.round(d / 3600)}h` : `${Math.round(d / 86400)}d`; };
     const head = (text, n, color) => h_flex().gap(6).py(4).text_size(11).text_color(t.muted).child(text).child(div().text_color(color).child(String(n)));
     const pushedNot = commits.length ? [v_flex().gap(1).flex_none()
       .child(head("Not pushed: only here", commits.length, t.accent))
-      .children(commits.map((c, n) => h_flex().id(`np-${n}`).gap(8).h(22).px(6).rounded(4).items_center().hover((s) => s.bg(t.hover))
+      .children(commits.flatMap((c, n) => [h_flex().id(`np-${n}`).gap(8).h(22).px(6).rounded(4).items_center().cursor_pointer()
+        .when(this.open?.key === `c:${c.hash}`, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => this.toggle(`c:${c.hash}`, ["--no-pager", "show", "--no-color", "--stat", "--patch", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%B", c.hash], cx))
         .child(div().w(64).flex_none().text_size(11.5).text_color(t.accent).child(c.hash))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(c.subject))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(`${c.author.split(" ")[0]} · ${ago(c.at)}`))))] : [];
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(`${c.author.split(" ")[0]} · ${ago(c.at)}`)),
+        ...this.detailView(`c:${c.hash}`, t)]))] : [];
     return v_flex().gap(6).children(groups).when(!st.files.length, (el) => el.child(div().px(6).text_size(12).text_color(t.dim).child("No uncommitted files."))).children(pushedNot)
       .when(st.files.length > MAX_FILES, (el) => el.child(div().text_size(11).text_color(t.dim).child(`and ${st.files.length - MAX_FILES} more`)));
   }
@@ -326,8 +376,9 @@ export class GitDialog extends View {
       .when(g === undefined, (el) => el.child(div().text_color(t.muted).child("…")))
       .when(g === null, (el) => el.child(div().text_color(t.muted).child(this.error || "This space isn't in a git repository.")))
       .when(Boolean(st), (el) => el
-        .child(h_flex().gap(2).child(tab("status", "Status")).child(tab("branches", "Branches")))
-        .child(this.confirm ? this.confirmView(t) : this.tab === "status"
+        // A worktree keeps its branch: no Branches tab there, its Status only.
+        .child(this.folder ? div().text_size(11.5).text_color(t.muted).child("Status") : h_flex().gap(2).child(tab("status", "Status")).child(tab("branches", "Branches")))
+        .child(this.confirm ? this.confirmView(t) : this.tab === "status" || this.folder
           ? v_flex().id("git-status").flex_1().min_h(0).overflow_y_scrollbar().child(this.statusView(t))
           : this.branchesView(t)))
       .when(Boolean(this.error) && g !== null, (el) => el.child(v_flex().gap(6).max_h(120).id("git-error").overflow_y_scrollbar()
@@ -336,6 +387,6 @@ export class GitDialog extends View {
       .child(h_flex().justify_end().gap(6).text_size(11).text_color(t.dim)
         .when(Boolean(this.folder && g), (el) => el.child(this.button("git-delete-wt", "Delete worktree…", t, () => { this.close(); openRemove({ path: g.top, main: g.main, on: this.on, branch: st?.branch ?? null }); }, { disabled: !g.linked, danger: true })).child(div().flex_1()))
         .when(Boolean(this.busy), (el) => el.child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
-        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.tab === "branches" ? "tab status · ↑↓ choose · ↵ switch · esc close" : "tab branches · esc close"));
+        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch · esc close" : "esc close") : this.tab === "branches" ? "tab status · ↑↓ choose · ↵ switch · esc close" : "tab branches · esc close"));
   }
 }
