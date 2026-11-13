@@ -29,7 +29,7 @@ Herdr's own "Herdr" layout, with one change: the tab bar shows a button next to 
 
 ## Built from
 
-- `layouts/mod-buttons.json`: a `layout.clone` of `main` (0.1.9) with the `tabs` block pointed at `mod-buttons-bar` and `"preview": "layouts/mod-buttons.svg"`. The `panel-body` stack starts with `files` and `changes`.
+- `layouts/mod-buttons.json`: a `layout.clone` of `main` (0.1.9) with the `tabs` block pointed at `mod-buttons-bar` and `"preview": "layouts/mod-buttons.svg"`. The `panel-body` stack starts with `files` (Herdr's) and `changes`, which shows this repository's `herdr-ranch-changes` (point it back to Herdr's `changes` mod without it).
 - `mods/mod-buttons-bar/`: a `mod.clone` of `tabs` (0.1.9). Added: `scan()` (list mods, read `button`, copy icons), `syncLayout()` (panel blocks), `tabButton()`, reading `opens` from `mod-settings`, and a `nextCommand` loop for `rescan`.
 - herdr: `spaces`, `panes`, `openOverlay` (Herdr's `new-menu` and `menu`), `theme`, `window`, `settings`, `run` (`layout.set`, `layout.select`, `layout.show`, `layout.hide`, `tab.new`, `tab.select`), `layout`, `shared` (`mod-settings`), `exec`, `nextCommand`, `appHome`.
 - Programs: `sh` (`tr`, `cmp`, `cp`, `mkdir`). Reads `mod.json` files of all installed mods; writes only `mods/mod-buttons-bar/icons/`.

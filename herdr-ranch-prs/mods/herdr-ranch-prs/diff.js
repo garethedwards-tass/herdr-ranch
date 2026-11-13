@@ -98,3 +98,38 @@ export function visible(file, mode, limit) {
 // The key a file's state (open, viewed, lines shown) is kept under, per pull request and
 // its head commit: a new push resets what was marked viewed.
 export const fileKey = (github, number, head, path) => `${github}#${number}@${head ?? ""}:${path}`;
+
+// `git show` or `git diff` output → [{ filename, previous_filename, status, additions, deletions, changes,
+// patch }], one per "diff --git" section; `patch` starts at its first @@ (null for binary or
+// mode-only changes), as GitHub's API gives it.
+export function parseShow(text) {
+  const files = [];
+  let f = null;
+  const unq = (p) => (p.startsWith("\"") ? p.slice(1, -1) : p);
+  for (const line of text.split("\n")) {
+    const head = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+    if (head) {
+      f = { filename: unq(head[2]), previous_filename: null, status: "modified", additions: 0, deletions: 0, changes: 0, patch: null, body: [] };
+      files.push(f);
+      continue;
+    }
+    if (!f) continue;
+    if (f.patch == null && !line.startsWith("@@")) {
+      if (line.startsWith("new file mode")) f.status = "added";
+      else if (line.startsWith("deleted file mode")) f.status = "removed";
+      else if (line.startsWith("rename from ")) { f.status = "renamed"; f.previous_filename = line.slice(12); }
+      else if (line.startsWith("copy from ")) { f.status = "copied"; f.previous_filename = line.slice(10); }
+      continue;
+    }
+    f.patch ??= "";
+    f.body.push(line);
+    if (line.startsWith("+")) f.additions++;
+    else if (line.startsWith("-")) f.deletions++;
+  }
+  for (const x of files) {
+    x.patch = x.body.length ? x.body.join("\n") : null;
+    x.changes = x.additions + x.deletions;
+    delete x.body;
+  }
+  return files;
+}

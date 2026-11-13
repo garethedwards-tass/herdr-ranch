@@ -20,7 +20,7 @@ function helper({ gitFails = false } = {}) {
       asked.push(reqs);
       const out = reqs.map((r) => {
         if (r.git && gitFails) return { id: r.id, lang: "javascript", lines: [], error: "bad revision" };
-        const n = r.git ? 20 : r.text.split("\n").length;
+        const n = r.git || r.file ? 20 : r.text.split("\n").length;
         return { id: r.id, lang: "javascript", lines: Array.from({ length: n }, (_, i) => [[0, 3, `${r.git ? "git" : "frag"}${i + 1}`]]) };
       });
       return { code: 0, stdout: out.map((o) => JSON.stringify(o)).join("\n"), stderr: "" };
@@ -65,4 +65,22 @@ test("highlightFiles: added files have no old side, and no helper leaves the dif
   // The helper was found once this session; a missing one is covered by run() returning null.
   assert.equal(spansOf(plain, plain.hunks[0].lines[0]), null);
   state.exec = null;
+});
+
+test("highlightFiles: the working tree's side is read from the file on disk", async () => {
+  const asked = helper();
+  await highlightFiles([file()], { cwd: "/repo", oldRev: "HEAD", newRev: "" });
+  assert.deepEqual(asked[0].map((r) => [r.id, r.git?.rev ?? null, r.file ?? null]), [["0:old", "HEAD", null], ["0:new", null, "/repo/a.js"]]);
+  state.exec = null;
+});
+
+test("the diff view's files are the same in every mod that carries them", async () => {
+  const { readFileSync } = await import("node:fs");
+  const read = (m, f) => readFileSync(new URL(`../${m}/mods/${m}/${f}`, import.meta.url), "utf8");
+  for (const f of ["diff.js", "highlight.js"]) {
+    for (const m of ["herdr-ranch-history", "herdr-ranch-changes"]) assert.equal(read(m, f), read("herdr-ranch-prs", f), `${m}/${f} differs from herdr-ranch-prs's: copy it over`);
+  }
+  // files-tab.js: the same, except where it imports its helpers from.
+  const prs = read("herdr-ranch-prs", "files-tab.js").replace('from "./links.js"', 'from "./ui.js"');
+  for (const m of ["herdr-ranch-history", "herdr-ranch-changes"]) assert.equal(read(m, "files-tab.js"), prs, `${m}/files-tab.js differs from herdr-ranch-prs's`);
 });

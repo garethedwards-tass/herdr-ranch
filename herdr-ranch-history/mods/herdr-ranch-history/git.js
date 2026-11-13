@@ -2,7 +2,7 @@
 // the diff view reads (diff.js prepareFile). Runs on the space's machine.
 
 import { exec } from "herdr";
-import { prepareFile } from "./diff.js";
+import { prepareFile, parseShow } from "./diff.js";
 
 export const LOG = 300;
 const US = "\x1f", RS = "\x1e";
@@ -53,41 +53,6 @@ export async function show(repo, sha) {
     git(["show", "--format=", "--patch", "--no-color", "--no-ext-diff", "-M", "--first-parent", "--diff-merges=first-parent", sha], where),
   ]);
   return { body: msg.trim().split("\n").slice(1).join("\n").trim(), files: parseShow(patch).map(prepareFile) };
-}
-
-// `git show` output → [{ filename, previous_filename, status, additions, deletions, changes,
-// patch }], one per "diff --git" section; `patch` starts at its first @@ (null for binary or
-// mode-only changes), as GitHub's API gives it.
-export function parseShow(text) {
-  const files = [];
-  let f = null;
-  const unq = (p) => (p.startsWith("\"") ? p.slice(1, -1) : p);
-  for (const line of text.split("\n")) {
-    const head = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
-    if (head) {
-      f = { filename: unq(head[2]), previous_filename: null, status: "modified", additions: 0, deletions: 0, changes: 0, patch: null, body: [] };
-      files.push(f);
-      continue;
-    }
-    if (!f) continue;
-    if (f.patch == null && !line.startsWith("@@")) {
-      if (line.startsWith("new file mode")) f.status = "added";
-      else if (line.startsWith("deleted file mode")) f.status = "removed";
-      else if (line.startsWith("rename from ")) { f.status = "renamed"; f.previous_filename = line.slice(12); }
-      else if (line.startsWith("copy from ")) { f.status = "copied"; f.previous_filename = line.slice(10); }
-      continue;
-    }
-    f.patch ??= "";
-    f.body.push(line);
-    if (line.startsWith("+")) f.additions++;
-    else if (line.startsWith("-")) f.deletions++;
-  }
-  for (const x of files) {
-    x.patch = x.body.length ? x.body.join("\n") : null;
-    x.changes = x.additions + x.deletions;
-    delete x.body;
-  }
-  return files;
 }
 
 // A search query → git log arguments. Plain words match the message or the author (two
