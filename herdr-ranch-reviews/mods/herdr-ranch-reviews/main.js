@@ -262,7 +262,7 @@ class ReviewList {
         .child(div().id("settings").size(24).flex().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
           .hover((x) => x.bg(t.hover)).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(() => openSettings()).child(svg("mods/workspace-chrome/settings.svg").size(14)))
         .child(div().id("refresh").size(24).flex().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
-          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.refresh(cx)).child(this.loading ? "…" : "↻"))
+          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.refresh(cx)).child(div().text_size(16).child(this.loading ? "…" : "↻")))
         .when(Boolean(overlay), (e) => e.child(div().id("close").px(6).cursor_pointer().text_color(t.dim).on_click(() => closeOverlay(overlay)).child("×"))))
       .child(v_flex().id("reviews-list").flex_1().min_h(0).px(6).overflow_y_scrollbar()
         .when(waiting.length > 0, (e) => e.child(heading("Waiting on you", waiting.length)).children(waiting.map(row)))
