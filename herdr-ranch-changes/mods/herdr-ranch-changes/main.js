@@ -10,7 +10,7 @@ import { repoOf, changes, commitAll, MAX_FILES } from "./git.js";
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
 import { filesTab } from "./files-tab.js";
 import { highlightFiles } from "./highlight.js";
-import { fs, readSizes, kit } from "./ui.js";
+import { fs, readSizes, kit, REFRESH_ICON, writeRefreshIcon } from "./ui.js";
 
 const SPINNER = "mods/workspace-chrome/spinner.svg";
 const OPEN_LINES = 800, ALL_LINES = 2500;
@@ -29,6 +29,7 @@ function location() {
 
 export default class Changes extends View {
   init(_props, cx) {
+    writeRefreshIcon().then(() => cx.notify()).catch(() => null);
     this.repo = null; this.files = null; this.error = null; this.loading = false; this.busy = false;
     this.mode = load("diff-mode", "unified"); this.fileOpen = new Map(); this.fileLimit = new Map(); this.hl = new Map();
     this.message = ""; this.handle = cx.focus_handle();
@@ -149,7 +150,7 @@ export default class Changes extends View {
       .when(files.length > 0, (e) => e.child(div().flex_none().text_size(fs.meta).text_color(t.ansi2).child(`+${add}`)).child(div().flex_none().text_size(fs.meta).text_color(t.ansi1).child(`−${del}`)))
       .child(div().id("changes-refresh").size(24).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
         .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.refresh(cx))
-        .child(this.loading ? svg(SPINNER).size(14).spin(900) : div().text_size(16).child("↻")));
+        .child(this.loading ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(15)));
     const ready = Boolean(this.message.trim()) && files.length > 0 && !this.busy;
     const box = v_flex().flex_none().gap(4).px(10).py(8).border_t_1().border_color(t.border)
       .when(Boolean(this.note), (e) => e.child(div().text_size(fs.meta).text_color(t.ansi1).child(this.note)))

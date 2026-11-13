@@ -14,7 +14,7 @@ import { MODS, openIn, takeOpen, ticketKeys, prRefs, closingRefs, githubFromRemo
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
 import { filesTab } from "./files-tab.js";
 import { highlightFiles } from "./highlight.js";
-import { fs, readSizes, kit, segmented } from "./ui.js";
+import { fs, readSizes, kit, segmented, REFRESH_ICON, writeRefreshIcon } from "./ui.js";
 
 const MONO = "Menlo", SPINNER = "mods/workspace-chrome/spinner.svg";
 const WIDE = 720, WEEK = 7 * 24 * 3600 * 1000;
@@ -44,6 +44,7 @@ function ago(iso) {
 
 export default class History extends View {
   init(_props, cx) {
+    writeRefreshIcon().then(() => cx.notify()).catch(() => null);
     this.repo = null; this.commits = null; this.error = null; this.loading = false;
     this.scope = load("scope", "head"); this.mode = load("diff-mode", "unified");
     this.open = null; this.detail = new Map(); this.fileOpen = new Map(); this.fileLimit = new Map();
@@ -323,7 +324,7 @@ export default class History extends View {
         .child(div().flex_none().font_semibold().child("History"))
         .child(div().flex_1().min_w(0).text_size(fs.meta).text_color(t.dim).truncate().child(this.loading && this.commits ? `${repo} · Refreshing…` : repo))
         .when(full && wide, (e) => e.child(box.w(220)))
-        .child(iconButton("history-refresh", busy ? svg(SPINNER).size(14).spin(900) : div().text_size(16).child("↻"), (cx) => this.refresh(cx, true))))
+        .child(iconButton("history-refresh", busy ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(15), (cx) => this.refresh(cx, true))))
       .when(full && !wide, (e) => e.child(box.w_full()))
       .when(full, (e) => e.child(h_flex().gap(8).items_center().flex_wrap()
         .child(segmented("filter", [[null, "All"], ["mine", "Mine"], ["merges", "Merges"], ["recent", "Recent"]], this.filter, (v, cx) => { this.filter = v; this.cursor = 0; }, t))

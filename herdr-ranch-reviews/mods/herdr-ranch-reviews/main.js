@@ -262,7 +262,7 @@ class ReviewList {
         .child(div().id("settings").size(24).flex().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
           .hover((x) => x.bg(t.hover)).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(() => openSettings()).child(svg("mods/workspace-chrome/settings.svg").size(14)))
         .child(div().id("refresh").size(24).flex().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
-          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.refresh(cx)).child(div().text_size(16).child(this.loading ? "…" : "↻")))
+          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.refresh(cx)).child(this.loading ? div().child("…") : svg(`${ICONS}/refresh.svg`).size(15)))
         .when(Boolean(overlay), (e) => e.child(div().id("close").px(6).cursor_pointer().text_color(t.dim).on_click(() => closeOverlay(overlay)).child("×"))))
       .child(v_flex().id("reviews-list").flex_1().min_h(0).px(6).overflow_y_scrollbar()
         .when(waiting.length > 0, (e) => e.child(heading("Waiting on you", waiting.length)).children(waiting.map(row)))
@@ -350,6 +350,7 @@ const ICONS = "data/herdr-ranch/icons";
 const ICON_BODIES = {
   "review-rendered": '<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>',
   "review-source": '<path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>', // Lucide refresh-cw, the refresh button
 };
 let iconsWritten = null;
 const writeIcons = () => iconsWritten ??= (async () => {

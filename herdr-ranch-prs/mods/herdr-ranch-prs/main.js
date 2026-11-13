@@ -18,6 +18,7 @@ import { kit, PAGE_WIDE } from "./page-kit.js";
 import { MODS, openIn, takeOpen, sameRepo, ticketKeys, jiraUrl, prefixesFor } from "./xref.js";
 import { LinkDialog } from "./link-dialog.js";
 import { AgentDialog, PromptsDialog } from "./agent-dialog.js";
+import { REFRESH_ICON } from "./links.js";
 import { context, activeSpace, openLinkDialog, openSettings, settingsMenu, OPENS, PAGE, asSplit, pageMode, openPageDialog, pageDialog, splitView, drawn, openAgentDialog, writeIcons, icon, issueKind as issueKindOf, kindColor, avatar, segmented, fs, readSizes, openUrl, agentSpaces, agentChip, mostUrgent, liveAgent, AGENT_STATUS, goToSpace, migrateSettings, loadAvatars, avatarPics } from "./links.js";
 
 const SPINNER = "mods/workspace-chrome/spinner.svg", COG = "mods/workspace-chrome/settings.svg";
@@ -816,7 +817,7 @@ export default class PullRequests extends View {
           .child(div().flex_none().font_semibold().child("Pull requests"))
           .child(div().flex_1().min_w(0).text_size(fs.meta).text_color(t.dim).truncate().child(this.loading && this.prs.length ? `${this.where?.github ?? ""} · Refreshing…` : this.where?.github ?? ""))
           .when(wide, (e) => e.child(search.w(220)))
-          .child(iconButton("refresh", this.loading ? svg(SPINNER).size(14).spin(900) : div().text_size(16).child("↻"), (cx) => this.refresh(cx)))
+          .child(iconButton("refresh", this.loading ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(15), (cx) => this.refresh(cx)))
           .child(iconButton("settings", svg(COG).size(14), () => openSettings("herdr-ranch-prs")))
           .when(Boolean(overlay), (e) => e.child(close)))
         .when(!wide, (e) => e.child(search.w_full()))
