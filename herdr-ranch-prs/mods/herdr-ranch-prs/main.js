@@ -220,7 +220,8 @@ export default class PullRequests extends View {
   }
 
   // The filters, like GitHub's: Assigned to me, Created by me, Mentioned, Review requests
-  // (asked of me directly) and Recent activity (updated in the last 7 days). None: all.
+  // (asked of me directly), Recent activity (updated in the last 7 days) and Pushed (open, with a
+  // commit in the last 7 days). None: all.
   keep(p) {
     const me = this.login;
     if (this.filter === "created") return p.author?.login === me;
@@ -228,6 +229,7 @@ export default class PullRequests extends View {
     if (this.filter === "mentioned") return Boolean(this.mentions?.has(p.number));
     if (this.filter === "review") return (p.reviewRequests ?? []).some((r) => r.login === me);
     if (this.filter === "recent") return Date.parse(p.updatedAt) > Date.now() - WEEK;
+    if (this.filter === "pushed") return p.state === "OPEN" && Date.parse(p.pushedAt) > Date.now() - WEEK;
     return true;
   }
 
@@ -317,6 +319,14 @@ export default class PullRequests extends View {
       const ws = words(this.query);
       const shown = this.prs.filter((p) => matches(this.hay.get(p.number), ws) && this.keep(p));
       const passing = new Set(shown.map((p) => p.number)), byNumber = new Map(this.prs.map((p) => [p.number, p]));
+      // Pushed: one list, the latest push first, each row aged by its push; no groups or stacks.
+      if (this.filter === "pushed") {
+        const sorted = [...shown].sort((a, b) => Date.parse(b.pushedAt) - Date.parse(a.pushedAt));
+        const items = sorted.length ? [{ key: "group-pushed", group: { label: "Recently pushed", count: String(sorted.length) } },
+          ...sorted.map((pr) => ({ key: `pr-${pr.number}`, data: { ...this.data.get(pr.number), age: ago(pr.pushedAt) } }))] : [];
+        this.cache = { k, items, flat: sorted };
+        return this.cache;
+      }
       // A stack shows whole when any layer passes the search and filter (the others dimmed),
       // as one row in the group of its least ready layer; its layers aren't loose rows.
       const stacks = this.stacks.filter((s) => s.layers.some((l) => passing.has(l.number)));
@@ -563,7 +573,7 @@ export default class PullRequests extends View {
       .border_1().border_color(on ? t.accent : t.border).when(on, (e) => e.bg(t.selected))
       .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { flip(cx); cx.notify(); }).child(label);
     const empty = this.error || (this.loading ? "Loading pull requests…" : this.prs.length ? (this.filter === "mentioned" && this.mentionsLoading ? "Loading…" : "Nothing matches.") : "No open pull requests.");
-    const filters = h_flex().child(segmented("filter", [["assigned", "Assigned"], ["created", "Created"], ["mentioned", "Mentioned"], ["review", "Review requests"], ["recent", "Recent"]], this.filter, (id, cx) => {
+    const filters = h_flex().child(segmented("filter", [["assigned", "Assigned"], ["created", "Created"], ["mentioned", "Mentioned"], ["review", "Review requests"], ["recent", "Recent"], ["pushed", "Pushed"]], this.filter, (id, cx) => {
       this.filter = id;
       if (this.filter === "mentioned" && !this.mentions && !this.mentionsLoading) this.loadMentions(cx);
     }, t));

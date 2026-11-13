@@ -8,7 +8,7 @@ import { exec } from "herdr";
 const FIELDS = `number title author { login } assignees(first: 20) { nodes { login } } headRefName baseRefName
   isDraft reviewDecision reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
   additions deletions updatedAt url state isCrossRepository
-  commits(last: 1) { nodes { commit { statusCheckRollup { contexts {
+  commits(last: 1) { nodes { commit { committedDate statusCheckRollup { contexts {
     checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }`;
 const LIST = (states, first) => `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
   pullRequests(states: ${states}, first: ${first}, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${FIELDS} } } } }`;
@@ -47,7 +47,7 @@ function slim(pr, login) {
     number: pr.number, title: (pr.title ?? "").trim(), author: { login: pr.author?.login ?? null }, assignees: (pr.assignees ?? []).map((a) => a.login), headRefName: pr.headRefName, baseRefName: pr.baseRefName ?? "",
     isDraft: pr.isDraft, reviewDecision: pr.reviewDecision, reviewRequests: (pr.reviewRequests ?? []).map((r) => ({ login: r.login })),
     checks: pr.checks, additions: pr.additions, deletions: pr.deletions, updatedAt: pr.updatedAt, url: pr.url, state: pr.state,
-    fork: Boolean(pr.isCrossRepository),
+    fork: Boolean(pr.isCrossRepository), pushedAt: pr.pushedAt ?? null,
   };
   s.group = group(s, login);
   return s;
@@ -61,6 +61,9 @@ function fromNode(n) {
     ...n, author: n.author ?? null, assignees: n.assignees?.nodes ?? [], reviewDecision: n.reviewDecision ?? "",
     reviewRequests: (n.reviewRequests?.nodes ?? []).map((r) => r.requestedReviewer ?? {}),
     checks: countChecks(rollup),
+    // When the newest commit was made: a push brings new commits, so this is the last push
+    // (a rebase or amend renews it too).
+    pushedAt: n.commits?.nodes?.[0]?.commit?.committedDate ?? null,
   };
 }
 
