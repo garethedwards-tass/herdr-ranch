@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
-import { ticketKeys, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor, repoOfUrl, sameRepo, takeOpen, openIn, reveal, mentionPattern, mentionArgs, commitsMentioning, MODS } from "../shared/xref.js";
+import { ticketKeys, jiraSite, jiraUrl, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor, repoOfUrl, sameRepo, takeOpen, openIn, reveal, mentionPattern, mentionArgs, commitsMentioning, MODS } from "../shared/xref.js";
 import { repoOf, one, prsOf } from "../herdr-ranch-history/mods/herdr-ranch-history/git.js";
 
 const US = "\x1f", RS = "\x1e";
@@ -99,4 +99,15 @@ test("History: repoOf finds the main checkout of a worktree; one and prsOf", asy
   state.exec = (cmd, args) => (cmd === "gh" ? { code: 0, stdout: '{"number":5,"title":"Fix","state":"closed","merged_at":"2026-11-12T00:00:00Z","draft":false}\n{"number":6,"title":"Draft","state":"open","merged_at":null,"draft":true}\n', stderr: "" } : null);
   assert.deepEqual(await prsOf({ top: "/r" }, "a/b", "b".repeat(40)), [{ number: 5, title: "Fix", state: "MERGED" }, { number: 6, title: "Draft", state: "DRAFT" }]);
   state.exec = null;
+});
+
+test("jiraSite and jiraUrl: the link's site, else the most linked one; only Jira-shaped keys", () => {
+  state.shared["space-links"] = { a: { jira: { site: "one.atlassian.net" } }, b: { jira: { site: "two.atlassian.net" } }, c: { jira: { site: "two.atlassian.net" } } };
+  assert.equal(jiraSite({ jira: { site: "mine.atlassian.net" } }), "mine.atlassian.net");
+  assert.equal(jiraSite(null), "two.atlassian.net");
+  assert.equal(jiraUrl("two.atlassian.net", "TASS-12"), "https://two.atlassian.net/browse/TASS-12");
+  assert.equal(jiraUrl("two.atlassian.net", "#12"), null);
+  assert.equal(jiraUrl(null, "TASS-12"), null);
+  state.shared["space-links"] = {};
+  assert.equal(jiraSite(null), null);
 });

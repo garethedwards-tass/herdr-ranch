@@ -123,3 +123,5 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 ## Linked
 
 Through `xref.js` (shared with History and Issues): History and Issues open a pull request here by number (`ranch-open` shared state; one of another repository, or with no repository for the space, opens on GitHub). On the page, Development's issues of this repository and Jira keys open in Issues; a commit in the Commits tab has **History**, opening it in the History panel when the repository is checked out.
+
+Each Jira key in Development has a **Jira ↗** at the end of its row (the row itself opens Issues). An open commit in the Commits tab shows **Linked**: the linked Jira project's keys in its message, each a button that opens Issues and a **Jira ↗**.

@@ -43,3 +43,5 @@ The git commit history of the repository you're working in, in a side panel next
 - With a terminal in a repository focused, History lists its commits by day; ↵ on one shows its message and diffs; `S` switches to split.
 - `author:<you>` lists your commits from the whole history; a 7-character sha finds that commit; `path:<file>` lists the commits that touched it.
 - **Mine** and **Merges** narrow the list; **All branches** shows other branches' commits with their ref pills.
+
+- **Jira ↗** follows each ticket key in Linked when a Jira site is known (Link space's, else the one most spaces link to; not for a Linear team's keys) and opens `https://<site>/browse/<KEY>`.

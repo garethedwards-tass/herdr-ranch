@@ -551,25 +551,29 @@ export default class SpaceIssues extends View {
     const prs = p?.prs ?? [];
     const prIcon = (s) => (s === "MERGED" ? "merged" : s === "CLOSED" ? "closed" : s === "DRAFT" ? "draft" : "pr");
     const working = agentSpaces(this.repo?.main).issues.get(i.key) ?? [], lead = liveAgent(working);
+    // On a Jira issue, the keys it names (parent, sub-tasks, relations) open on Jira too.
+    const jira = (key, id) => (!gh && !isLinear(i) && i.site && key ? div().id(id).flex_none().px(5).rounded(4).text_size(fs.tiny).text_color(t.muted).cursor_pointer()
+      .hover((s) => s.bg(t.hover).text_color(t.accent)).on_click(() => openUrl(`https://${i.site}/browse/${key}`)).child("Jira ↗") : null);
+    const withJira = (row, key, id) => { const j = jira(key, id); return j ? row.child(j) : row; };
     const side = [
       k.agents(working, (id) => this.go(id)),
       k.section("Assignee", f.assignee ? k.person(f.assignee.displayName) : div().text_size(fs.meta).text_color(t.dim).child("Nobody")),
       reporter && k.section(gh ? "Author" : "Reporter", k.person(reporter)),
       f.priority?.name && k.section("Priority", div().text_size(fs.meta).child(f.priority.name)),
       f.labels?.length > 0 && k.section("Labels", h_flex().flex_wrap().gap(4).children(f.labels.map((l) => k.label(l)))),
-      f.parent?.key && k.section("Parent", div().text_size(fs.meta).text_color(t.muted).child(f.parent.key)),
+      f.parent?.key && k.section("Parent", withJira(h_flex().gap(6).items_center().text_size(fs.meta).child(div().flex_1().text_color(t.muted).child(f.parent.key)), f.parent.key, "parent-jira")),
       f.milestone && k.section("Milestone", div().text_size(fs.meta).child(f.milestone)),
-      sub.length > 0 && k.section("Sub-tasks", v_flex().gap(4).children(sub.map((x) => h_flex().gap(6).items_center().text_size(fs.meta).min_w(0)
+      sub.length > 0 && k.section("Sub-tasks", v_flex().gap(4).children(sub.map((x) => withJira(h_flex().gap(6).items_center().text_size(fs.meta).min_w(0)
           .child(icon(x.done ? "done" : "circle", x.done ? t.ansi2 : t.dim, 13))
           .child(div().flex_none().text_color(t.dim).child(x.key))
-          .child(div().min_w(0).truncate().when(x.done, (e) => e.line_through().text_color(t.muted)).child(x.summary)))),
+          .child(div().flex_1().min_w(0).truncate().when(x.done, (e) => e.line_through().text_color(t.muted)).child(x.summary)), x.key, `sub-jira-${x.key}`))),
         div().text_size(fs.tiny).text_color(t.dim).child(`${sub.filter((x) => x.done).length} of ${sub.length}`)),
       p?.relations?.length > 0 && k.section("Relations", v_flex().gap(4).children(p.relations.map((x, n) => v_flex().id(`rel-${n}`).gap(1).min_w(0).text_size(fs.meta)
           .child(div().text_size(fs.tiny).text_color(/block/.test(x.label) && !x.done ? t.ansi1 : t.dim).child(x.label))
-          .child(h_flex().gap(6).items_center().min_w(0)
+          .child(withJira(h_flex().gap(6).items_center().min_w(0)
             .child(icon(x.done ? "done" : "circle", x.done ? t.ansi2 : t.dim, 13))
             .child(div().flex_none().text_color(t.dim).child(x.key))
-            .child(div().min_w(0).truncate().when(x.done, (e) => e.line_through().text_color(t.muted)).child(x.summary)))))),
+            .child(div().flex_1().min_w(0).truncate().when(x.done, (e) => e.line_through().text_color(t.muted)).child(x.summary)), x.key, `rel-jira-${n}`))))),
       // A pull request of the space's repository opens in Pull requests; another one on GitHub.
       p && k.section("Development", prs.length ? v_flex().gap(4).children(prs.map((x) => h_flex().id(`pr-${x.number}`).gap(6).items_center().text_size(fs.meta).min_w(0)
           .cursor_pointer().hover((s) => s.text_color(t.accent))

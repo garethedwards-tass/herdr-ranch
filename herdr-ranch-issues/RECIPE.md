@@ -110,3 +110,5 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 ## Linked
 
 Through `xref.js` (shared with History and Pull requests): History and Pull requests open an issue here by key (`TASS-12`, a Linear key, or `#12`); one not in the list is made from the key and the space's projects. The page's **Commits** section lists up to 8 of the newest 20 commits on any branch whose message names the key as a whole word (`git log --all -i -E --grep`), each opening in History, and **Search History**. Development's pull requests of this repository open in Pull requests.
+
+On a Jira issue, Parent, Sub-tasks and Relations rows end in **Jira ↗**, opening that key on the issue's site.
