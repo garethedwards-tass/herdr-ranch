@@ -108,7 +108,7 @@ export function worktreeSpaceRow(v, r, t) {
   const c = g ? checkoutAt(v.trees[g.repo], at) : null;
   const folder = g?.top ? base(g.top) : "";
   const branch = g?.branch ?? "detached";
-  return h_flex().id(`space-${w.id}`).h(26).flex_none().px(8).pl(13).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
+  return h_flex().id(`space-${w.id}`).h(26).flex_none().px(8).pl(2).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
     .text_color(t.foreground).when(w.active, (el) => el.bg(t.selected)).when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
     .on_click(() => run("space.select", { id: w.id }))
     .on_mouse_down("right", () => spaceMenu(w, g))
@@ -179,7 +179,7 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
 
 // "n worktrees without a space": folds a repository's checkouts that no space shows.
 export function moreRow(v, r, t) {
-  return h_flex().id(`more-${r.repo}`).h(26).flex_none().px(8).pl(13).gap(7).items_center().rounded(6).cursor_pointer()
+  return h_flex().id(`more-${r.repo}`).h(26).flex_none().px(8).pl(2).gap(7).items_center().rounded(6).cursor_pointer()
     .text_size(13).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.muted))
     .on_click((_e, cx) => {
       r.open ? v.unfolded.delete(r.repo) : v.unfolded.add(r.repo);
@@ -201,7 +201,7 @@ function checkoutMenu(r) {
 // A worktree no space shows: a click opens its Git dialog (with its menu's actions), right-click
 // its menu (no space is made either way).
 export function looseRow(v, r, t) {
-  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(32).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
+  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(21).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
     .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
     .on_mouse_down("right", () => checkoutMenu(r))
@@ -220,7 +220,7 @@ function terminalsOf(w) {
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
 
 // A small label over a group under an unfolded space ("Terminals", "Worktrees").
-export const sectionLabel = (id, text, t) => div().id(id).h(20).flex_none().pl(32).flex().items_end().text_size(11.5).text_color(t.dim).child(text);
+export const sectionLabel = (id, text, t) => div().id(id).h(20).flex_none().pl(21).flex().items_end().text_size(11.5).text_color(t.dim).child(text);
 
 export const isOpen = (v, id) => v.openSpaces?.has(id) ?? false;
 
@@ -265,7 +265,7 @@ export function terminalRows(v, w, t, depth = 1) {
 
 // "+ New terminal or agent…" at the end of a space's terminals: a menu of both, as its account.
 function newTabRow(w, t, depth) {
-  return h_flex().id(`term-new-${w.id}`).h(24).flex_none().pl(depth > 1 ? 51 : 32).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+  return h_flex().id(`term-new-${w.id}`).h(24).flex_none().pl(depth > 1 ? 40 : 21).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
     .text_size(12.5).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => {
       const a = accountOf(w, null);
@@ -281,7 +281,7 @@ function terminalRow(p, t, depth) {
     const name = telling ? title : p.program?.name || "terminal";
     const where = [p.cwd ? base(p.cwd) : "", p.branch ?? ""].filter(Boolean).join(" · ");
     const color = t[STATUS[p.status]] ?? t.dim;
-    return h_flex().id(`term-${p.pane}`).h(26).flex_none().pl(depth > 1 ? 51 : 32).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`term-${p.pane}`).h(26).flex_none().pl(depth > 1 ? 40 : 21).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
       .text_size(13).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("pane.focus", { pane: p.pane }))
       // An agent shows its own icon (Herdr's program table), a plain terminal the terminal icon.
