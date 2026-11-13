@@ -65,7 +65,7 @@ Herdr's Files panel with syntax colors from `ranch-highlight`, behind the tab ba
 
 ## Spaces
 
-Herdr's spaces list with git and links, in the sidebar of the mod-buttons layout: each space's branch and ahead/behind, worktree spaces under their repository's space, and the repository's other worktrees (a click opens a space there). Each space has a git chip (its branch and state, colored green when in sync; a click opens git and worktree actions) and a Link chip; a linked space shows its Jira, Linear or GitHub link as a chip that opens Link space. Right-click a space for Link space, New, Open and Remove worktree, Rename and Close. Every checkout shows its outstanding work (`●` uncommitted files, `↑` unpushed commits); right-click a worktree without a space to create a space there or delete it. **New worktree** starts from a branch or from one of your issues. See its [RECIPE.md](herdr-ranch-spaces/RECIPE.md).
+Herdr's spaces list with git and links, in the sidebar of the mod-buttons layout. Each space has a git chip (its branch and state, green when in sync; a click opens git and worktree actions), its terminals, and its Jira, Linear or GitHub link as a chip (a grey Link chip when unlinked). Worktree spaces sit under their repository's space, followed by its worktrees without a space (right-click to create a space there or delete it). **New worktree** starts from a branch or from one of your issues, and a space can have its own accounts. See its [RECIPE.md](herdr-ranch-spaces/RECIPE.md).
 
 ## Agents
 

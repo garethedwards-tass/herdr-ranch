@@ -68,7 +68,7 @@ export function gitState(c, g) {
 const SHORT = { sync: () => "✓", dirty: (c) => String(c.changes), behind: (_c, g) => `↓${g.behind}`, diverged: () => "↕", ahead: (c, g) => `↑${Math.max(g.ahead ?? 0, c.unpushed ?? 0)}`, unknown: () => "…" };
 function gitChip(v, w, g, at, t) {
   const c = checkoutAt(v.trees[g.repo], at), s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
-  return h_flex().id(`space-git-menu-${w.id}`).flex_none().w(112).gap(3).px(5).items_center().rounded(4)
+  return h_flex().id(`space-git-menu-${w.id}`).flex_none().w(80).gap(3).px(5).items_center().rounded(4)
     .border_1().border_color(color + "55").bg(color + "14").text_size(11).text_color(color).cursor_pointer()
     .hover((x) => x.bg(color + "2a")).tooltip(`${g.branch ?? "detached"}: ${s.say}\nClick for git: status, branches, pull, worktrees`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
