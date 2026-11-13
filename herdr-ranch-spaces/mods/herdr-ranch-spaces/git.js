@@ -68,7 +68,9 @@ export async function worktrees(main, on) {
 const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
 
 // The rows to draw, in order:
-//   { kind: "space", w, i, g, tree }   a space (tree "├─"/"└─" for a worktree under its repo's space)
+//   { kind: "space", w, i, g, tree, children? }   a space (tree "├─"/"└─" for a worktree under its repo's
+//                                       space; `children`: how many rows fold under it)
+// Every row under a space has `parent` (that space's id).
 //   { kind: "more", repo, count, open } the fold for a repository's checkouts without a space
 //   { kind: "loose", repo, c, tree }    one of those checkouts
 // `list`: [{ w, i, g, at }] (at: the space's folder now); `trees`: repo key -> parseWorktrees();
@@ -80,7 +82,8 @@ export function arrange(list, trees = {}, open = new Set()) {
   const placed = new Set();
   for (const r of list) {
     if (nested(r)) continue;
-    out.push({ kind: "space", ...r, tree: null });
+    const head = { kind: "space", ...r, tree: null, children: 0 };
+    out.push(head);
     if (!r.g || placed.has(r.g.repo)) continue;
     placed.add(r.g.repo);
     const kids = r.g.linked ? [] : list.filter((k) => nested(k) && k.g.repo === r.g.repo);
@@ -91,22 +94,23 @@ export function arrange(list, trees = {}, open = new Set()) {
     const unfolded = open.has(r.g.repo);
     const tail = [
       ...kids.map((k) => ({ kind: "space", ...k })),
-      ...(loose.length ? [{ kind: "more", repo: r.g.repo, count: loose.length, busy: loose.filter(hasWork).length, open: unfolded }] : []),
+      ...(loose.length ? [{ kind: "more", repo: r.g.repo, count: loose.length, busy: loose.filter(hasWork).length, dirty: loose.filter((c) => c.changes > 0).length, unpushed: loose.filter((c) => c.unpushed > 0).length, open: unfolded }] : []),
       ...(unfolded ? loose.map((c) => ({ kind: "loose", repo: r.g.repo, main: r.g.main, c, on: r.w.machine ?? null })) : []),
     ];
-    tail.forEach((row, n) => out.push({ ...row, tree: n === tail.length - 1 ? "└─" : "├─" }));
+    // `parent`: the space they fold under; the loose rows count once, in their own fold.
+    head.children = kids.length + (loose.length ? 1 : 0);
+    tail.forEach((row, n) => out.push({ ...row, tree: n === tail.length - 1 ? "└─" : "├─", parent: r.w.id }));
   }
   return out;
 }
 
-// After the name, only what it doesn't already say: "herdr · spike". The repository goes on a
-// worktree row and when the name is the repository; the branch when the name is the branch, and
-// main/master go (nearly every space is on one), as in Herdr's own list.
+// After the name: the repository when the name doesn't say it, then the branch ("herdr · spike"). The repository goes on a
+// worktree row and when the name is the repository. The branch always shows, main and master too.
 export function tail(g, tree, name) {
   if (!g) return "";
   const same = (a) => (a ?? "").toLowerCase() === (name ?? "").toLowerCase();
   const branch = g.branch ?? "detached";
-  return [tree || same(g.name) ? "" : g.name, same(branch) || branch === "main" || branch === "master" ? "" : branch].filter(Boolean).join(" · ");
+  return [tree || same(g.name) ? "" : g.name, branch].filter(Boolean).join(" · ");
 }
 
 // A space's link as a short label: the Jira or Linear key, else the GitHub repository's name.
@@ -251,3 +255,16 @@ export function switchRisk(files) {
   return { tracked: f.filter((x) => x.kind !== "untracked" && x.kind !== "conflict"), conflicts: f.filter((x) => x.kind === "conflict"), untracked: f.filter((x) => x.kind === "untracked").length };
 }
 export const stashMessage = (from, to) => `herdr-ranch: ${from ?? "detached"} before switching to ${to}`;
+
+// `git log --format=%h%x09%s%x09%an%x09%ct` lines as [{ hash, subject, author, at }].
+export function parseCommits(text) {
+  return (text ?? "").split("\n").filter(Boolean).map((l) => { const [hash, subject, author, at] = l.split("\t"); return { hash, subject: subject ?? "", author: author ?? "", at: Number(at) || 0 }; });
+}
+
+// The commits on HEAD that no remote has, newest first (at most `max`); [] without a remote.
+export async function notPushed(top, on, max = 30) {
+  const remote = await exec("git", ["remote"], { cwd: top, on });
+  if (remote.code !== 0 || !remote.stdout.trim()) return [];
+  const r = await exec("git", ["log", `-n${max}`, "--format=%h%x09%s%x09%an%x09%ct", "HEAD", "--not", "--remotes"], { cwd: top, on });
+  return r.code === 0 ? parseCommits(r.stdout) : [];
+}

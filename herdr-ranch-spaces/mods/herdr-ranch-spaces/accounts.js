@@ -71,6 +71,11 @@ export function argvAs(a, program = "shell") {
   return ["sh", "-c", `${envScript(a)}; ${run}`];
 }
 
+// argv running `run` (e.g. an agent's command from Herdr's program table) as `a`.
+export function runAs(a, run) {
+  return ["sh", "-c", `${envScript(a)}; exec "$@"`, "sh", ...run];
+}
+
 // The GitHub accounts gh knows (`gh auth status`), for the picker.
 export function parseGhAccounts(text) {
   return [...new Set([...(text ?? "").matchAll(/account ([A-Za-z0-9-]+)/g)].map((m) => m[1]))];

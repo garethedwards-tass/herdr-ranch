@@ -9,13 +9,15 @@
 // overwritten), or cancel. Conflicts block a switch. The status is read again right before.
 // Tab switches Status / Branches, ↑/↓ choose a branch, Enter switches, Esc closes.
 
-import { View, div } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { props, closeOverlay, theme, spaces, panes, exec, run, notify } from "herdr";
-import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage } from "./git.js";
+import { props, closeOverlay, theme, spaces, panes, exec, run, notify, knownAgents, settings } from "herdr";
+import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage, workIn, checkoutAt, base, notPushed } from "./git.js";
+import { openRemove } from "./actions.js";
+import { accountOf, argvAs, runAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
-const MAX_FILES = 300, MAX_BRANCHES = 100;
+const MAX_FILES = 300, MAX_BRANCHES = 100, DETAIL_LINES = 400;
 const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
 const GROUPS = [["conflict", "Conflicts", "blocked"], ["staged", "Staged", "ansi2"], ["both", "Staged and changed", "ansi3"], ["changed", "Changes", "ansi3"], ["untracked", "Untracked", "dim"]];
 
@@ -34,6 +36,9 @@ export class GitDialog extends View {
     this.input = InputState.new({ placeholder: "Filter branches, or type a new branch name" });
     this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.at = 0; cx.notify(); });
     this.input.on("submit", (_e, cx) => this.pick(this.rows()[this.at], cx));
+    // A detached worktree's new branch name.
+    this.nameInput = InputState.new({ placeholder: "new branch name, e.g. TASS-1234-graalvm" });
+    this.nameInput.on("submit", (_e, cx) => this.makeBranch(cx));
     this.load(cx);
   }
 
@@ -44,16 +49,47 @@ export class GitDialog extends View {
         const g = folder ? await probe(folder, this.on) : null;
         if (g) {
           this.checkouts = await worktrees(g.main, this.on);
-          [this.st, this.list] = await Promise.all([status(g.top, this.on), branches(g.main, this.on, this.checkouts)]);
+          [this.st, this.list, this.commits] = await Promise.all([status(g.top, this.on), branches(g.main, this.on, this.checkouts), notPushed(g.top, this.on).catch(() => [])]);
+          // A worktree without a space: what it holds, and the agents a space can start with.
+          if (this.folder) [this.info, this.agents] = await Promise.all([this.worktreeInfo(g), knownAgents({ on: this.on }).then((l) => l.filter((a) => a.installed && a.run?.length)).catch(() => [])]);
         }
         this.g = g;
       } catch (e) { this.g ??= null; this.error = String(e?.message ?? e); }
       cx.notify();
+      // Opened to fetch or pull (the git button's popup): once, after the first read.
+      const act = props()?.action;
+      if (act && !this.acted && this.g) { this.acted = true; act === "pull" ? this.pull(cx) : this.fetch(cx); }
       if (this.tab === "branches") cx.timer.after(50, () => { try { this.input.focus(); } catch { /* closed */ } });
     });
   }
 
   close() { closeOverlay(props().overlay); run(`${MOD}.focus`); }
+
+  // A space on this worktree with a terminal or an agent, as its repository's account if any.
+  createSpace(agent = null) {
+    const a = accountOf(null, { main: this.g.main, on: this.on });
+    const argv = agent ? (a ? runAs(a, agent.run) : agent.run) : a ? argvAs(a) : null;
+    this.close();
+    run("space.new", { folder: this.g.top, machine: this.on ?? "", ...(argv ? { argv } : {}) });
+  }
+
+  // A detached worktree: a new branch at HEAD with the typed name.
+  makeBranch(cx) {
+    const name = this.nameInput.value().trim();
+    if (!name) return;
+    this.naming = false;
+    this.git(`Made branch ${name}`, ["switch", "-c", name], cx, () => this.nameInput.set_value(""));
+  }
+
+  // Its last commit, what isn't pushed anywhere, and whether it's locked.
+  async worktreeInfo(g) {
+    const git = (args) => exec("git", args, { cwd: g.top, on: this.on }).catch(() => ({ code: 1, stdout: "" }));
+    const [last, remote] = await Promise.all([git(["log", "-1", "--format=%h%x09%s%x09%an%x09%ct"]), git(["remote"])]);
+    const [hash, subject, author, at] = last.code === 0 ? last.stdout.trim().split("\t") : [];
+    const work = await workIn(g.top, this.on, remote.code === 0 && remote.stdout.trim() !== "").catch(() => null);
+    const c = checkoutAt(this.checkouts, g.top);
+    return { hash, subject, author, at: Number(at) || 0, unpushed: work?.unpushed ?? null, locked: Boolean(c?.locked) };
+  }
 
   // One git command at a time; its output goes to a toast, its error into the dialog.
   git(label, args, cx, done) {
@@ -159,12 +195,6 @@ export class GitDialog extends View {
         .child(this.button("git-cancel", "Cancel", t, (cx) => { this.confirm = null; cx.notify(); })));
   }
 
-  setTab(tab, cx) {
-    this.tab = tab;
-    if (tab === "branches") { try { this.input.focus(); } catch { /* not shown yet */ } } else this.handle.focus();
-    cx.notify();
-  }
-
   key(e, cx) {
     const n = this.rows().length;
     if (this.confirm) {
@@ -176,23 +206,88 @@ export class GitDialog extends View {
       return cx.stop_propagation();
     }
     if (e.key === "escape") this.close();
-    else if (e.key === "tab") this.setTab(this.tab === "status" ? "branches" : "status", cx);
     else if (this.tab === "branches" && (e.key === "down" || e.key === "up") && n) { this.at = (this.at + (e.key === "down" ? 1 : n - 1)) % n; cx.notify(); }
     else return;
     cx.stop_propagation();
   }
 
-  button(id, label, t, onClick, { primary = false, disabled = false } = {}) {
-    return div().id(id).flex_none().px(10).py(4).rounded(6).text_size(12).cursor_pointer()
+  button(id, label, t, onClick, { primary = false, disabled = false, icon = null, danger = false } = {}) {
+    return h_flex().id(id).flex_none().gap(6).items_center().px(10).py(4).rounded(6).text_size(12).cursor_pointer()
       .when(primary && !disabled, (el) => el.bg(t.accent).text_color(t.background).font_semibold())
-      .when(!primary || disabled, (el) => el.border_1().border_color(t.border).bg(t.background).text_color(disabled ? t.dim : t.foreground))
+      .when(!primary || disabled, (el) => el.border_1().border_color(danger ? t.blocked + "66" : t.border).bg(t.background).text_color(disabled ? t.dim : danger ? t.blocked : t.foreground))
       .when(!disabled, (el) => el.hover((s) => s.opacity(0.85)).on_click((_e, cx) => onClick(cx)))
+      .when(Boolean(icon), (el) => el.child(icon))
       .child(label);
+  }
+
+  // A program's icon for a button (Herdr's program table): a glyph in the text color or a picture.
+  icon(path, tint, t) {
+    return tint === false ? image(path).w(14).h(14).flex_none() : svg(path).size(14).flex_none().text_color(t.muted);
+  }
+
+  // The worktree's details: path, branch and upstream, last commit, unpushed commits, locked.
+  worktreeView(t, g, st) {
+    const i = this.info, line = (label, value, color) => h_flex().gap(8).min_h(22).items_center()
+      .child(div().w(84).flex_none().text_size(12).text_color(t.dim).child(label))
+      .child(typeof value === "string" ? div().flex_1().min_w(0).truncate().text_size(12.5).text_color(color ?? t.foreground).child(value) : value);
+    const ago = (s) => { if (!s) return ""; const d = Date.now() / 1000 - s; return d < 3600 ? `${Math.max(1, Math.round(d / 60))}m ago` : d < 86400 ? `${Math.round(d / 3600)}h ago` : `${Math.round(d / 86400)}d ago`; };
+    const changed = st?.files?.length ?? 0;
+    return v_flex().gap(2).px(12).py(10).rounded(8).border_1().border_color(t.border).bg(t.background)
+      .child(line("Branch", h_flex().flex_1().min_w(0).gap(8).items_center().text_size(12.5)
+        .child(div().min_w(0).truncate().text_color(st?.branch ? t.accent : t.ansi3).child(st?.branch ?? "detached"))
+        .child(div().flex_none().text_color(t.dim).child(st?.upstream ? `→ ${st.upstream}` : "no upstream"))))
+      .child(line("Uncommitted", changed ? `${changed} file${changed === 1 ? "" : "s"}` : "none", changed ? t.ansi3 : t.ansi2))
+      .child(line("Not pushed", i ? (i.unpushed == null ? "?" : i.unpushed === 0 ? "nothing: every commit is on a remote" : `${i.unpushed} commit${i.unpushed === 1 ? "" : "s"} only in this worktree`) : "…", i?.unpushed > 0 ? t.accent : t.ansi2))
+      // Detached with commits nowhere else: deleting the worktree leaves nothing pointing at them.
+      .when(i?.unpushed > 0 && !st?.branch, (el) => el.child(line("", "detached: push them or make a branch before deleting it", t.ansi3)))
+      // Detached: put HEAD on a new branch (`git switch -c`), so its commits have a name.
+      .when(!st?.branch, (el) => el.child(line("", this.naming
+        ? h_flex().flex_1().min_w(0).gap(6).items_center()
+          .child(div().flex_1().h(28).px(8).flex().items_center().rounded(6).border_1().border_color(t.accent).bg(t.popover).child(Input.new(this.nameInput)))
+          .child(this.button("git-make-branch-go", "Make", t, (cx) => this.makeBranch(cx), { primary: true }))
+        : h_flex().child(this.button("git-make-branch", "Make a branch…", t, (cx) => { this.naming = true; cx.notify(); cx.timer.after(30, () => { try { this.nameInput.focus(); } catch { /* closed */ } }); })))))
+      .child(line("Last commit", i?.hash ? i.subject : i ? "none" : "…"))
+      .when(Boolean(i?.hash), (el) => el.child(line("", `${i.hash} · ${i.author} · ${ago(i.at)}`, t.dim)))
+      .when(Boolean(i?.locked), (el) => el.child(line("Locked", "git won't prune or remove it without --force", t.ansi3)))
+      .child(line("Folder", h_flex().flex_1().min_w(0).gap(6).items_center()
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.muted).child(g.top))
+        .child(div().id("git-copy-path").flex_none().px(6).rounded(4).text_size(11.5).text_color(this.copied ? t.ansi2 : t.dim).cursor_pointer()
+          .hover((s) => s.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => { cx.write_to_clipboard(g.top); this.copied = true; cx.notify(); })
+          .child(this.copied ? "Copied" : "Copy"))));
+  }
+
+  // A file's diff or a commit, opened under its row (a click again closes it).
+  toggle(key, args, cx) {
+    if (this.open?.key === key) { this.open = null; cx.notify(); return; }
+    this.open = { key, lines: null };
+    cx.notify();
+    cx.spawn(async (cx) => {
+      const r = await exec("git", args, { cwd: this.g.top, on: this.on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e?.message ?? e) }));
+      if (this.open?.key !== key) return;
+      // diff --no-index exits 1 when the files differ: its output is still the diff.
+      const text = (r.stdout || r.stderr || "").replace(/\n$/, "");
+      const lines = text ? text.split("\n") : ["(no differences)"];
+      this.open = { key, lines: lines.slice(0, DETAIL_LINES), more: Math.max(0, lines.length - DETAIL_LINES) };
+      cx.notify();
+    });
+  }
+
+  detailView(key, t) {
+    if (this.open?.key !== key) return [];
+    const o = this.open, font = settings()?.font_family;
+    const color = (l) => (l.startsWith("+++") || l.startsWith("---") ? t.muted : l.startsWith("+") ? t.ansi2 : l.startsWith("-") ? t.ansi1 : l.startsWith("@@") ? t.accent : /^(diff |index |commit |Author:|Date:)/.test(l) ? t.dim : t.foreground);
+    return [v_flex().id(`detail-${key}`).ml(6).mr(2).my(2).px(10).py(6).rounded(6).border_1().border_color(t.border).bg(t.background).text_size(11.5)
+      .when(Boolean(font), (el) => el.font_family(font))
+      .when(!o.lines, (el) => el.child(div().text_color(t.dim).child("…")))
+      .children((o.lines ?? []).map((l, n) => div().id(`dl-${n}`).min_h(16).whitespace_nowrap().truncate().text_color(color(l)).child(l || " ")))
+      .when(o.more > 0, (el) => el.child(div().pt(4).text_color(t.dim).child(`and ${o.more} more lines`)))];
   }
 
   statusView(t) {
     const st = this.st;
-    if (!st.files.length) return div().p(10).text_color(t.dim).child("Nothing to commit: the working tree is clean.");
+    const commits = this.commits ?? [];
+    if (!st.files.length && !commits.length) return div().p(10).text_color(t.dim).child("Clean: nothing uncommitted, and every commit is on a remote.");
     let left = MAX_FILES;
     const groups = GROUPS.map(([kind, label, color]) => {
       const files = st.files.filter((f) => f.kind === kind);
@@ -201,11 +296,25 @@ export class GitDialog extends View {
       left -= shown.length;
       return v_flex().gap(1).flex_none()
         .child(h_flex().gap(6).py(4).text_size(11).text_color(t.muted).child(label).child(div().text_color(t[color] ?? t.dim).child(String(files.length))))
-        .children(shown.map((f, i) => h_flex().id(`file-${kind}-${i}`).gap(8).h(22).px(6).rounded(4).items_center().hover((s) => s.bg(t.hover))
+        .children(shown.flatMap((f, i) => [h_flex().id(`file-${kind}-${i}`).gap(8).h(22).px(6).rounded(4).items_center().cursor_pointer()
+          .when(this.open?.key === `f:${f.path}`, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
+          .on_click((_e, cx) => this.toggle(`f:${f.path}`, f.kind === "untracked" ? ["--no-pager", "diff", "--no-color", "--no-index", "--", "/dev/null", f.path] : ["--no-pager", "diff", "--no-color", "HEAD", "--", f.path], cx))
           .child(div().w(18).flex_none().text_size(11).text_color(t[color] ?? t.dim).child(`${f.x}${f.y}`.replace(/ /g, "·")))
-          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(f.path))));
+          .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(f.path)),
+          ...this.detailView(`f:${f.path}`, t)]));
     }).filter(Boolean);
-    return v_flex().gap(6).children(groups)
+    const ago = (x) => { if (!x) return ""; const d = Date.now() / 1000 - x; return d < 3600 ? `${Math.max(1, Math.round(d / 60))}m` : d < 86400 ? `${Math.round(d / 3600)}h` : `${Math.round(d / 86400)}d`; };
+    const head = (text, n, color) => h_flex().gap(6).py(4).text_size(11).text_color(t.muted).child(text).child(div().text_color(color).child(String(n)));
+    const pushedNot = commits.length ? [v_flex().gap(1).flex_none()
+      .child(head("Not pushed: only here", commits.length, t.accent))
+      .children(commits.flatMap((c, n) => [h_flex().id(`np-${n}`).gap(8).h(22).px(6).rounded(4).items_center().cursor_pointer()
+        .when(this.open?.key === `c:${c.hash}`, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
+        .on_click((_e, cx) => this.toggle(`c:${c.hash}`, ["--no-pager", "show", "--no-color", "--stat", "--patch", "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%B", c.hash], cx))
+        .child(div().w(64).flex_none().text_size(11.5).text_color(t.accent).child(c.hash))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(c.subject))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(`${c.author.split(" ")[0]} · ${ago(c.at)}`)),
+        ...this.detailView(`c:${c.hash}`, t)]))] : [];
+    return v_flex().gap(6).children(groups).when(!st.files.length, (el) => el.child(div().px(6).text_size(12).text_color(t.dim).child("No uncommitted files."))).children(pushedNot)
       .when(st.files.length > MAX_FILES, (el) => el.child(div().text_size(11).text_color(t.dim).child(`and ${st.files.length - MAX_FILES} more`)));
   }
 
@@ -231,36 +340,44 @@ export class GitDialog extends View {
 
   render() {
     const t = theme(), g = this.g, st = this.st;
-    const tab = (id, label) => div().id(`git-tab-${id}`).px(10).py(3).rounded(6).text_size(12).cursor_pointer()
-      .when(this.tab === id, (el) => el.bg(t.selected).text_color(t.foreground)).when(this.tab !== id, (el) => el.text_color(t.muted).hover((s) => s.bg(t.hover)))
-      .on_click((_e, cx) => this.setTab(id, cx)).child(label);
     const upstream = st ? (st.gone ? "upstream gone" : st.upstream ? `→ ${st.upstream}` : "no upstream") : "";
     return v_flex().id("spaces-git").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx)).size_full().p(16).gap(10).bg(t.popover).text_size(13)
       .child(h_flex().gap(8).items_center()
         .child(v_flex().flex_1().min_w(0)
           .child(h_flex().gap(6).items_center()
-            .child(div().font_semibold().text_color(t.foreground).child(g ? g.name : "Git"))
-            .when(Boolean(st), (el) => el.child(div().min_w(0).truncate().text_color(t.accent).child(st.branch ?? "detached"))))
-          .when(Boolean(st), (el) => el.child(h_flex().gap(8).text_size(11.5).text_color(t.dim)
+            .child(div().font_semibold().text_color(t.foreground).child(g ? (this.folder ? base(g.top) : this.tab === "branches" ? `Switch branch · ${g.name}` : g.name) : "Git"))
+            .when(Boolean(st) && !this.folder, (el) => el.child(div().min_w(0).truncate().text_color(t.accent).child(st.branch ?? "detached"))))
+          .when(Boolean(this.folder && g), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(`Worktree of ${g.name} · no space`)))
+          .when(Boolean(st) && !this.folder, (el) => el.child(h_flex().gap(8).text_size(11.5).text_color(t.dim)
             .child(div().min_w(0).truncate().child(upstream))
             .when(st.ahead > 0, (el) => el.child(div().flex_none().text_color(t.ansi2).child(`↑${st.ahead}`)))
             .when(st.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`↓${st.behind}`)))
             .child(div().flex_none().child(`${st.files.length} changed`)))))
-        .when(Boolean(st), (el) => el
+        .when(Boolean(st) && (this.tab === "status" || this.folder), (el) => el
           .child(this.button("git-fetch", "Fetch", t, (cx) => this.fetch(cx), { disabled: Boolean(this.busy) }))
           .child(this.button("git-pull", st.behind > 0 ? `Pull ↓${st.behind}` : "Pull", t, (cx) => this.pull(cx), { primary: st.behind > 0, disabled: Boolean(this.busy) || !st.upstream || st.gone }))))
+      // A worktree without a space: what it holds, then its right-click menu's actions.
+      .when(Boolean(this.folder && g), (el) => el.child(this.worktreeView(t, g, st)))
+      .when(Boolean(this.folder && g), (el) => el.child(v_flex().gap(6)
+        .child(div().text_size(11.5).text_color(t.muted).child("Open in a new space"))
+        .child(h_flex().gap(6).items_center().flex_wrap()
+          .child(this.button("git-space-terminal", "Terminal", t, () => this.createSpace(), { icon: svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(t.muted) }))
+          .children((this.agents ?? []).map((a, i) => this.button(`git-space-agent-${i}`, a.name, t, () => this.createSpace(a), { icon: a.icon ? this.icon(a.icon, a.tint, t) : null }))))))
       .when(g === undefined, (el) => el.child(div().text_color(t.muted).child("…")))
       .when(g === null, (el) => el.child(div().text_color(t.muted).child(this.error || "This space isn't in a git repository.")))
       .when(Boolean(st), (el) => el
-        .child(h_flex().gap(2).child(tab("status", "Status")).child(tab("branches", "Branches")))
-        .child(this.confirm ? this.confirmView(t) : this.tab === "status"
+        // A worktree keeps its branch: no Branches tab there, its Status only.
+        // One view per dialog (Git status, or Switch branch), no tabs.
+        .when(this.tab === "status" || this.folder, (el) => el.child(div().text_size(11.5).text_color(t.muted).child(this.commits?.length || st.files.length ? "Uncommitted and unpushed" : "Status")))
+        .child(this.confirm ? this.confirmView(t) : this.tab === "status" || this.folder
           ? v_flex().id("git-status").flex_1().min_h(0).overflow_y_scrollbar().child(this.statusView(t))
           : this.branchesView(t)))
       .when(Boolean(this.error) && g !== null, (el) => el.child(v_flex().gap(6).max_h(120).id("git-error").overflow_y_scrollbar()
         .child(div().text_size(12).text_color(t.blocked).child(this.error))
         .when(this.canRebase, (el) => el.child(h_flex().child(this.button("git-rebase", "Pull with rebase", t, (cx) => this.pull(cx, true), { primary: true }))))))
       .child(h_flex().justify_end().gap(6).text_size(11).text_color(t.dim)
+        .when(Boolean(this.folder && g), (el) => el.child(this.button("git-delete-wt", "Delete worktree…", t, () => { this.close(); openRemove({ path: g.top, main: g.main, on: this.on, branch: st?.branch ?? null }); }, { disabled: !g.linked, danger: true })).child(div().flex_1()))
         .when(Boolean(this.busy), (el) => el.child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
-        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.tab === "branches" ? "tab status · ↑↓ choose · ↵ switch · esc close" : "tab branches · esc close"));
+        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch · esc close" : "esc close") : this.tab === "branches" ? "↑↓ choose · ↵ switch · esc close" : "esc close"));
   }
 }

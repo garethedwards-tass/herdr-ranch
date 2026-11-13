@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
 import { place, probe, parseWorktrees, arrange, tail, linkLabel, countStatus, workIn, checkoutAt, hasWork, workText, issueBranch, parseRefs, addArgs, worktreePath, parseStatus, switchArgs, diverged, switchRisk, stashMessage } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js";
 import { source, looksLikeKey } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/issues.js";
-import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, parseGhAccounts } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/accounts.js";
+import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/accounts.js";
 
 test("place: the first terminal's live folder, else the space's folder", () => {
   const s = { folder: "/made", tabs: [{ id: "t1" }] };
@@ -52,15 +52,19 @@ test("arrange: worktree spaces under their repo, checkouts without a space folde
   const shape = (rows) => rows.map((r) => [r.kind, r.w?.id ?? r.c?.path ?? r.count, r.tree]);
   assert.deepEqual(shape(arrange(list, trees)), [["space", "m", null], ["space", "a", "├─"], ["more", 2, "└─"], ["space", "x", null]]);
   assert.deepEqual(shape(arrange(list, trees, new Set([R]))), [["space", "m", null], ["space", "a", "├─"], ["more", 2, "├─"], ["loose", "/w/r/b", "├─"], ["loose", "/w/r/c", "└─"], ["space", "x", null]]);
+  const rows = arrange(list, trees);
+  assert.equal(rows[0].children, 2);
+  assert.deepEqual(rows.slice(1, 3).map((r) => r.parent), ["m", "m"]);
+  assert.equal(rows[3].parent, undefined);
   // No main checkout space: the worktree space stays where it is, with nothing under it.
   assert.deepEqual(shape(arrange([list[0], list[2]], trees)), [["space", "a", null], ["space", "x", null]]);
 });
 
 test("tail: only what the name doesn't say", () => {
   assert.equal(tail({ name: "herdr", branch: "spike" }, null, "work"), "herdr · spike");
-  assert.equal(tail({ name: "herdr", branch: "main" }, null, "herdr"), "");
-  assert.equal(tail({ name: "herdr", branch: "master" }, null, "work"), "herdr");
-  assert.equal(tail({ name: "herdr", branch: "spike" }, "├─", "spike"), "");
+  assert.equal(tail({ name: "herdr", branch: "main" }, null, "herdr"), "main");
+  assert.equal(tail({ name: "herdr", branch: "master" }, null, "work"), "herdr · master");
+  assert.equal(tail({ name: "herdr", branch: "spike" }, "├─", "spike"), "spike");
   assert.equal(tail({ name: "herdr", branch: null }, "└─", "x"), "detached");
   assert.equal(tail(null, null, "x"), "");
 });
@@ -91,9 +95,10 @@ test("work: uncommitted files and commits on no remote, read without writing und
 test("arrange: the fold counts the worktrees with work", () => {
   const R = JSON.stringify([null, "/src/r/.git"]);
   const list = [{ w: { id: "m", machine: null }, i: 0, g: { repo: R, main: "/src/r", linked: false }, at: "/src/r" }];
-  const trees = { [R]: [{ path: "/src/r", main: true }, { path: "/w/a", changes: 2 }, { path: "/w/b", changes: 0, unpushed: 0 }] };
+  const trees = { [R]: [{ path: "/src/r", main: true }, { path: "/w/a", changes: 2 }, { path: "/w/b", changes: 0, unpushed: 0 }, { path: "/w/c", changes: 0, unpushed: 1 }] };
   const more = arrange(list, trees).find((r) => r.kind === "more");
-  assert.equal(more.count, 2); assert.equal(more.busy, 1);
+  assert.equal(more.count, 3); assert.equal(more.busy, 2);
+  assert.equal(more.dirty, 1); assert.equal(more.unpushed, 1);
   assert.equal(arrange(list, trees, new Set([R])).find((r) => r.kind === "loose").main, "/src/r");
 });
 
@@ -176,4 +181,33 @@ test("accounts: checks, the sh that sets the variables (no token on the command 
   assert.deepEqual(argv.slice(0, 2), ["sh", "-c"]);
   assert.match(argv[2], /^export CLAUDE_CONFIG_DIR='\/opt\/c'; claude; exec /);
   assert.deepEqual(parseGhAccounts("  ✓ Logged in to github.com account alice (keyring)\n  - Active account: true\n  ✓ Logged in to github.com account bob-2 (keyring)"), ["alice", "bob-2"]);
+});
+
+test("gitState: the git button's color, most pressing first", async () => {
+  const { gitState } = await import("../herdr-ranch-spaces/mods/herdr-ranch-spaces/extras.js");
+  const st = (c, g) => gitState(c, g).state;
+  assert.equal(st(null, {}), "unknown");
+  assert.equal(st({ changes: 2, unpushed: 0 }, { ahead: 0, behind: 3 }), "dirty");
+  assert.equal(st({ changes: 0, unpushed: 0 }, { ahead: 0, behind: 3 }), "behind");
+  assert.equal(st({ changes: 0, unpushed: 1 }, { ahead: 1, behind: 3 }), "diverged");
+  assert.equal(st({ changes: 0, unpushed: 2 }, { ahead: 0, behind: 0 }), "ahead");
+  assert.equal(st({ changes: 0, unpushed: 0 }, { ahead: 0, behind: 0 }), "sync");
+  assert.equal(gitState({ changes: 0, unpushed: 0 }, {}).color, "ansi2");
+});
+
+test("runAs: any program as an account, its arguments after the exports", () => {
+  const argv = runAs({ claudeDir: "~/.claude-w" }, ["claude", "--model", "opus"]);
+  assert.deepEqual(argv.slice(0, 2), ["sh", "-c"]);
+  assert.match(argv[2], /^export CLAUDE_CONFIG_DIR="\$HOME"'\/\.claude-w'; exec "\$@"$/);
+  assert.deepEqual(argv.slice(3), ["sh", "claude", "--model", "opus"]);
+});
+
+test("notPushed: commits on no remote, none without a remote", async () => {
+  const { notPushed, parseCommits } = await import("../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js");
+  assert.deepEqual(parseCommits("9d90a0d\tFix it\tGareth E\t1700000000\n"), [{ hash: "9d90a0d", subject: "Fix it", author: "Gareth E", at: 1700000000 }]);
+  state.exec = (cmd, args) => (args[0] === "remote" ? { code: 0, stdout: "origin\n" } : { code: 0, stdout: "a1\tOne\tX\t1\nb2\tTwo\tY\t2\n" });
+  assert.equal((await notPushed("/w", null)).length, 2);
+  state.exec = (cmd, args) => (args[0] === "remote" ? { code: 0, stdout: "" } : { code: 0, stdout: "a1\tOne\tX\t1\n" });
+  assert.deepEqual(await notPushed("/w", null), []);
+  state.exec = null;
 });
