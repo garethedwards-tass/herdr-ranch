@@ -4,3 +4,4 @@ export const div = el, svg = el, image = el, v_flex = el, h_flex = el, v_resizab
 export class View {}
 export const InputState = { new: () => el() }, Input = { new: el }, TextareaState = { new: () => el() }, Textarea = { new: el }, TextView = { markdown: el };
 export const Avatar = { new: el }, AvatarImage = { new: el }, AvatarFallback = { new: el };
+export const list = el;
