@@ -6,7 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
-import { me, list, mentioned, hasGhStack, TRANSIENT, view, files, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { me, list, mentioned, hasGhStack, TRANSIENT, view, files, commits, commitFiles, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
 import { fileKey, FIRST_LINES, MORE_LINES } from "./diff.js";
 import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
@@ -256,11 +256,11 @@ export default class PullRequests extends View {
   load(number, cx) {
     const where = this.where, still = () => this.open === number && this.where?.github === where.github;
     this.page = this.pages.get(`${where.github}#${number}`) ?? null; this.pageError = null;
-    if (this.page && this.tab === "files") this.loadDiffs(cx);
+    if (this.page && this.tab !== "conversation" && this.tab !== "checks") this.pickTab(this.tab, cx);
     cx.spawn(async (cx) => {
       try {
         const page = await this.fetchPage(number, where);
-        if (still()) { this.page = page; this.pageError = null; if (this.tab === "files") this.loadDiffs(cx); }
+        if (still()) { this.page = page; this.pageError = null; if (this.tab === "files" || this.tab === "commits") this.pickTab(this.tab, cx); }
         const people = [page.author?.login, ...page.conversation.map((c) => c.who), ...(page.reviewers ?? []).map((r) => r.login), ...(page.assignees ?? [])];
         cx.spawn(async (cx) => { if (await loadAvatars(people, page.url)) try { cx.notify(this.pageView); } catch { /* shown on the next change */ } });
       } catch (e) { if (still() && !this.page) this.pageError = String(e?.message ?? e); }
@@ -422,13 +422,17 @@ export default class PullRequests extends View {
     if (m.platform || m.control || m.alt) return false;
     if (e.key === "o") { openUrl(pr.url); return true; }
     if (e.key === "b") { this.copyBranch(cx); return true; }
-    if (this.tab === "files" && (e.key === "s" || e.key === "e")) {
+    if (this.tab === "commits" && this.commitOpen()) {
+      if (e.key === "[" || e.key === "]") { this.stepCommit(e.key === "[" ? -1 : 1, cx); return true; }
+      if (e.key === "backspace") { this.pickCommit(null, cx); return true; }
+    }
+    if ((this.tab === "files" || (this.tab === "commits" && this.commitOpen())) && (e.key === "s" || e.key === "e")) {
       const d = this.diffProps();
       if (e.key === "s") d.setMode(d.mode === "split" ? "unified" : "split", cx);
       else if (d.files) d.all(!d.files.some((f) => d.isOpen(f.path)), cx);
       return true;
     }
-    const tab = { 1: "conversation", 2: "checks", 3: "files" }[e.key];
+    const tab = { 1: "conversation", 2: "checks", 3: "files", 4: "commits" }[e.key];
     if (tab) { this.pickTab(tab, cx); return true; }
     return false;
   }
@@ -444,34 +448,44 @@ export default class PullRequests extends View {
     goToSpace(id);
   }
 
-  pickTab(tab, cx) { this.tab = tab; if (tab === "files") this.loadDiffs(cx); cx.notify(this.pageView); }
+  pickTab(tab, cx) {
+    this.tab = tab;
+    if (tab === "files") this.loadDiffs(cx);
+    if (tab === "commits") { this.loadCommits(cx); if (this.commitOpen()) this.loadDiffs(cx); }
+    cx.notify(this.pageView);
+  }
 
-  // The Files tab's diffs of the open pull request: loaded the first time the tab shows (they
-  // can be large), kept per repository and number like the pages.
-  diffState() {
-    // Only once the page is in: its head commit keys what was marked viewed.
+  // What the diff view shows now: the pull request's files (Files tab) or one commit's
+  // (Commits tab, a commit open). `key` names its diffs, and with a path, a file's state.
+  // Only once the page is in: its head commit keys what was marked viewed.
+  diffScope() {
     const pr = this.page;
     if (!this.where || !pr || pr.number !== this.open) return null;
     this.diffs ??= new Map(); this.fileOpen ??= new Map(); this.fileLimit ??= new Map();
-    return { key: `${this.where.github}#${pr.number}`, pr };
+    const where = this.where, github = where.github, number = pr.number;
+    if (this.tab === "commits") {
+      const c = this.commitOpen();
+      return c ? { key: `${github}@${c.sha}`, load: () => commitFiles(c.sha, where), url: `https://github.com/${github}/commit/${c.sha}`, viewed: false } : null;
+    }
+    return { key: fileKey(github, number, pr.headRefOid, ""), load: () => files(number, where), url: `${pr.url}/files`, viewed: true };
   }
+  // Diffs load the first time they show (they can be large) and are kept, the last PAGES.
   loadDiffs(cx, again = false) {
-    const s = this.diffState();
+    const s = this.diffScope();
     if (!s || (!again && this.diffs.has(s.key))) return;
-    const where = this.where, number = s.pr.number;
     this.diffs.set(s.key, { files: null, error: null });
     cx.spawn(async (cx) => {
       let got;
-      try { got = { files: await files(number, where), error: null }; } catch (e) { got = { files: null, error: String(e?.message ?? e).split("\n")[0] }; }
+      try { got = { files: await s.load(), error: null }; } catch (e) { got = { files: null, error: String(e?.message ?? e).split("\n")[0] }; }
       this.diffs.set(s.key, got);
       if (this.diffs.size > PAGES) this.diffs.delete(this.diffs.keys().next().value);
       // Open the first files, up to a budget of lines, and none marked viewed: the rest wait for a click.
       if (got.files) {
         let budget = OPEN_LINES;
         for (const f of got.files) {
-          const k = this.fileKey(f.path, number);
+          const k = `${s.key}${f.path}`;
           if (this.fileOpen.has(k)) continue;
-          const open = !this.isViewed(f.path, number) && !f.why && Math.min(f.lines, FIRST_LINES) <= budget;
+          const open = !(s.viewed && this.isViewed(k)) && !f.why && Math.min(f.lines, FIRST_LINES) <= budget;
           if (open) budget -= Math.min(f.lines, FIRST_LINES);
           this.fileOpen.set(k, open);
         }
@@ -479,33 +493,33 @@ export default class PullRequests extends View {
       try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
     });
   }
-  fileKey(path, number = (this.page ?? this.picked)?.number) { return fileKey(this.where?.github, number, this.page?.headRefOid, path); }
-  isViewed(path, number) { try { return localStorage.getItem(`viewed:${this.fileKey(path, number)}`) === "1"; } catch { return false; } }
+  isViewed(k) { try { return localStorage.getItem(`viewed:${k}`) === "1"; } catch { return false; } }
   diffProps() {
-    const s = this.diffState();
+    const s = this.diffScope();
     const d = (s && this.diffs.get(s.key)) ?? { files: null, error: null };
     const loaded = d.files ?? [];
+    const key = (p) => `${s?.key}${p}`;
     const redraw = (cx) => cx.notify(this.pageView);
     return {
-      files: d.files, error: d.error, loading: !d.files && !d.error, mode: this.diffMode ?? "unified",
-      github: `${(this.page ?? this.picked)?.url ?? ""}/files`, openUrl: (url) => openUrl(url),
-      isOpen: (p) => Boolean(this.fileOpen?.get(this.fileKey(p))),
-      isViewed: (p) => this.isViewed(p),
-      limit: (p) => this.fileLimit?.get(this.fileKey(p)) ?? FIRST_LINES,
-      toggle: (p, cx) => { const k = this.fileKey(p); this.fileOpen.set(k, !this.fileOpen.get(k)); redraw(cx); },
+      files: d.files, error: d.error, loading: !d.files && !d.error, mode: this.diffMode ?? "unified", viewed: Boolean(s?.viewed),
+      github: s?.url ?? (this.page ?? this.picked)?.url ?? "", openUrl: (url) => openUrl(url),
+      isOpen: (p) => Boolean(this.fileOpen?.get(key(p))),
+      isViewed: (p) => Boolean(s?.viewed) && this.isViewed(key(p)),
+      limit: (p) => this.fileLimit?.get(key(p)) ?? FIRST_LINES,
+      toggle: (p, cx) => { const k = key(p); this.fileOpen.set(k, !this.fileOpen.get(k)); redraw(cx); },
       // Viewed folds the file away; unmarking it opens it again.
       view: (p, cx) => {
-        const k = this.fileKey(p), now = !this.isViewed(p);
+        const k = key(p), now = !this.isViewed(k);
         try { if (now) localStorage.setItem(`viewed:${k}`, "1"); else localStorage.removeItem(`viewed:${k}`); } catch { /* kept for this session only */ }
         this.fileOpen.set(k, !now); redraw(cx);
       },
-      more: (p, cx) => { const k = this.fileKey(p); this.fileLimit.set(k, (this.fileLimit.get(k) ?? FIRST_LINES) + MORE_LINES); redraw(cx); },
+      more: (p, cx) => { const k = key(p); this.fileLimit.set(k, (this.fileLimit.get(k) ?? FIRST_LINES) + MORE_LINES); redraw(cx); },
       setMode: (m, cx) => { this.diffMode = m; try { localStorage.setItem("diff-mode", m); } catch { /* this session only */ } redraw(cx); },
       // Expand all opens files with a diff up to a budget of lines, so one click can't draw thousands.
       all: (open, cx) => {
         let budget = ALL_LINES;
         for (const f of loaded) {
-          const k = this.fileKey(f.path), cost = Math.min(f.lines, this.fileLimit.get(k) ?? FIRST_LINES);
+          const k = key(f.path), cost = Math.min(f.lines, this.fileLimit.get(k) ?? FIRST_LINES);
           const on = open && !f.why && cost <= budget;
           if (on) budget -= cost;
           this.fileOpen.set(k, on);
@@ -513,6 +527,48 @@ export default class PullRequests extends View {
         redraw(cx);
       },
       retry: (cx) => { this.loadDiffs(cx, true); redraw(cx); },
+    };
+  }
+
+  // The Commits tab: the pull request's commits, loaded the first time the tab shows, kept per
+  // head commit. `this.commit` is the open one's sha, for the pull request `this.commitFor`.
+  commitsKey() { const pr = this.page; return pr && this.where && pr.number === this.open ? fileKey(this.where.github, pr.number, pr.headRefOid, "") : null; }
+  loadCommits(cx, again = false) {
+    const k = this.commitsKey();
+    this.commitLists ??= new Map();
+    if (!k || (!again && this.commitLists.has(k))) return;
+    const where = this.where, number = this.page.number;
+    this.commitLists.set(k, { list: null, total: 0, error: null });
+    cx.spawn(async (cx) => {
+      let got;
+      try { got = { ...(await commits(number, where)), error: null }; } catch (e) { got = { list: null, total: 0, error: String(e?.message ?? e).split("\n")[0] }; }
+      this.commitLists.set(k, got);
+      if (this.commitLists.size > PAGES) this.commitLists.delete(this.commitLists.keys().next().value);
+      try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
+    });
+  }
+  commitList() { const k = this.commitsKey(); return (k && this.commitLists?.get(k)) ?? { list: null, total: 0, error: null }; }
+  commitOpen() {
+    if (this.commitFor !== this.open || !this.commit) return null;
+    return this.commitList().list?.find((c) => c.sha === this.commit) ?? null;
+  }
+  pickCommit(sha, cx) { this.commit = sha; this.commitFor = this.open; if (sha) this.loadDiffs(cx); cx.notify(this.pageView); }
+  // [ and ]: the older or newer commit; at either end nothing moves.
+  stepCommit(by, cx) {
+    const list = this.commitList().list ?? [], at = list.findIndex((c) => c.sha === this.commitOpen()?.sha);
+    const next = list[at + by];
+    if (at >= 0 && next) this.pickCommit(next.sha, cx);
+  }
+  commitProps() {
+    const c = this.commitList(), open = this.commitOpen(), list = c.list ?? [], at = open ? list.indexOf(open) : -1;
+    const github = this.where?.github ?? "";
+    return {
+      list: c.list, total: c.total, error: c.error, open, at,
+      pick: (sha, cx) => this.pickCommit(sha, cx), back: (cx) => this.pickCommit(null, cx), step: (by, cx) => this.stepCommit(by, cx),
+      retry: (cx) => { this.loadCommits(cx, true); cx.notify(this.pageView); },
+      copy: (sha, cx) => { cx.write_to_clipboard(sha); notify({ title: `Copied ${sha.slice(0, 7)}`, level: "success", timeout: 2000 }); },
+      url: (sha) => `https://github.com/${github}/commit/${sha}`, openUrl: (url) => openUrl(url),
+      diff: open ? this.diffProps() : null,
     };
   }
 
@@ -534,11 +590,12 @@ export default class PullRequests extends View {
       const working = agentSpaces(this.where?.repo?.main).prs.get((page ?? this.picked)?.number) ?? [];
       return detail(page ?? { ...this.picked, loading: true }, t, {
         error: this.pageError, nav, login: this.login, agents: working, go: (id) => this.go(id), jiraKey: this.where?.jiraKey, github: this.where?.github, jira: this.where?.jira, jiraIssues: page?.jiraIssues,
-        wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation", diff: this.diffProps(),
+        wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation", diff: this.diffProps(), commits: this.commitProps(),
         pickTab: (tab, cx) => this.pickTab(tab, cx), copyBranch: (cx) => this.copyBranch(cx), openUrl: (url) => openUrl(url),
         open: () => openUrl((this.page ?? this.picked).url),
         review: this.where?.repo ? () => this.review(this.page) : null,
-        keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3"], "tabs"], ...(this.tab === "files" ? [[["S"], "unified / split"], [["E"], "expand / collapse all"]] : []),
+        keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3", "4"], "tabs"], ...(this.tab === "files" || (this.tab === "commits" && this.commitOpen()) ? [[["S"], "unified / split"], [["E"], "expand / collapse all"]] : []),
+          ...(this.tab === "commits" && this.commitOpen() ? [[["[", "]"], "older / newer"], [["⌫"], "all commits"]] : []),
           ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Agent review"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],
       });
     } catch (e) { return div().p(14).text_color(t.ansi1).child(`Cannot show this pull request: ${e?.stack ?? e}`); }

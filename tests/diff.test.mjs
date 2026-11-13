@@ -104,3 +104,31 @@ test("parsePatch: a very long line is cut and says how much is left", () => {
   const [h] = parsePatch(`@@ -0,0 +1 @@\n+${"x".repeat(MAX_CHARS + 25)}`);
   assert.equal(h.lines[0].text, `${"x".repeat(MAX_CHARS)} … 25 more characters`);
 });
+
+test("commits: one GraphQL query, oldest first, logins, check states and the total", async () => {
+  const { commits, byDay } = await import("../herdr-ranch-prs/mods/herdr-ranch-prs/data.js");
+  const ran = [];
+  const node = (oid, title, at, login, state) => ({ commit: { oid, abbreviatedOid: oid.slice(0, 7), messageHeadline: title, messageBody: "", authoredDate: at, author: { name: "Name", user: login ? { login } : null }, statusCheckRollup: state ? { state } : null } });
+  state.exec = (cmd, args) => { ran.push(args); return { code: 0, stdout: JSON.stringify({ data: { repository: { pullRequest: { commits: { totalCount: 130, nodes: [
+    node("aaaaaaa111", "First", "2026-11-10T09:00:00Z", "ann", "SUCCESS"),
+    node("bbbbbbb222", "Second", "2026-11-10T17:00:00Z", null, "FAILURE"),
+    node("ccccccc333", "Third", "2026-11-11T08:00:00Z", "bob", null),
+  ] } } } } }), stderr: "" }; };
+  const got = await commits(5, { github: "o/r", cwd: "/repo", on: null });
+  assert.equal(got.total, 130);
+  assert.deepEqual(got.list.map((c) => [c.short, c.author, c.checks]), [["aaaaaaa", "ann", "pass"], ["bbbbbbb", "Name", "fail"], ["ccccccc", "bob", null]]);
+  assert.ok(ran[0].includes("number=5") && ran[0].includes("owner=o") && ran[0].includes("name=r"));
+  assert.deepEqual(byDay(got.list).map((d) => [d.day, d.commits.length]), [["2026-11-10", 2], ["2026-11-11", 1]]);
+  state.exec = null;
+});
+
+test("commitFiles: a commit's files, prepared like the Files tab's", async () => {
+  const { commitFiles } = await import("../herdr-ranch-prs/mods/herdr-ranch-prs/data.js");
+  const ran = [];
+  state.exec = (cmd, args) => { ran.push(args); return { code: 0, stdout: `${JSON.stringify({ filename: "a.js", status: "modified", additions: 1, deletions: 1, changes: 2, patch: "@@ -1 +1 @@\n-a\n+b" })}\n`, stderr: "" }; };
+  const got = await commitFiles("abc123", { github: "o/r", cwd: "/repo", on: null });
+  assert.equal(got[0].path, "a.js");
+  assert.deepEqual(got[0].hunks[0].lines.map((l) => l.kind), ["del", "add"]);
+  assert.ok(ran[0].includes("repos/o/r/commits/abc123"));
+  state.exec = null;
+});
