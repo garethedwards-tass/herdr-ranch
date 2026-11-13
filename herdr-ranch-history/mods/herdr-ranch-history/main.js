@@ -9,6 +9,7 @@ import { theme, focused, spaces } from "herdr";
 import { repoOf, tip, log, show, search, me, LOG } from "./git.js";
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
 import { filesTab } from "./files-tab.js";
+import { highlightFiles } from "./highlight.js";
 import { fs, readSizes, kit, segmented } from "./ui.js";
 
 const MONO = "Menlo", SPINNER = "mods/workspace-chrome/spinner.svg";
@@ -145,6 +146,9 @@ export default class History extends View {
           }
         }
         cx.notify();
+        // Then the colors: whole files from this repository (a merge against its first parent).
+        const git = repo.on ? null : { cwd: repo.top, oldRev: `${c.sha}^`, newRev: c.sha };
+        if (got.files && await highlightFiles(got.files.filter((f) => !f.why), git).catch(() => false)) cx.notify();
       });
     }
     cx.notify();

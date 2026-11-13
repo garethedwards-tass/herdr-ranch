@@ -107,6 +107,18 @@ for skill in "$repo"/herdr-ranch-reviews/skills/*/; do
   link_one "$skill" "$HOME/.claude/skills/$(basename "$skill")"
 done
 command -v ranch-review >/dev/null 2>&1 || echo "  add ~/.local/bin to your PATH for ranch-review"
+
+# The diff views' highlighter: built with cargo when Rust is installed (the grammars compile in,
+# a minute or two the first time), linked into ~/.local/bin. Without it the diffs stay plain.
+if command -v cargo >/dev/null 2>&1; then
+  if cargo build --release --quiet --manifest-path "$repo/ranch-highlight/Cargo.toml"; then
+    link_one "$repo/ranch-highlight/target/release/ranch-highlight" "$HOME/.local/bin/ranch-highlight"
+  else
+    echo "ranch-highlight didn't build: the diffs stay plain"
+  fi
+else
+  echo "skip ranch-highlight: install Rust (https://rustup.rs) for highlighted diffs"
+fi
 # The skills had other names before: drop their old links.
 for old in ranch-annotate ranch-last herdr-ranch-annotate herdr-ranch-last; do
   if [ -L "$HOME/.claude/skills/$old" ]; then rm "$HOME/.claude/skills/$old" && echo "removed the old link $old"; fi

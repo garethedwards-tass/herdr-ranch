@@ -7,11 +7,44 @@ import { div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { fs, segmented } from "./ui.js";
 import { visible, MORE_LINES } from "./diff.js";
+import { spansOf } from "./highlight.js";
 
 const MONO = "Menlo";
 const STATUS = { added: ["added", "ansi2"], removed: ["deleted", "ansi1"], renamed: ["renamed", "ansi4"], copied: ["copied", "ansi4"] };
 // "  12" in a fixed-width column; nothing for a side the line isn't on.
 const num = (n, w) => (n == null ? "" : String(n)).padStart(w);
+
+// Highlight classes (ranch-highlight's) to theme colors; the rest keep the text color.
+const CLASS = {
+  keyword: "ansi5", "punctuation.special": "ansi5", string: "ansi2", "text.literal": "ansi2", comment: "dim",
+  function: "ansi4", "function.method": "ansi4", property: "ansi4", "text.title": "ansi4", "text.uri": "ansi4", "markup.heading": "ansi4", "markup.link": "ansi4",
+  type: "ansi3", "type.builtin": "ansi3", constructor: "ansi3", attribute: "ansi3", label: "ansi3", module: "ansi3", "text.emphasis": "ansi3", "text.strong": "ansi3",
+  number: "ansi6", boolean: "ansi6", constant: "ansi6", "constant.builtin": "ansi6", escape: "ansi6", "string.escape": "ansi6", "string.special": "ansi6", "string.regex": "ansi6",
+  tag: "ansi1", "tag.error": "ansi1", "variable.builtin": "ansi1",
+};
+const colorOf = (c, t) => { const k = CLASS[c] ?? CLASS[c.split(".")[0]]; return k ? t[k] : null; };
+
+// A line's text, plain or in colored pieces from its spans. Pieces of the same color join, and
+// plain stretches are pieces too, so the line wraps between them as one run of text would.
+function code(text, spans, t) {
+  if (!spans?.length || !text) return text || " ";
+  const parts = [];
+  let at = 0;
+  const add = (to, color) => {
+    if (to <= at) return;
+    const last = parts[parts.length - 1];
+    if (last && last.color === color) last.end = to; else parts.push({ start: at, end: to, color });
+    at = to;
+  };
+  for (const [s0, e0, c] of spans) {
+    const s = Math.min(s0, text.length), e = Math.min(e0, text.length);
+    if (s > at) add(s, null);
+    add(e, colorOf(c, t));
+  }
+  add(text.length, null);
+  if (parts.length === 1 && !parts[0].color) return text;
+  return h_flex().flex_wrap().items_start().children(parts.map((p) => div().whitespace_nowrap().when(Boolean(p.color), (e) => e.text_color(p.color)).child(text.slice(p.start, p.end))));
+}
 
 // `files`: the list's rows (path and counts) until the diffs load. `d`: { files (prepared, or
 // null while loading), error, mode, viewed (offer Viewed), hideGithub, isOpen(path), isViewed(path), limit(path), toggle(path, cx),
@@ -34,24 +67,24 @@ export function filesTab(rows, t, k, d, more) {
 
   // One line of the unified view: both numbers and the sign in one fixed-width run, then the
   // text, which wraps. Three elements a line keeps a long diff cheap to lay out.
-  const unifiedLine = (l, w) => {
+  const unifiedLine = (l, w, f) => {
     const bg = l.kind === "add" ? tint(t.ansi2) : l.kind === "del" ? tint(t.ansi1) : null;
     if (l.kind === "note") return div().pl(8).py(1).text_color(t.dim).child(`\\ ${l.text}`);
     return h_flex().items_start().when(Boolean(bg), (e) => e.bg(bg))
       .child(div().flex_none().whitespace_nowrap().pl(4).text_color(bg ? t.muted : t.dim).when(Boolean(bg), (e) => e.bg(strong(l.kind === "add" ? t.ansi2 : t.ansi1)))
         .child(`${num(l.old, w)} ${num(l.new, w)} ${l.kind === "add" ? "+" : l.kind === "del" ? "−" : " "}`))
-      .child(div().flex_1().min_w(0).pl(6).pr(8).child(l.text || " "));
+      .child(div().flex_1().min_w(0).pl(6).pr(8).child(code(l.text, spansOf(f, l), t)));
   };
   // One side of a split row: its number and text, tinted by kind; an empty side is shaded.
-  const side = (l, kind, w) => {
+  const side = (l, kind, w, f) => {
     if (!l) return h_flex().flex_1().min_w(0).self_stretch().bg(t.surface);
     const c = l.kind === "ctx" ? null : kind === "old" ? t.ansi1 : t.ansi2;
     return h_flex().flex_1().min_w(0).items_start().self_stretch().when(Boolean(c), (e) => e.bg(tint(c)))
       .child(div().flex_none().self_stretch().whitespace_nowrap().px(4).text_color(c ? t.muted : t.dim).when(Boolean(c), (e) => e.bg(strong(c))).child(num(kind === "old" ? l.old : l.new, w)))
-      .child(div().flex_1().min_w(0).pl(6).pr(8).child(l.text || " "));
+      .child(div().flex_1().min_w(0).pl(6).pr(8).child(code(l.text, kind === "old" ? (f.hl?.old.get(l.old) ?? spansOf(f, l)) : spansOf(f, l), t)));
   };
-  const splitRow = (r, w) => (r.note ? div().pl(8).py(1).text_color(t.dim).child(`\\ ${r.note}`)
-    : h_flex().items_start().child(side(r.left, "old", w)).child(div().w(1).self_stretch().bg(t.border)).child(side(r.right, "new", w)));
+  const splitRow = (r, w, f) => (r.note ? div().pl(8).py(1).text_color(t.dim).child(`\\ ${r.note}`)
+    : h_flex().items_start().child(side(r.left, "old", w, f)).child(div().w(1).self_stretch().bg(t.border)).child(side(r.right, "new", w, f)));
   const hunkHead = (h) => h_flex().gap(8).px(8).py(3).bg(t.surface).text_color(t.dim)
     .child(div().flex_none().text_color(t.accent).child(h.header)).child(div().min_w(0).truncate().child(h.context));
 
@@ -60,7 +93,7 @@ export function filesTab(rows, t, k, d, more) {
     const v = visible(f, d.mode, d.limit(f.path));
     const line = d.mode === "split" ? splitRow : unifiedLine;
     return v_flex().font_family(MONO).text_size(fs.meta).line_height(1.45)
-      .children(v.hunks.flatMap((h) => [hunkHead(h), ...h.items.map((x) => line(x, f.digits ?? 4))]))
+      .children(v.hunks.flatMap((h) => [hunkHead(h), ...h.items.map((x) => line(x, f.digits ?? 4, f))]))
       .when(v.shown < v.total, (e) => e.child(h_flex().id(`more-${f.path}`).gap(6).px(12).py(6).border_t_1().border_color(t.border).bg(t.surface)
         .text_color(t.accent).cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => d.more(f.path, cx))
         .child(`Show ${Math.min(MORE_LINES, v.total - v.shown)} more lines`).child(div().text_color(t.dim).child(`(${v.total - v.shown} hidden)`))));
