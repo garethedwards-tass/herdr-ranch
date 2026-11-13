@@ -71,7 +71,6 @@ const CHIP = 88;
 function noGitChip(w, known, t) {
   return h_flex().id(`space-git-none-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
     .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(12).text_color(t.dim)
-    .tooltip(known ? "Not a git repository: its first terminal's folder isn't in one" : "Reading its git state…")
     .child(svg(CHROME("git-branch")).size(10).flex_none())
     .child(div().flex_1().min_w(0).truncate().child(known ? "no repo" : "…"));
 }
@@ -87,7 +86,6 @@ function gitPill(id, branch, c, g, t, onClick) {
   return h_flex().id(id).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
     .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color)
     .when(Boolean(onClick), (el) => el.cursor_pointer().hover((x) => x.bg(color + "2a"))
-      .tooltip(`${branch ?? "detached"}: ${s.say}\nClick for git: status, branches, pull, worktrees`)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(); }))
     .child(svg(CHROME("git-branch")).size(10).flex_none())
@@ -158,14 +156,14 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
       .child(`@${account.label}`)))
     .when(Boolean(label), (el) => el.child(h_flex().id(`space-link-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
       .border_1().border_color(t.accent + "55").bg(t.accent + "14").text_size(12).text_color(t.accent).cursor_pointer()
-      .hover((s) => s.bg(t.accent + "2a")).tooltip([link.github, link.jira?.key && `${link.jira.site} · ${link.jira.key}`, link.linear?.name].filter(Boolean).join("\n") + "\nClick to change the link")
+      .hover((s) => s.bg(t.accent + "2a"))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().flex_1().min_w(0).truncate().child(label))))
     // Not linked: the same chip in grey, "Link".
     .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
       .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(12).text_color(t.dim).cursor_pointer()
-      .hover((s) => s.bg(t.dim + "2a").text_color(t.muted)).tooltip("Link space: its GitHub repository and Jira or Linear project")
+      .hover((s) => s.bg(t.dim + "2a").text_color(t.muted))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child("Link")))
