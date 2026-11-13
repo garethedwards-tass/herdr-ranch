@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, props } from "herdr";
 // ranch: what Herdr Ranch adds, and its git reads.
-import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows } from "./extras.js";
+import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
 
@@ -296,8 +296,9 @@ export default class Spaces extends View {
     // ranch: worktree rows (not on the rail), drawn by extras.js; a row's machine.
     const rows = this.ordered().filter((r) => !collapsed || r.kind === "space");
     const draw = (r) => (r.kind === "more" ? moreRow(this, r, t) : r.kind === "loose" ? looseRow(this, r, t) : collapsed ? this.compact(r, t) : this.row(r, t));
-    // ranch: an unfolded space's terminals under it.
-    const drawAll = (list) => list.flatMap((r) => [draw(r), ...(r.kind === "space" && !collapsed ? terminalRows(this, r.w, t) : [])]);
+    // ranch: a space's terminals and worktrees fold under it (worktree spaces fold their own terminals).
+    const drawAll = (list) => list.flatMap((r) => (r.parent && !isOpen(this, r.parent) ? []
+      : [draw(r), ...(r.kind === "space" && !collapsed ? terminalRows(this, r.w, t, r.tree ? 2 : 1) : [])]));
     const machineOf = (r) => (r.w ? r.w.machine ?? null : r.on ?? JSON.parse(r.repo)[0]);
     const remote = [...new Set([...rows.map(r => r.w?.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const loading = m => {
@@ -385,7 +386,7 @@ export default class Spaces extends View {
       .when(g.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`\u2193${g.behind}`)));
   }
 
-  row({ w, i, g, tree, at }, t) {
+  row({ w, i, g, tree, at, children = 0 }, t) {
     const on = w.active;
     const fromIndex = this.pressed === null ? -1 : spaces().findIndex(s => s.id === this.pressed);
     const colors = shared("space.colors") ?? {};
@@ -435,7 +436,8 @@ export default class Spaces extends View {
         h_flex()
           .gap(9)
           .items_center()
-          .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
+          .child(foldChevron(this, w, children, t)) // ranch: the fold for its worktrees and terminals
+          .when(Boolean(tree), el => el.pl(10).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
           .when(!tree, el => el.child(h_flex().size(18).flex_none().rounded(5).bg(fill).items_center().justify_center().text_size(10.5).font_bold().text_color("#ffffff").child([...w.name][0]?.toUpperCase() ?? "?")))
           .child(div().flex_shrink(0).max_w(150).truncate().text_color(t.foreground).child(w.name))
           // ranch: branch (a click opens Git), work, link chip, and the shown space's buttons.

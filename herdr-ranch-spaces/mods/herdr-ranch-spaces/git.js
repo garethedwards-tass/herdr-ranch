@@ -68,7 +68,9 @@ export async function worktrees(main, on) {
 const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
 
 // The rows to draw, in order:
-//   { kind: "space", w, i, g, tree }   a space (tree "├─"/"└─" for a worktree under its repo's space)
+//   { kind: "space", w, i, g, tree, children? }   a space (tree "├─"/"└─" for a worktree under its repo's
+//                                       space; `children`: how many rows fold under it)
+// Every row under a space has `parent` (that space's id).
 //   { kind: "more", repo, count, open } the fold for a repository's checkouts without a space
 //   { kind: "loose", repo, c, tree }    one of those checkouts
 // `list`: [{ w, i, g, at }] (at: the space's folder now); `trees`: repo key -> parseWorktrees();
@@ -80,7 +82,8 @@ export function arrange(list, trees = {}, open = new Set()) {
   const placed = new Set();
   for (const r of list) {
     if (nested(r)) continue;
-    out.push({ kind: "space", ...r, tree: null });
+    const head = { kind: "space", ...r, tree: null, children: 0 };
+    out.push(head);
     if (!r.g || placed.has(r.g.repo)) continue;
     placed.add(r.g.repo);
     const kids = r.g.linked ? [] : list.filter((k) => nested(k) && k.g.repo === r.g.repo);
@@ -94,7 +97,9 @@ export function arrange(list, trees = {}, open = new Set()) {
       ...(loose.length ? [{ kind: "more", repo: r.g.repo, count: loose.length, busy: loose.filter(hasWork).length, open: unfolded }] : []),
       ...(unfolded ? loose.map((c) => ({ kind: "loose", repo: r.g.repo, main: r.g.main, c, on: r.w.machine ?? null })) : []),
     ];
-    tail.forEach((row, n) => out.push({ ...row, tree: n === tail.length - 1 ? "└─" : "├─" }));
+    // `parent`: the space they fold under; the loose rows count once, in their own fold.
+    head.children = kids.length + (loose.length ? 1 : 0);
+    tail.forEach((row, n) => out.push({ ...row, tree: n === tail.length - 1 ? "└─" : "├─", parent: r.w.id }));
   }
   return out;
 }

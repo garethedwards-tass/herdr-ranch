@@ -52,6 +52,10 @@ test("arrange: worktree spaces under their repo, checkouts without a space folde
   const shape = (rows) => rows.map((r) => [r.kind, r.w?.id ?? r.c?.path ?? r.count, r.tree]);
   assert.deepEqual(shape(arrange(list, trees)), [["space", "m", null], ["space", "a", "├─"], ["more", 2, "└─"], ["space", "x", null]]);
   assert.deepEqual(shape(arrange(list, trees, new Set([R]))), [["space", "m", null], ["space", "a", "├─"], ["more", 2, "├─"], ["loose", "/w/r/b", "├─"], ["loose", "/w/r/c", "└─"], ["space", "x", null]]);
+  const rows = arrange(list, trees);
+  assert.equal(rows[0].children, 2);
+  assert.deepEqual(rows.slice(1, 3).map((r) => r.parent), ["m", "m"]);
+  assert.equal(rows[3].parent, undefined);
   // No main checkout space: the worktree space stays where it is, with nothing under it.
   assert.deepEqual(shape(arrange([list[0], list[2]], trees)), [["space", "a", null], ["space", "x", null]]);
 });

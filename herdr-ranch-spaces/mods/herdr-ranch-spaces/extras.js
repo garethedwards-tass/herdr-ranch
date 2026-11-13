@@ -150,7 +150,7 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
           .on_click((_e, cx) => { cx.stop_propagation(); openGit(w.id); }))
         .child(where)))
     )
-    .child(terminalsToggle(v, w, t) ?? div())
+    .child(terminalsCount(w, t) ?? div())
     .when(Boolean(account), (el) => el.child(div().id(`space-account-${w.id}`).flex_none().max_w(70).truncate().px(5).rounded(4).text_size(11).text_color(t.ansi5 ?? t.accent).cursor_pointer()
       .hover((s) => s.bg(t.hover)).tooltip(`Account: ${account.label}${account.claudeDir ? `\nClaude Code: ${account.claudeDir}` : ""}${account.ghUser ? `\nGitHub: ${account.ghUser}` : ""}\nClick to change`)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -174,7 +174,7 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
 
 // "n worktrees without a space": folds a repository's checkouts that no space shows.
 export function moreRow(v, r, t) {
-  return h_flex().id(`more-${r.repo}`).h(24).flex_none().px(8).pl(30).gap(6).items_center().rounded(6).cursor_pointer()
+  return h_flex().id(`more-${r.repo}`).h(24).flex_none().px(8).pl(40).gap(6).items_center().rounded(6).cursor_pointer()
     .text_size(11.5).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.muted))
     .on_click((_e, cx) => {
       r.open ? v.unfolded.delete(r.repo) : v.unfolded.add(r.repo);
@@ -188,7 +188,7 @@ export function moreRow(v, r, t) {
 
 // A worktree no space shows: a click opens its Git dialog (no space is made); right-click for more.
 export function looseRow(v, r, t) {
-  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(30).gap(8).items_center().rounded(6).cursor_pointer()
+  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(40).gap(8).items_center().rounded(6).cursor_pointer()
     .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(`${r.c.path}\nClick for its git status, right-click to create a space there or delete it`)
     .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
     .on_mouse_down("right", () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 220, height: 180, props: { menu: "checkout", path: r.c.path, main: r.main, on: r.on ?? null, branch: r.c.branch, account: accountOf(null, { main: r.main, on: r.on ?? null })?.id ?? null } }))
@@ -206,13 +206,16 @@ function terminalsOf(w) {
 }
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
 
-// The fold for a space's terminals: a terminal icon and how many; a click shows them under it.
-function terminalsToggle(v, w, t) {
-  const n = terminalsOf(w).length;
-  if (!n) return null;
-  const open = v.openSpaces.has(w.id);
-  return h_flex().id(`space-terms-${w.id}`).flex_none().gap(2).items_center().px(3).rounded(4).text_size(11).text_color(open ? t.foreground : t.dim).cursor_pointer()
-    .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(open ? "Hide its terminals" : `Show its ${n} terminal${n === 1 ? "" : "s"}`)
+export const isOpen = (v, id) => v.openSpaces?.has(id) ?? false;
+
+// The ▸/▾ at a space's start: folds its terminals and agents, its worktree spaces and its
+// worktrees without a space (remembered). A space with none gets the same width, empty.
+export function foldChevron(v, w, children, t) {
+  const n = children + terminalsOf(w).length;
+  if (!n) return div().w(12).flex_none();
+  const open = isOpen(v, w.id);
+  return div().id(`space-fold-${w.id}`).w(12).flex_none().flex().items_center().justify_center().rounded(3).text_color(t.dim).cursor_pointer()
+    .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(open ? "Fold" : "Show its terminals and worktrees")
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => {
       cx.stop_propagation();
@@ -220,22 +223,27 @@ function terminalsToggle(v, w, t) {
       save("spaces.terminals", [...v.openSpaces]);
       cx.notify();
     })
-    .child(svg(CHROME("terminal")).size(11).flex_none())
-    .child(String(n));
+    .child(svg(CHROME(open ? "chevron-down" : "chevron-right")).size(11));
+}
+
+// How many terminals a space has: a plain count after its name.
+function terminalsCount(w, t) {
+  const n = terminalsOf(w).length;
+  return n ? h_flex().flex_none().gap(2).items_center().px(3).text_size(11).text_color(t.dim).child(svg(CHROME("terminal")).size(11).flex_none()).child(String(n)) : null;
 }
 
 const STATUS = { blocked: "blocked", done: "done", working: "working", idle: "idle" };
-// Under an unfolded space: each terminal with its program, title, folder and branch, and its
+// Under an unfolded space (deeper under a worktree space): each terminal with its program, title, folder and branch, and its
 // agent's status. A click goes to it; the eye peeks at it without leaving the shown space.
-export function terminalRows(v, w, t) {
-  if (!v.openSpaces?.has(w.id)) return [];
+export function terminalRows(v, w, t, depth = 1) {
+  if (!isOpen(v, w.id)) return [];
   return terminalsOf(w).map((p) => {
     // A title that only says user@host or a path (a shell's default) says nothing: the program's name instead.
     const title = clean(p.title), telling = title && title !== p.program?.name && !title.includes("@") && !/^[~/]/.test(title);
     const name = telling ? title : p.program?.name || "terminal";
     const where = [p.cwd ? base(p.cwd) : "", p.branch ?? ""].filter(Boolean).join(" · ");
     const color = t[STATUS[p.status]] ?? t.dim;
-    return h_flex().id(`term-${p.pane}`).h(24).flex_none().pl(36).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`term-${p.pane}`).h(24).flex_none().pl(depth > 1 ? 58 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
       .text_size(12).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("pane.focus", { pane: p.pane }))
       .child(p.status ? div().size(6).flex_none().rounded(3).bg(color) : svg(CHROME("terminal")).size(11).flex_none().text_color(t.dim))

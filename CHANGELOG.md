@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Spaces:** each space folds (▸/▾) with its terminals and agent sessions, its worktree spaces and its worktrees without a space under it; a worktree space folds its own terminals.
 - **Spaces:** every space and worktree shows its branch, `main` included. Each space has a fixed-width **git chip** with its branch and state, colored by it (green ✓ in sync, amber uncommitted, red behind or diverged, blue to push); a click opens a git popup with status, switch branch, fetch, pull and the worktree actions. An unlinked space shows a grey **Link** chip (opening Link space), not only the shown one. `>_ n` on a space shows its terminals under it, each with its folder, branch and agent status; a click goes to one, the eye peeks at it without switching spaces.
 - **Refresh buttons:** the refresh button in Changes, History, Issues, Pull requests and Reviews is an icon (Lucide's refresh-cw, like the cog beside it) at 13px (it looks the size of the 14px cog) and centered with it, instead of a small ↻ text glyph.
 - **Files:** the Files panel in the mod-buttons layout colors code the way the diff views do (`ranch-highlight`: CFML, JavaScript, SQL and the rest), with **Editor** to switch to Herdr's own editor for selecting text. Other files open as before.
