@@ -66,11 +66,11 @@ export function gitState(c, g) {
 // pull, ↕ diverged, ↑n to push, … not read yet), tinted by the state's color. A click opens the
 // git popup.
 // Both chips are this wide, whatever they say: long words end in …, and rows never shift.
-const CHIP = 80;
+const CHIP = 88;
 // The git chip of a folder outside git (grey, "no repo"), or not read yet ("…").
 function noGitChip(w, known, t) {
   return h_flex().id(`space-git-none-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
-    .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(11).text_color(t.dim)
+    .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(12).text_color(t.dim)
     .tooltip(known ? "Not a git repository: its first terminal's folder isn't in one" : "Reading its git state…")
     .child(svg(CHROME("git-branch")).size(10).flex_none())
     .child(div().flex_1().min_w(0).truncate().child(known ? "no repo" : "…"));
@@ -80,7 +80,7 @@ const SHORT = { sync: () => "✓", dirty: (c) => String(c.changes), behind: (_c,
 function gitChip(v, w, g, at, t) {
   const c = checkoutAt(v.trees[g.repo], at), s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
   return h_flex().id(`space-git-menu-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
-    .border_1().border_color(color + "55").bg(color + "14").text_size(11).text_color(color).cursor_pointer()
+    .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer()
     .hover((x) => x.bg(color + "2a")).tooltip(`${g.branch ?? "detached"}: ${s.say}\nClick for git: status, branches, pull, worktrees`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => { cx.stop_propagation(); gitMenu(v, w, g, at); })
@@ -93,7 +93,7 @@ function gitChip(v, w, g, at, t) {
 // colors; a click (when given) opens the git popup.
 function stateMark(id, c, g, t, onClick = null) {
   const s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
-  return div().id(id).flex_none().min_w(28).px(4).rounded(4).text_right().text_size(11.5).text_color(color)
+  return div().id(id).flex_none().min_w(28).px(4).rounded(4).text_right().text_size(12.5).text_color(color)
     .when(Boolean(onClick), (el) => el.cursor_pointer().hover((x) => x.bg(t.hover))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(); }))
@@ -108,14 +108,14 @@ export function worktreeSpaceRow(v, r, t) {
   const c = g ? checkoutAt(v.trees[g.repo], at) : null;
   const folder = g?.top ? base(g.top) : "";
   const branch = g?.branch ?? "detached";
-  return h_flex().id(`space-${w.id}`).h(24).flex_none().px(8).pl(21).gap(7).items_center().rounded(6).cursor_pointer().text_size(12)
+  return h_flex().id(`space-${w.id}`).h(26).flex_none().px(8).pl(21).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
     .text_color(t.foreground).when(w.active, (el) => el.bg(t.selected)).when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
     .on_click(() => run("space.select", { id: w.id }))
     .on_mouse_down("right", () => spaceMenu(w, g))
     .child(foldChevron(v, w, 0, t))
     .child(svg(CHROME("git-branch")).size(13).flex_none().text_color(t.muted))
     .child(div().flex_shrink(0).max_w(150).truncate().child(branch))
-    .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(folder && folder !== branch.replace(/\//g, "-") ? folder : ""))
+    .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(folder && folder !== branch.replace(/\//g, "-") ? folder : ""))
     .child(g ? stateMark(`wt-state-${w.id}`, c, g, t, () => gitMenu(v, w, g, at)) : div());
 }
 
@@ -149,7 +149,7 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
   const where = g && !tree && g.name.toLowerCase() !== w.name.toLowerCase() ? g.name : "";
   const id = `space-work-${w.id}`;
   return h_flex().flex_1().min_w(0).gap(5).items_center()
-    .child(h_flex().flex_1().min_w(0).gap(5).justify_end().items_center().text_size(11.5).text_color(t.dim)
+    .child(h_flex().flex_1().min_w(0).gap(5).justify_end().items_center().text_size(12.5).text_color(t.dim)
       .when(Boolean(where), (el) => el.child(div().id(`space-git-${w.id}`).min_w(0).truncate().px(2).rounded(3)
         .when(Boolean(g), (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Git: status, branches, pull")
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -162,14 +162,14 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
       .on_click((_e, cx) => { cx.stop_propagation(); openAccount(w.id); })
       .child(`@${account.label}`)))
     .when(Boolean(label), (el) => el.child(h_flex().id(`space-link-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
-      .border_1().border_color(t.accent + "55").bg(t.accent + "14").text_size(11).text_color(t.accent).cursor_pointer()
+      .border_1().border_color(t.accent + "55").bg(t.accent + "14").text_size(12).text_color(t.accent).cursor_pointer()
       .hover((s) => s.bg(t.accent + "2a")).tooltip([link.github, link.jira?.key && `${link.jira.site} · ${link.jira.key}`, link.linear?.name].filter(Boolean).join("\n") + "\nClick to change the link")
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().flex_1().min_w(0).truncate().child(label))))
     // Not linked: the same chip in grey, "Link".
     .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
-      .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(11).text_color(t.dim).cursor_pointer()
+      .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(12).text_color(t.dim).cursor_pointer()
       .hover((s) => s.bg(t.dim + "2a").text_color(t.muted)).tooltip("Link space: its GitHub repository and Jira or Linear project")
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
@@ -179,8 +179,8 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
 
 // "n worktrees without a space": folds a repository's checkouts that no space shows.
 export function moreRow(v, r, t) {
-  return h_flex().id(`more-${r.repo}`).h(24).flex_none().px(8).pl(21).gap(7).items_center().rounded(6).cursor_pointer()
-    .text_size(12).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.muted))
+  return h_flex().id(`more-${r.repo}`).h(26).flex_none().px(8).pl(21).gap(7).items_center().rounded(6).cursor_pointer()
+    .text_size(13).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.muted))
     .on_click((_e, cx) => {
       r.open ? v.unfolded.delete(r.repo) : v.unfolded.add(r.repo);
       save("spaces.unfolded", [...v.unfolded]);
@@ -201,13 +201,13 @@ function checkoutMenu(r) {
 // A worktree no space shows: a click opens its Git dialog (with its menu's actions), right-click
 // its menu (no space is made either way).
 export function looseRow(v, r, t) {
-  return h_flex().id(`loose-${r.c.path}`).h(24).flex_none().px(8).pl(40).gap(7).items_center().rounded(6).cursor_pointer().text_size(12)
+  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(40).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
     .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
     .on_mouse_down("right", () => checkoutMenu(r))
     .child(svg(CHROME("git-branch")).size(13).flex_none().text_color(t.dim))
     .child(div().flex_shrink(0).max_w(150).truncate().child(r.c.branch ?? "detached"))
-    .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(r.c.branch && base(r.c.path) === r.c.branch.replace(/\//g, "-") ? "" : base(r.c.path)))
+    .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(r.c.branch && base(r.c.path) === r.c.branch.replace(/\//g, "-") ? "" : base(r.c.path)))
     .when(r.c.locked, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("locked")))
     .child(stateMark(`loose-state-${r.c.path}`, r.c, { ahead: 0, behind: 0 }, t));
 }
@@ -220,7 +220,7 @@ function terminalsOf(w) {
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
 
 // A small label over a group under an unfolded space ("Terminals", "Worktrees").
-export const sectionLabel = (id, text, t) => div().id(id).h(18).flex_none().pl(40).flex().items_end().text_size(10.5).text_color(t.dim).child(text);
+export const sectionLabel = (id, text, t) => div().id(id).h(20).flex_none().pl(40).flex().items_end().text_size(11.5).text_color(t.dim).child(text);
 
 export const isOpen = (v, id) => v.openSpaces?.has(id) ?? false;
 
@@ -242,9 +242,11 @@ export function foldChevron(v, w, children, t) {
     .child(svg(CHROME(open ? "chevron-down" : "chevron-right")).size(11));
 }
 
-// An agent's icon from Herdr's program table: a one-color glyph (in the text color) or a picture.
-export function programIcon(program, t, size = 13) {
-  if (!program?.agent || !program.icon) return null;
+// A program's icon from Herdr's program table (Claude Code, Codex…): a one-color glyph (in the
+// text color) or a picture. None for a shell: it shows the terminal icon. (Herdr reports
+// `agent: false` for an idle agent, so the shell flag decides.)
+export function programIcon(program, t, size = 14) {
+  if (!program?.icon || program.shell) return null;
   return program.tint ? svg(program.icon).size(size).flex_none().text_color(t.muted) : image(program.icon).w(size).h(size).flex_none();
 }
 
@@ -263,14 +265,14 @@ export function terminalRows(v, w, t, depth = 1) {
 
 // "+ New terminal or agent…" at the end of a space's terminals: a menu of both, as its account.
 function newTabRow(w, t, depth) {
-  return h_flex().id(`term-new-${w.id}`).h(22).flex_none().pl(depth > 1 ? 59 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
-    .text_size(11.5).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
+  return h_flex().id(`term-new-${w.id}`).h(24).flex_none().pl(depth > 1 ? 59 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+    .text_size(12.5).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => {
       const a = accountOf(w, null);
       openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 240, height: 260, props: { menu: "new-tab", space: w.id, account: a?.id ?? null } });
     })
-    .child(svg(CHROME("plus")).size(11).flex_none())
-    .child(div().truncate().child("New terminal or agent…"));
+    .child(svg(CHROME("plus")).size(13).flex_none())
+    .child(div().flex_1().min_w(0).truncate().child("New agent or terminal…"));
 }
 
 function terminalRow(p, t, depth) {
@@ -279,17 +281,17 @@ function terminalRow(p, t, depth) {
     const name = telling ? title : p.program?.name || "terminal";
     const where = [p.cwd ? base(p.cwd) : "", p.branch ?? ""].filter(Boolean).join(" · ");
     const color = t[STATUS[p.status]] ?? t.dim;
-    return h_flex().id(`term-${p.pane}`).h(24).flex_none().pl(depth > 1 ? 59 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
-      .text_size(12).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+    return h_flex().id(`term-${p.pane}`).h(26).flex_none().pl(depth > 1 ? 59 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+      .text_size(13).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("pane.focus", { pane: p.pane }))
       // An agent shows its own icon (Herdr's program table), a plain terminal the terminal icon.
-      .child(programIcon(p.program, t) ?? svg(CHROME("terminal")).size(11).flex_none().text_color(t.dim))
+      .child(programIcon(p.program, t) ?? svg(CHROME("terminal")).size(13).flex_none().text_color(t.dim))
       .child(div().flex_shrink(0).max_w(140).truncate().child(name))
-      .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(where))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(where))
       .when(Boolean(p.status), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color)))
       .child(div().id(`peek-${p.pane}`).flex_none().size(18).flex().items_center().justify_center().rounded(4).text_color(t.dim)
         .hover((s) => s.bg(t.raised ?? t.hover).text_color(t.foreground)).tooltip("Peek: see it here, without switching spaces")
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click((_e, cx) => { cx.stop_propagation(); run("terminal.peek", { terminal: p.terminal }); })
-        .child(svg(`${ICONS}/eye.svg`).size(12)));
+        .child(svg(`${ICONS}/eye.svg`).size(14)));
 }

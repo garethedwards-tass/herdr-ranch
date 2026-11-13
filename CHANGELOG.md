@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Spaces:** a space's terminals are listed as Agents, each with its program's icon (Claude Code, Codex…; the terminal icon for a shell), and the tree's text is larger.
 - **Spaces:** + offers a new space with a terminal or an installed agent (Claude Code, Codex…); a space's menu and its terminals offer a new terminal or agent tab, as the space's account. Agent terminals show the agent's icon.
 - **Spaces:** worktrees under a space share one compact row (branch, folder, state mark), with or without a space; a click on one without a space opens its Git dialog with Create space here, Delete worktree and Copy path.
 - **Spaces:** the link and git chips are the same fixed width and line up; long text ends in …. The git chip always shows ("no repo" outside git).

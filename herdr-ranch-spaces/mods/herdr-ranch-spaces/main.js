@@ -307,7 +307,7 @@ export default class Spaces extends View {
         const terms = terminalRows(this, r.w, t, r.tree ? 2 : 1);
         const both = terms.length > 0 && r.children > 0;
         if (both) labelled.add(r.w.id);
-        return [...head, draw(r), ...(both ? [sectionLabel(`term-label-${r.w.id}`, "Terminals", t)] : []), ...terms];
+        return [...head, draw(r), ...(both ? [sectionLabel(`term-label-${r.w.id}`, "Agents", t)] : []), ...terms];
       });
     };
     const machineOf = (r) => (r.w ? r.w.machine ?? null : r.on ?? JSON.parse(r.repo)[0]);
