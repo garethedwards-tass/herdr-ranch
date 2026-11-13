@@ -196,12 +196,19 @@ export function moreRow(v, r, t) {
     .when(r.busy > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.busy} with work`)));
 }
 
-// A worktree no space shows: a click opens its Git dialog (no space is made); right-click for more.
+// A worktree without a space's menu (click or right-click), with the git popup's header.
+function checkoutMenu(r) {
+  const c = r.c;
+  const info = { name: base(c.path), branch: c.branch, ahead: 0, behind: 0, changes: c.changes ?? null, unpushed: c.unpushed ?? null, linked: true };
+  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 300, height: 260, props: { menu: "checkout", path: c.path, main: r.main, on: r.on ?? null, branch: c.branch, account: accountOf(null, { main: r.main, on: r.on ?? null })?.id ?? null, info } });
+}
+
+// A worktree no space shows: a click or right-click opens its menu (no space is made).
 export function looseRow(v, r, t) {
   return h_flex().id(`loose-${r.c.path}`).h(24).flex_none().px(8).pl(40).gap(7).items_center().rounded(6).cursor_pointer().text_size(12)
-    .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(`${r.c.path}\nClick for its git status, right-click to create a space there or delete it`)
-    .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
-    .on_mouse_down("right", () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 220, height: 180, props: { menu: "checkout", path: r.c.path, main: r.main, on: r.on ?? null, branch: r.c.branch, account: accountOf(null, { main: r.main, on: r.on ?? null })?.id ?? null } }))
+    .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+    .on_click(() => checkoutMenu(r))
+    .on_mouse_down("right", () => checkoutMenu(r))
     .child(svg(CHROME("git-branch")).size(13).flex_none().text_color(t.dim))
     .child(div().flex_shrink(0).max_w(150).truncate().child(r.c.branch ?? "detached"))
     .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(r.c.branch && base(r.c.path) === r.c.branch.replace(/\//g, "-") ? "" : base(r.c.path)))

@@ -77,7 +77,7 @@ export class SpaceMenu extends View {
   }
 
   render() {
-    const t = theme(), p = props(), list = menuItems(p), i = p.menu === "git" ? p.info : null;
+    const t = theme(), p = props(), list = menuItems(p), i = p.menu === "git" || p.menu === "checkout" ? p.info : null;
     return v_flex().id("spaces-menu").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8)
       // The git popup's header: repository, branch, and its state.
       .when(Boolean(i), (el) => el.child(v_flex().px(8).pt(4).pb(6).mb(3).gap(2).border_b_1().border_color(t.border)
