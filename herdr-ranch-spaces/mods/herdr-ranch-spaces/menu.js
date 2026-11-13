@@ -1,4 +1,6 @@
-// Right-click menus. The list opens itself as a popup at the pointer with
+// Right-click menus and the git button's popup. The list opens itself as a popup at the pointer with
+//   { menu: "git", space, on, info }                    the git button: its state, Git status, Switch branch,
+//                                                        Fetch, Pull, the worktree actions
 //   { menu: <space id>, git: "main" | "linked" | null }  a space: Link space, the worktree actions, Rename, Close
 //   { menu: "checkout", path, main, on, branch }        a worktree without a space: Create space, Delete, Copy path
 // ↑/↓ move, Enter runs, Esc closes.
@@ -16,6 +18,21 @@ const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
 // [label, icon path, action(cx)]
 export function menuItems(p) {
   const acct = p.account ? accounts().find((a) => a.id === p.account) ?? null : null;
+  if (p.menu === "git") {
+    const id = p.space, i = p.info ?? {};
+    return [
+      ["Git status…", CHROME("git-compare"), () => openGit(id, "status")],
+      ["Switch branch…", CHROME("git-branch"), () => openGit(id, "branches")],
+      // In the Git dialog, which shows how it went (and Pull with rebase when it can't fast-forward).
+      ["Fetch", CHROME("git-compare"), () => openGit(id, "status", null, "fetch")],
+      [i.behind > 0 ? `Pull ↓${i.behind}` : "Pull", CHROME("git-compare"), () => openGit(id, "status", null, "pull")],
+      ["New worktree from a branch…", `${ICONS}/branch-plus.svg`, () => openNew(id, "branch")],
+      ["New worktree from an issue…", `${ICONS}/branch-plus.svg`, () => openNew(id, "issue")],
+      ["New worktree…", `${ICONS}/branch-plus.svg`, () => openWorktree({ space: id, action: "new" })],
+      ["Open worktree…", CHROME("git-compare"), () => openWorktree({ space: id, action: "open" })],
+      ...(i.linked ? [["Remove worktree…", CHROME("archive"), () => openWorktree({ space: id, action: "remove" })]] : []),
+    ];
+  }
   if (p.menu === "checkout") return [
     ["Git: status, pull…", CHROME("git-compare"), () => openGit(null, "status", { folder: p.path, on: p.on })],
     ["Switch branch…", CHROME("git-branch"), () => openGit(null, "branches", { folder: p.path, on: p.on })],
@@ -60,8 +77,16 @@ export class SpaceMenu extends View {
   }
 
   render() {
-    const t = theme(), p = props(), list = menuItems(p);
+    const t = theme(), p = props(), list = menuItems(p), i = p.menu === "git" ? p.info : null;
     return v_flex().id("spaces-menu").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8)
+      // The git popup's header: repository, branch, and its state.
+      .when(Boolean(i), (el) => el.child(v_flex().px(8).pt(4).pb(6).mb(3).gap(2).border_b_1().border_color(t.border)
+        .child(h_flex().gap(6).items_center().child(div().font_semibold().text_color(t.foreground).child(i.name)).child(div().min_w(0).truncate().text_color(t.accent).child(i.branch ?? "detached")))
+        .child(h_flex().gap(8).text_size(11.5).text_color(t.dim)
+          .child(i.changes > 0 ? div().text_color(t.ansi3).child(`●${i.changes} uncommitted`) : i.changes === 0 ? div().text_color(t.ansi2).child("✓ clean") : div().child("…"))
+          .when(Math.max(i.ahead ?? 0, i.unpushed ?? 0) > 0, (el) => el.child(div().text_color(t.ansi2).child(`↑${Math.max(i.ahead ?? 0, i.unpushed ?? 0)} to push`)))
+          .when(i.behind > 0, (el) => el.child(div().text_color(t.ansi1).child(`↓${i.behind} to pull`)))
+          .when(i.worktrees > 1, (el) => el.child(div().child(`${i.worktrees} checkouts`))))))
       .on_key_down((e, cx) => {
         if (e.key === "down") this.at = (this.at + 1) % list.length;
         else if (e.key === "up") this.at = (this.at + list.length - 1) % list.length;

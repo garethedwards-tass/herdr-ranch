@@ -177,3 +177,15 @@ test("accounts: checks, the sh that sets the variables (no token on the command 
   assert.match(argv[2], /^export CLAUDE_CONFIG_DIR='\/opt\/c'; claude; exec /);
   assert.deepEqual(parseGhAccounts("  ✓ Logged in to github.com account alice (keyring)\n  - Active account: true\n  ✓ Logged in to github.com account bob-2 (keyring)"), ["alice", "bob-2"]);
 });
+
+test("gitState: the git button's color, most pressing first", async () => {
+  const { gitState } = await import("../herdr-ranch-spaces/mods/herdr-ranch-spaces/extras.js");
+  const st = (c, g) => gitState(c, g).state;
+  assert.equal(st(null, {}), "unknown");
+  assert.equal(st({ changes: 2, unpushed: 0 }, { ahead: 0, behind: 3 }), "dirty");
+  assert.equal(st({ changes: 0, unpushed: 0 }, { ahead: 0, behind: 3 }), "behind");
+  assert.equal(st({ changes: 0, unpushed: 1 }, { ahead: 1, behind: 3 }), "diverged");
+  assert.equal(st({ changes: 0, unpushed: 2 }, { ahead: 0, behind: 0 }), "ahead");
+  assert.equal(st({ changes: 0, unpushed: 0 }, { ahead: 0, behind: 0 }), "sync");
+  assert.equal(gitState({ changes: 0, unpushed: 0 }, {}).color, "ansi2");
+});

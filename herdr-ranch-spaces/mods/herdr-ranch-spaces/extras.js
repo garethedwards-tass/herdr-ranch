@@ -49,6 +49,42 @@ export function start(v, cx) {
 }
 
 // Right-click on a space: our menu (Link space, Git, worktrees, Rename, Close).
+// The checkout's state for the git button's color, most pressing first: uncommitted changes
+// (ansi3), behind its upstream (ansi1; with commits to push too, it has diverged), commits to
+// push (accent), in sync (ansi2). Unknown until its work is read (no color).
+export function gitState(c, g) {
+  const up = Math.max(g?.ahead ?? 0, c?.unpushed ?? 0), down = g?.behind ?? 0;
+  if (!c || c.changes == null) return { state: "unknown", color: null, say: "Git" };
+  if (c.changes > 0) return { state: "dirty", color: "ansi3", say: `${c.changes} uncommitted file${c.changes === 1 ? "" : "s"}` };
+  if (down > 0) return { state: up > 0 ? "diverged" : "behind", color: "ansi1", say: up > 0 ? `Diverged: ${up} to push, ${down} to pull` : `${down} to pull` };
+  if (up > 0) return { state: "ahead", color: "accent", say: `${up} to push` };
+  return { state: "sync", color: "ansi2", say: "In sync: nothing to commit, push or pull" };
+}
+
+// The git chip, in the link chip's style and always the same width: a git icon, the branch
+// (cut short; whole in the tooltip) and the state in short (✓ in sync, n uncommitted (amber), ↓n to
+// pull, ↕ diverged, ↑n to push, … not read yet), tinted by the state's color. A click opens the
+// git popup.
+const SHORT = { sync: () => "✓", dirty: (c) => String(c.changes), behind: (_c, g) => `↓${g.behind}`, diverged: () => "↕", ahead: (c, g) => `↑${Math.max(g.ahead ?? 0, c.unpushed ?? 0)}`, unknown: () => "…" };
+function gitChip(v, w, g, at, t) {
+  const c = checkoutAt(v.trees[g.repo], at), s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
+  return h_flex().id(`space-git-menu-${w.id}`).flex_none().w(112).gap(3).px(5).items_center().rounded(4)
+    .border_1().border_color(color + "55").bg(color + "14").text_size(11).text_color(color).cursor_pointer()
+    .hover((x) => x.bg(color + "2a")).tooltip(`${g.branch ?? "detached"}: ${s.say}\nClick for git: status, branches, pull, worktrees`)
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); gitMenu(v, w, g, at); })
+    .child(svg(CHROME("git-branch")).size(10).flex_none())
+    .child(div().flex_1().min_w(0).truncate().child(g.branch ?? "detached"))
+    .child(div().flex_none().child(SHORT[s.state](c, g)));
+}
+
+// The git button's popup: what the list knows about the checkout, and the git and worktree actions.
+function gitMenu(v, w, g, at) {
+  const c = checkoutAt(v.trees[g.repo], at);
+  const info = { name: g.name, branch: g.branch, ahead: g.ahead, behind: g.behind, changes: c?.changes ?? null, unpushed: c?.unpushed ?? null, top: g.top, linked: g.linked, worktrees: (v.trees[g.repo] ?? []).length };
+  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 300, height: 440, props: { menu: "git", space: w.id, on: w.machine ?? null, info } });
+}
+
 export function spaceMenu(w, g) {
   const account = accountOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 260, height: 420, props: { menu: w.id, git: g ? (g.linked ? "linked" : "main") : null, account: account?.id ?? null } });
@@ -89,8 +125,8 @@ function work(v, id, c, g, t, onPull) {
       .child(v.pulling.has(id) ? "…" : `↓${down}`)));
 }
 
-function button(id, path, tip, t, onClick) {
-  return div().id(id).size(20).flex_none().flex().items_center().justify_center().rounded(5).text_color(t.muted).cursor_pointer()
+function button(id, path, tip, t, onClick, color = null) {
+  return div().id(id).size(20).flex_none().flex().items_center().justify_center().rounded(5).text_color(color ?? t.muted).cursor_pointer()
     .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(tip)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => { cx.stop_propagation(); onClick(); })
@@ -103,9 +139,9 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
   const link = linkOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   const label = linkLabel(link);
   const account = accountOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
-  const where = tail(g, tree, w.name);
+  // The repository when the name doesn't say it; the branch and state are in the git chip.
+  const where = g && !tree && g.name.toLowerCase() !== w.name.toLowerCase() ? g.name : "";
   const id = `space-work-${w.id}`;
-  const busy = g ? work(v, id, checkoutAt(v.trees[g.repo], at), g, t, (cx) => pull(v, id, w, g, cx, again)) : null;
   return h_flex().flex_1().min_w(0).gap(5).items_center()
     .child(h_flex().flex_1().min_w(0).gap(5).justify_end().items_center().text_size(11.5).text_color(t.dim)
       .when(Boolean(where), (el) => el.child(div().id(`space-git-${w.id}`).min_w(0).truncate().px(2).rounded(3)
@@ -113,7 +149,7 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
           .on_click((_e, cx) => { cx.stop_propagation(); openGit(w.id); }))
         .child(where)))
-      .when(Boolean(busy), (el) => el.child(busy)))
+    )
     .child(terminalsToggle(v, w, t) ?? div())
     .when(Boolean(account), (el) => el.child(div().id(`space-account-${w.id}`).flex_none().max_w(70).truncate().px(5).rounded(4).text_size(11).text_color(t.ansi5 ?? t.accent).cursor_pointer()
       .hover((s) => s.bg(t.hover)).tooltip(`Account: ${account.label}${account.claudeDir ? `\nClaude Code: ${account.claudeDir}` : ""}${account.ghUser ? `\nGitHub: ${account.ghUser}` : ""}\nClick to change`)
@@ -133,7 +169,7 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child("Link")))
-    .when(Boolean(g), (el) => el.child(button(`space-worktree-${w.id}`, `${ICONS}/branch-plus.svg`, "New worktree from a branch or an issue", t, () => openNew(w.id, "branch"))));
+    .when(Boolean(g), (el) => el.child(gitChip(v, w, g, at, t)));
 }
 
 // "n worktrees without a space": folds a repository's checkouts that no space shows.

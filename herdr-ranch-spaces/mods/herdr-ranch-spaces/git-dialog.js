@@ -49,6 +49,9 @@ export class GitDialog extends View {
         this.g = g;
       } catch (e) { this.g ??= null; this.error = String(e?.message ?? e); }
       cx.notify();
+      // Opened to fetch or pull (the git button's popup): once, after the first read.
+      const act = props()?.action;
+      if (act && !this.acted && this.g) { this.acted = true; act === "pull" ? this.pull(cx) : this.fetch(cx); }
       if (this.tab === "branches") cx.timer.after(50, () => { try { this.input.focus(); } catch { /* closed */ } });
     });
   }
