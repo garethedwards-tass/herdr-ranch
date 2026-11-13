@@ -4,7 +4,7 @@ Thanks for looking. Issues and pull requests are welcome at [jslowack/herdr-ranc
 
 ## How the repository is laid out
 
-- **One folder per mod** (`herdr-ranch-issues`, `herdr-ranch-prs`, `herdr-ranch-reviews`, `mod-buttons`), each with:
+- **One folder per mod** (`herdr-ranch-issues`, `herdr-ranch-prs`, `herdr-ranch-reviews`, `herdr-ranch-spaces`, `herdr-ranch-agents`, `mod-buttons`), each with:
   - `RECIPE.md`: the brief another agent builds the mod from (what you see, how it behaves, what it's built from, when it's done). Keep it in step with the code.
   - `mods/<name>/`: the mod itself, as Herdr loads it.
   - `keys.json`: its keys, for users to merge into their own.
