@@ -23,6 +23,7 @@ The git commit history of the repository you're working in, in a side panel next
 ## Built from
 
 - `mods/herdr-ranch-history/main.js` (the panel), `git.js` (git calls, `parseLog`, `parseShow`, `searchArgs`, `search`), `ui.js` (text sizes, button, pill, arrow, segmented control), and copies of the Pull requests mod's `diff.js` and `files-tab.js` (the diff view).
+- `diff-list.js`: the commit's diffs as a retained child view (`DiffList`, `scroll: false` inside the page), redrawn only through `redraw(cx)` when the commit, its files, colors or open state change. Changes keeps an identical copy.
 - `mod.json`: `place: none`, `focusable`, `button: { label: "History", icon: "history.svg", opens: "panel", order: 5 }` for mod-buttons; `history.svg` is Lucide's `history` (ISC).
 - herdr: `focused`, `spaces`, `theme`, `settings`, `exec`. Programs: `git`.
 

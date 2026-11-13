@@ -22,6 +22,7 @@ The uncommitted changes of the repository you're working in, in the side panel b
 ## Built from
 
 - `mods/herdr-ranch-changes/main.js` (the panel), `git.js` (`repoOf`, `parseStatus`, `addedPatch`, `changes`, `commitAll`), and the diff view's files, copied from Pull requests (`diff.js`, `files-tab.js`, `highlight.js`) with `ui.js` from History. A test checks the copies stay the same.
+- `diff-list.js`: the diff list as a retained child view (`DiffList`), redrawn only when the panel calls `redraw(cx)` after a change to the diff (files, colors, open, more, mode), not on every live change. History keeps an identical copy.
 - `mod.json`: `place: none`, `focusable`, no button: the mod-buttons layout's `changes` block shows it.
 - herdr: `focused`, `spaces`, `panes`, `theme`, `settings`, `exec`, `readTextFile`, `writeTextFile`, `watchFolder`, `notify`. Programs: `git`, and `ranch-highlight` when installed.
 

@@ -9,6 +9,7 @@ import { theme, focused, spaces } from "herdr";
 import { repoOf, tip, log, show, search, me, LOG } from "./git.js";
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
 import { filesTab } from "./files-tab.js";
+import { DiffList } from "./diff-list.js";
 import { highlightFiles } from "./highlight.js";
 import { fs, readSizes, kit, segmented, REFRESH_ICON, writeRefreshIcon } from "./ui.js";
 
@@ -44,6 +45,7 @@ export default class History extends View {
     this.repo = null; this.commits = null; this.error = null; this.loading = false;
     this.scope = load("scope", "head"); this.mode = load("diff-mode", "unified");
     this.open = null; this.detail = new Map(); this.fileOpen = new Map(); this.fileLimit = new Map();
+    this.diffView = cx.new(DiffList, { owner: this, id: "history-diffs", scroll: false });
     this.cursor = 0; this.query = ""; this.filter = null; this.width = Number(load("width", "0")) || 0; this.keys = false;
     this.handle = cx.focus_handle();
     // Typing filters the loaded commits at once; a pause searches the whole history with git.
@@ -146,13 +148,13 @@ export default class History extends View {
             if (!this.fileOpen.has(k)) this.fileOpen.set(k, on);
           }
         }
-        cx.notify();
+        this.redraw(cx);
         // Then the colors: whole files from this repository (a merge against its first parent).
         const git = repo.on ? null : { cwd: repo.top, oldRev: `${c.sha}^`, newRev: c.sha };
-        if (got.files && await highlightFiles(got.files.filter((f) => !f.why), git).catch(() => false)) cx.notify();
+        if (got.files && await highlightFiles(got.files.filter((f) => !f.why), git).catch(() => false)) this.redraw(cx);
       });
     }
-    cx.notify();
+    this.redraw(cx);
   }
   back(cx) { this.open = null; cx.notify(); }
   step(by, cx) {
@@ -161,6 +163,14 @@ export default class History extends View {
     if (at >= 0 && next) this.pick(next, cx);
   }
 
+  // The page and its retained diff list (which a live change alone doesn't redraw).
+  redraw(cx) {
+    try { cx.notify(this.diffView); } catch { /* not made yet */ }
+    cx.notify();
+  }
+
+  diffKey() { return this.open; }
+
   diffProps(sha) {
     const d = this.detail.get(sha) ?? { files: null, error: null };
     const key = (p) => `${sha}:${p}`;
@@ -168,9 +178,9 @@ export default class History extends View {
       files: d.files, error: d.error, loading: !d.files && !d.error, mode: this.mode, viewed: false, hideGithub: true,
       isOpen: (p) => Boolean(this.fileOpen.get(key(p))), isViewed: () => false,
       limit: (p) => this.fileLimit.get(key(p)) ?? FIRST_LINES,
-      toggle: (p, cx) => { const k = key(p); this.fileOpen.set(k, !this.fileOpen.get(k)); cx.notify(); },
-      more: (p, cx) => { const k = key(p); this.fileLimit.set(k, (this.fileLimit.get(k) ?? FIRST_LINES) + MORE_LINES); cx.notify(); },
-      setMode: (m, cx) => { this.mode = m; save("diff-mode", m); cx.notify(); },
+      toggle: (p, cx) => { const k = key(p); this.fileOpen.set(k, !this.fileOpen.get(k)); this.redraw(cx); },
+      more: (p, cx) => { const k = key(p); this.fileLimit.set(k, (this.fileLimit.get(k) ?? FIRST_LINES) + MORE_LINES); this.redraw(cx); },
+      setMode: (m, cx) => { this.mode = m; save("diff-mode", m); this.redraw(cx); },
       all: (open, cx) => {
         let budget = ALL_LINES;
         for (const f of d.files ?? []) {
@@ -179,7 +189,7 @@ export default class History extends View {
           if (on) budget -= cost;
           this.fileOpen.set(k, on);
         }
-        cx.notify();
+        this.redraw(cx);
       },
       retry: (cx) => { this.detail.delete(sha); const c = this.commits?.find((x) => x.sha === sha) ?? this.extra?.get(sha); if (c) this.pick(c, cx); },
     };
@@ -300,7 +310,7 @@ export default class History extends View {
         .child(div().font_family(MONO).text_color(t.accent).child(c.short))
         .children(c.refs.map((r) => k.pill(r))));
     return v_flex().id("history-commit").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).gap(12)
-      .child(card).children(filesTab([], t, k, this.diffProps(c.sha), 0))
+      .child(card).child(this.diffView)
       .child(h_flex().flex_none().gap(12).pt(4).text_size(fs.tiny).text_color(t.muted)
         .child("↑ ↓ or [ ] newer / older").child("S unified / split").child("E expand / collapse all").child("Esc back"));
   }

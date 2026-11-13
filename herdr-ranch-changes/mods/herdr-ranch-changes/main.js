@@ -8,7 +8,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, focused, spaces, panes, watchFolder, notify } from "herdr";
 import { repoOf, changes, commitAll, MAX_FILES } from "./git.js";
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
-import { filesTab } from "./files-tab.js";
+import { DiffList } from "./diff-list.js";
 import { highlightFiles } from "./highlight.js";
 import { fs, readSizes, kit, REFRESH_ICON, writeRefreshIcon } from "./ui.js";
 
@@ -33,6 +33,7 @@ export default class Changes extends View {
     this.repo = null; this.files = null; this.error = null; this.loading = false; this.busy = false;
     this.mode = load("diff-mode", "unified"); this.fileOpen = new Map(); this.fileLimit = new Map(); this.hl = new Map();
     this.message = ""; this.handle = cx.focus_handle();
+    this.diffView = cx.new(DiffList, { owner: this, id: "changes-files" });
     this.input = InputState.new({ placeholder: "Commit message" });
     this.input.on("change", (_e, cx) => { const had = Boolean(this.message.trim()); this.message = this.input.value(); if (had !== Boolean(this.message.trim())) cx.notify(); });
     this.input.on("submit", (_e, cx) => this.commit(cx));
@@ -81,14 +82,14 @@ export default class Changes extends View {
         }
         this.files = got.files; this.limited = got.limited; this.head = got.head; this.error = null;
         this.watch(this.repo.root, cx);
-        cx.notify();
+        this.redraw(cx);
         const repo2 = this.repo, git = repo2.on ? null : { cwd: repo2.root, oldRev: got.head ? "HEAD" : null, newRev: "" };
         const todo = got.files.filter((f) => !f.why && !f.hl);
         if (todo.length && await highlightFiles(todo, git).catch(() => false) && this.repo === repo2) {
           for (const f of todo) if (f.hl) this.hl.set(f.path, { patch: patchKey(f), hl: f.hl });
         }
       } catch (e) { this.error = String(e?.message ?? e); }
-      finally { this.loading = false; cx.notify(); if (this.again) this.refresh(cx); }
+      finally { this.loading = false; this.redraw(cx); if (this.again) this.refresh(cx); }
     });
   }
 
@@ -106,15 +107,25 @@ export default class Changes extends View {
     });
   }
 
+  // The panel and its retained diff list (which a live change alone doesn't redraw).
+  redraw(cx) {
+    try { cx.notify(this.diffView); } catch { /* not made yet */ }
+    cx.notify();
+  }
+
+  diffFooter(t) {
+    return this.limited ? [div().text_size(fs.meta).text_color(t.dim).child(`The first ${MAX_FILES} changed files.`)] : [];
+  }
+
   diffProps() {
     const files = this.files ?? [];
     return {
       files: this.files, error: null, loading: !this.files, mode: this.mode, viewed: false, hideGithub: true,
       isOpen: (p) => Boolean(this.fileOpen.get(p)), isViewed: () => false,
       limit: (p) => this.fileLimit.get(p) ?? FIRST_LINES,
-      toggle: (p, cx) => { this.fileOpen.set(p, !this.fileOpen.get(p)); cx.notify(); },
-      more: (p, cx) => { this.fileLimit.set(p, (this.fileLimit.get(p) ?? FIRST_LINES) + MORE_LINES); cx.notify(); },
-      setMode: (m, cx) => { this.mode = m; save("diff-mode", m); cx.notify(); },
+      toggle: (p, cx) => { this.fileOpen.set(p, !this.fileOpen.get(p)); this.redraw(cx); },
+      more: (p, cx) => { this.fileLimit.set(p, (this.fileLimit.get(p) ?? FIRST_LINES) + MORE_LINES); this.redraw(cx); },
+      setMode: (m, cx) => { this.mode = m; save("diff-mode", m); this.redraw(cx); },
       all: (open, cx) => {
         let budget = ALL_LINES;
         for (const f of files) {
@@ -122,7 +133,7 @@ export default class Changes extends View {
           if (on) budget -= cost;
           this.fileOpen.set(f.path, on);
         }
-        cx.notify();
+        this.redraw(cx);
       },
       retry: (cx) => this.refresh(cx),
     };
@@ -164,9 +175,7 @@ export default class Changes extends View {
       ? div().p(12).text_color(t.dim).child(this.loading ? "Looking for a git repository…" : "The focused terminal isn't in a git repository.")
       : this.error && !this.files ? div().p(12).text_color(t.ansi1).child(`git failed: ${this.error}`)
       : this.files && !files.length ? div().p(12).text_color(t.dim).child("No uncommitted changes.")
-      : v_flex().id("changes-files").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).gap(12)
-        .children(filesTab([], t, k, this.diffProps(), 0))
-        .when(Boolean(this.limited), (e) => e.child(div().text_size(fs.meta).text_color(t.dim).child(`The first ${MAX_FILES} changed files.`)));
+      : this.diffView;
     return v_flex().id("changes-root").size_full().min_h(0).bg(t.background).text_size(fs.body).text_color(t.foreground)
       .track_focus(this.handle).on_mouse_down("left", () => { try { this.handle.focus(); } catch { /* ok */ } })
       .on_key_down((e, cx) => this.key(e, cx))
