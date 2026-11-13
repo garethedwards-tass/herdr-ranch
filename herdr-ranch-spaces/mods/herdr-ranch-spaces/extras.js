@@ -187,6 +187,7 @@ export function moreRow(v, r, t) {
       cx.notify();
     })
     .child(div().w(12).flex_none().flex().justify_center().child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(13)))
+    .child(svg(`${ICONS}/unplug.svg`).size(13).flex_none())
     .child(div().truncate().child(`${r.count} worktree${r.count === 1 ? "" : "s"} without a space`))
     .when(r.busy > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.busy} with work`)));
 }
