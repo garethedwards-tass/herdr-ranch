@@ -18,6 +18,9 @@ import { linkLabel, base, checkoutAt, hasWork } from "./git.js";
 
 export const MOD = "herdr-ranch-spaces";
 const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
+// A row's icon in a fixed 20px slot: with the row's gap of 7, its text starts where a space's name
+// does (avatar 18 + gap 9), whatever the icon's own width.
+const slot = (el) => div().w(20).flex_none().flex().items_center().child(el);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k) ?? "null") ?? d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* this session only */ } };
 
@@ -107,7 +110,7 @@ export function worktreeSpaceRow(v, r, t) {
     .on_click(() => run("space.select", { id: w.id }))
     .on_mouse_down("right", () => spaceMenu(w, g))
     .child(foldChevron(v, w, 0, t))
-    .child(svg(CHROME("folder")).size(13).flex_none().text_color(t.muted))
+    .child(slot(svg(CHROME("folder")).size(13).flex_none().text_color(t.muted)))
     .child(div().flex_1().min_w(0).truncate().child(folder || w.name))
     .child(g ? gitPill(`wt-git-${w.id}`, branch, c, g, t, () => gitMenu(v, w, g, at)) : div());
 }
@@ -179,8 +182,8 @@ export function moreRow(v, r, t) {
       save("spaces.unfolded", [...v.unfolded]);
       cx.notify();
     })
-    .child(div().w(12).flex_none().flex().justify_center().child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(13)))
-    .child(svg(`${ICONS}/unplug.svg`).size(13).flex_none())
+    .child(div().w(12).mr(-2).flex_none().flex().justify_center().child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(13)))
+    .child(slot(svg(`${ICONS}/unplug.svg`).size(13).flex_none()))
     .child(div().truncate().child(`${r.count} worktree${r.count === 1 ? "" : "s"} without a space`))
     // Which work: uncommitted files (amber), commits on no remote (blue, like the pill's ↑).
     .when(r.dirty > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.dirty} uncommitted`)))
@@ -194,14 +197,16 @@ function checkoutMenu(r) {
   openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 300, height: 260, props: { menu: "checkout", path: c.path, main: r.main, on: r.on ?? null, branch: c.branch, account: accountOf(null, { main: r.main, on: r.on ?? null })?.id ?? null, info } });
 }
 
+// Levels line up: a space's children have their icons at 19 (the space's avatar), the rows
+// under a worktree space or the "without a space" fold at 38; chevrons sit to the left of them.
 // A worktree no space shows: a click opens its Git dialog (with its menu's actions), right-click
 // its menu (no space is made either way).
 export function looseRow(v, r, t) {
-  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(19).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
+  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(38).gap(7).items_center().rounded(6).cursor_pointer().text_size(13)
     .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
     .on_mouse_down("right", () => checkoutMenu(r))
-    .child(svg(CHROME("folder")).size(13).flex_none().text_color(t.dim))
+    .child(slot(svg(CHROME("folder")).size(13).flex_none().text_color(t.dim)))
     .child(div().flex_1().min_w(0).truncate().child(base(r.c.path)))
     .when(r.c.locked, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("locked")))
     .child(gitPill(`loose-git-${r.c.path}`, r.c.branch, r.c, { ahead: 0, behind: 0 }, t, null));
@@ -216,6 +221,22 @@ const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
 
 // A small label over a group under an unfolded space ("Terminals", "Worktrees").
 export const sectionLabel = (id, text, t) => div().id(id).h(20).flex_none().pl(19).flex().items_end().text_size(11.5).text_color(t.dim).child(text);
+
+// The header's fold button: Collapse all when anything is open (every space and worktree space,
+// and the "worktrees without a space" lists), else Expand all (every space and worktree space).
+export function foldAllButton(v, t) {
+  const any = v.openSpaces.size > 0 || v.unfolded.size > 0;
+  return div().id("spaces-fold-all").size(26).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer()
+    .text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(any ? "Collapse all" : "Expand all")
+    .on_click((_e, cx) => {
+      if (any) { v.openSpaces.clear(); v.unfolded.clear(); }
+      else for (const s of spaces()) v.openSpaces.add(s.id);
+      save("spaces.terminals", [...v.openSpaces]);
+      save("spaces.unfolded", [...v.unfolded]);
+      cx.notify();
+    })
+    .child(svg(`${ICONS}/${any ? "chevrons-down-up" : "chevrons-up-down"}.svg`).size(14));
+}
 
 export const isOpen = (v, id) => v.openSpaces?.has(id) ?? false;
 
@@ -262,13 +283,13 @@ export function terminalRows(v, w, t, depth = 1) {
 
 // "+ New terminal or agent…" at the end of a space's terminals: a menu of both, as its account.
 function newTabRow(w, t, depth) {
-  return h_flex().id(`term-new-${w.id}`).h(24).flex_none().pl(depth > 1 ? 38 : 19).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+  return h_flex().id(`term-new-${w.id}`).h(24).flex_none().pl(depth > 1 ? 38 : 19).pr(8).gap(7).items_center().rounded(6).cursor_pointer()
     .text_size(12.5).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => {
       const a = accountOf(w, null);
       openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 240, height: 260, props: { menu: "new-tab", space: w.id, account: a?.id ?? null } });
     })
-    .child(svg(CHROME("plus")).size(13).flex_none())
+    .child(slot(svg(CHROME("plus")).size(13).flex_none()))
     .child(div().flex_1().min_w(0).truncate().child("New agent or terminal…"));
 }
 
@@ -279,11 +300,11 @@ function terminalRow(p, t, depth, first = null) {
     // Only what differs from the space: another folder, another branch.
     const where = [p.cwd && p.cwd !== first?.cwd ? base(p.cwd) : "", p.branch && p.branch !== first?.branch ? p.branch : ""].filter(Boolean).join(" · ");
     const color = t[STATUS[p.status]] ?? t.dim;
-    return h_flex().id(`term-${p.pane}`).h(26).flex_none().pl(depth > 1 ? 38 : 19).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`term-${p.pane}`).h(26).flex_none().pl(depth > 1 ? 38 : 19).pr(8).gap(7).items_center().rounded(6).cursor_pointer()
       .text_size(13).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("pane.focus", { pane: p.pane }))
       // An agent shows its own icon (Herdr's program table), a plain terminal the terminal icon.
-      .child(programIcon(p.program, t) ?? svg(CHROME("terminal")).size(13).flex_none().text_color(t.dim))
+      .child(slot(programIcon(p.program, t) ?? svg(`${ICONS}/square-terminal.svg`).size(13).flex_none().text_color(t.dim)))
       .child(div().flex_shrink(0).max_w(140).truncate().child(name))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(where))
       .when(Boolean(p.status), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color)))

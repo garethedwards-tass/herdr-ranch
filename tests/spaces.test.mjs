@@ -211,3 +211,20 @@ test("notPushed: commits on no remote, none without a remote", async () => {
   assert.deepEqual(await notPushed("/w", null), []);
   state.exec = null;
 });
+
+test("worktreesWithWork: a checkout not due keeps its last answer, without running git for it", async () => {
+  const { worktreesWithWork } = await import("../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js");
+  const ran = [];
+  state.exec = (cmd, args, o) => {
+    ran.push([o?.cwd, ...args].join(" "));
+    if (args[0] === "worktree") return { code: 0, stdout: "worktree /r\nbranch refs/heads/main\n\nworktree /w/a\nbranch refs/heads/a\n\nworktree /w/b\nbranch refs/heads/b\n" };
+    if (args[0] === "remote") return { code: 0, stdout: "origin\n" };
+    if (args.includes("status")) return { code: 0, stdout: " M x\0" };
+    return { code: 0, stdout: "2\n" };
+  };
+  const prev = [{ path: "/w/b", changes: 0, unpushed: 5, readAt: 1 }];
+  const list = await worktreesWithWork("/r", null, prev, (p) => p !== "/w/b");
+  assert.deepEqual(list.map((c) => [c.path, c.changes, c.unpushed]), [["/r", 1, 2], ["/w/a", 1, 2], ["/w/b", 0, 5]]);
+  assert.ok(!ran.some((r) => r.startsWith("/w/b ")));
+  state.exec = null;
+});

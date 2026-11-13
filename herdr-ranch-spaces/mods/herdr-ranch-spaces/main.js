@@ -10,9 +10,10 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, props } from "herdr";
 // ranch: what Herdr Ranch adds, and its git reads.
-import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel, worktreeSpaceRow, newSpaceMenu, programIcon } from "./extras.js";
+import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel, worktreeSpaceRow, newSpaceMenu, programIcon, foldAllButton } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
+const LOOSE_EVERY = 60000; // ranch: how often a worktree without a space has its work read again
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -209,11 +210,16 @@ export default class Spaces extends View {
   }
 
   // ranch: each repository's worktrees and their work, for the worktree rows and badges.
+  // Checkouts a space shows are read every time; the others at most once a minute (LOOSE_EVERY).
   async refreshTrees(keys) {
     const repos = new Map();
     for (const k of keys) { const g = this.git[k]; if (g) repos.set(g.repo, g); }
+    const ps = panes(), shown = spaces().map((s) => place(s, ps)).filter(Boolean);
+    const inside = (at, dir) => at === dir || at.startsWith(dir + "/");
     await Promise.all([...repos].map(async ([repo, g]) => {
-      try { this.trees[repo] = await worktreesWithWork(g.main, JSON.parse(repo)[0]); } catch { /* keep what it had */ }
+      const prev = this.trees[repo] ?? [], at = new Map(prev.map((c) => [c.path, c.readAt ?? 0]));
+      const fresh = (path) => shown.some((s) => inside(s, path)) || Date.now() - (at.get(path) ?? 0) > LOOSE_EVERY;
+      try { this.trees[repo] = await worktreesWithWork(g.main, JSON.parse(repo)[0], prev, fresh); } catch { /* keep what it had */ }
     }));
   }
 
@@ -491,7 +497,7 @@ export default class Spaces extends View {
     return v_flex().id("ranch-spaces").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_size(13) // ranch: focus target
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(11.5).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
-        .when(!collapsed, el => el.child("Spaces"))
+        .when(!collapsed, el => el.child("Spaces").child(div().flex_1()).child(foldAllButton(this, t))) // ranch: collapse / expand all
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => newSpaceMenu(null)).child(svg("mods/workspace-chrome/plus.svg").size(14)))) // ranch: Terminal or an agent
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always")

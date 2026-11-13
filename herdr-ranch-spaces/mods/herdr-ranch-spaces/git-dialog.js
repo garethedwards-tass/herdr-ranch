@@ -361,7 +361,7 @@ export class GitDialog extends View {
       .when(Boolean(this.folder && g), (el) => el.child(v_flex().gap(6)
         .child(div().text_size(11.5).text_color(t.muted).child("Open in a new space"))
         .child(h_flex().gap(6).items_center().flex_wrap()
-          .child(this.button("git-space-terminal", "Terminal", t, () => this.createSpace(), { icon: svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(t.muted) }))
+          .child(this.button("git-space-terminal", "Terminal", t, () => this.createSpace(), { icon: svg("data/herdr-ranch-spaces/icons/square-terminal.svg").size(14).flex_none().text_color(t.muted) }))
           .children((this.agents ?? []).map((a, i) => this.button(`git-space-agent-${i}`, a.name, t, () => this.createSpace(a), { icon: a.icon ? this.icon(a.icon, a.tint, t) : null }))))))
       .when(g === undefined, (el) => el.child(div().text_color(t.muted).child("…")))
       .when(g === null, (el) => el.child(div().text_color(t.muted).child(this.error || "This space isn't in a git repository.")))

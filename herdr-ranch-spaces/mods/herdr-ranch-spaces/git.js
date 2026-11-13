@@ -142,10 +142,17 @@ export async function workIn(path, on, remotes) {
 }
 
 // A repository's worktrees, each with its work (see workIn).
-export async function worktreesWithWork(main, on) {
+// `prev`: the last list; `fresh(path)`: whether to read that checkout's work again (else its
+// last answer is kept: a repository with many worktrees costs two git runs per checkout).
+export async function worktreesWithWork(main, on, prev = [], fresh = () => true) {
   const [list, remote] = await Promise.all([worktrees(main, on), exec("git", ["remote"], { cwd: main, on })]);
   const remotes = remote.code === 0 && remote.stdout.trim() !== "";
-  await Promise.all(list.map(async (c) => { try { Object.assign(c, await workIn(c.path, on, remotes)); } catch { /* unknown */ } }));
+  const before = new Map(prev.map((c) => [c.path, c]));
+  await Promise.all(list.map(async (c) => {
+    const old = before.get(c.path);
+    if (old && old.changes != null && !fresh(c.path)) { c.changes = old.changes; c.unpushed = old.unpushed; c.readAt = old.readAt; return; }
+    try { Object.assign(c, await workIn(c.path, on, remotes), { readAt: Date.now() }); } catch { /* unknown */ }
+  }));
   return list;
 }
 
