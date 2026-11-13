@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{self, BufRead, Read, Write};
+use std::cell::OnceCell;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 /// The classes a mod colors. tree-sitter-highlight matches a capture to the longest of these
@@ -35,10 +36,22 @@ const NAMES: &[&str] = &[
 /// Texts bigger than this aren't highlighted: a diff view shows a few hundred lines at a time.
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 
+/// A language, its configuration built the first time it's needed: building every grammar's
+/// queries at start took about 0.3 s, paid on every run.
 struct Lang {
     name: &'static str,
     exts: &'static [&'static str],
-    config: HighlightConfiguration,
+    make: Box<dyn Fn() -> HighlightConfiguration>,
+    built: OnceCell<HighlightConfiguration>,
+}
+
+impl Lang {
+    fn new(name: &'static str, exts: &'static [&'static str], make: impl Fn() -> HighlightConfiguration + 'static) -> Self {
+        Lang { name, exts, make: Box::new(make), built: OnceCell::new() }
+    }
+    fn config(&self) -> &HighlightConfiguration {
+        self.built.get_or_init(|| (self.make)())
+    }
 }
 
 fn config(language: tree_sitter::Language, name: &str, highlights: &str, injections: &str, locals: &str) -> HighlightConfiguration {
@@ -48,67 +61,49 @@ fn config(language: tree_sitter::Language, name: &str, highlights: &str, injecti
     c
 }
 
-fn languages() -> Vec<Lang> {
-    let cfml_q = |f: &str| match f {
+fn cfml_q(f: &str) -> &'static str {
+    match f {
         "cfml/highlights" => include_str!("../queries/cfml/highlights.scm"),
         "cfml/injections" => include_str!("../queries/cfml/injections.scm"),
         "cfscript/highlights" => include_str!("../queries/cfscript/highlights.scm"),
         "cfscript/injections" => include_str!("../queries/cfscript/injections.scm"),
         "cfquery/highlights" => include_str!("../queries/cfquery/highlights.scm"),
         _ => "",
-    };
+    }
+}
+
+fn languages() -> Vec<Lang> {
     vec![
-        Lang { name: "cfml", exts: &["cfm", "cfml", "cfc"],
-            config: config(tree_sitter_cfml::LANGUAGE_CFML.into(), "cfml", cfml_q("cfml/highlights"), cfml_q("cfml/injections"), "") },
-        Lang { name: "cfscript", exts: &["cfs"],
-            config: config(tree_sitter_cfml::LANGUAGE_CFSCRIPT.into(), "cfscript", cfml_q("cfscript/highlights"), cfml_q("cfscript/injections"), "") },
-        Lang { name: "cfquery", exts: &[],
-            config: config(tree_sitter_cfml::LANGUAGE_CFQUERY.into(), "cfquery", cfml_q("cfquery/highlights"), "", "") },
-        Lang { name: "javascript", exts: &["js", "mjs", "cjs", "jsx"],
-            config: config(tree_sitter_javascript::LANGUAGE.into(), "javascript",
+        Lang::new("cfml", &["cfm", "cfml", "cfc"], || config(tree_sitter_cfml::LANGUAGE_CFML.into(), "cfml", cfml_q("cfml/highlights"), cfml_q("cfml/injections"), "")),
+        Lang::new("cfscript", &["cfs"], || config(tree_sitter_cfml::LANGUAGE_CFSCRIPT.into(), "cfscript", cfml_q("cfscript/highlights"), cfml_q("cfscript/injections"), "")),
+        Lang::new("cfquery", &[], || config(tree_sitter_cfml::LANGUAGE_CFQUERY.into(), "cfquery", cfml_q("cfquery/highlights"), "", "")),
+        Lang::new("javascript", &["js", "mjs", "cjs", "jsx"], || config(tree_sitter_javascript::LANGUAGE.into(), "javascript",
                 &format!("{}\n{}", tree_sitter_javascript::HIGHLIGHT_QUERY, tree_sitter_javascript::JSX_HIGHLIGHT_QUERY),
-                tree_sitter_javascript::INJECTIONS_QUERY, tree_sitter_javascript::LOCALS_QUERY) },
-        Lang { name: "html", exts: &["html", "htm", "xhtml"],
-            config: config(tree_sitter_html::LANGUAGE.into(), "html", tree_sitter_html::HIGHLIGHTS_QUERY, tree_sitter_html::INJECTIONS_QUERY, "") },
-        Lang { name: "css", exts: &["css", "scss", "less"],
-            config: config(tree_sitter_css::LANGUAGE.into(), "css", tree_sitter_css::HIGHLIGHTS_QUERY, "", "") },
+                tree_sitter_javascript::INJECTIONS_QUERY, tree_sitter_javascript::LOCALS_QUERY)),
+        Lang::new("html", &["html", "htm", "xhtml"], || config(tree_sitter_html::LANGUAGE.into(), "html", tree_sitter_html::HIGHLIGHTS_QUERY, tree_sitter_html::INJECTIONS_QUERY, "")),
+        Lang::new("css", &["css", "scss", "less"], || config(tree_sitter_css::LANGUAGE.into(), "css", tree_sitter_css::HIGHLIGHTS_QUERY, "", "")),
         // TypeScript's queries add to JavaScript's, as editors combine them.
-        Lang { name: "typescript", exts: &["ts", "mts", "cts"],
-            config: config(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), "typescript",
+        Lang::new("typescript", &["ts", "mts", "cts"], || config(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), "typescript",
                 &format!("{}\n{}", tree_sitter_typescript::HIGHLIGHTS_QUERY, tree_sitter_javascript::HIGHLIGHT_QUERY), "",
-                &format!("{}\n{}", tree_sitter_typescript::LOCALS_QUERY, tree_sitter_javascript::LOCALS_QUERY)) },
-        Lang { name: "tsx", exts: &["tsx"],
-            config: config(tree_sitter_typescript::LANGUAGE_TSX.into(), "tsx",
+                &format!("{}\n{}", tree_sitter_typescript::LOCALS_QUERY, tree_sitter_javascript::LOCALS_QUERY))),
+        Lang::new("tsx", &["tsx"], || config(tree_sitter_typescript::LANGUAGE_TSX.into(), "tsx",
                 &format!("{}\n{}\n{}", tree_sitter_typescript::HIGHLIGHTS_QUERY, tree_sitter_javascript::HIGHLIGHT_QUERY, tree_sitter_javascript::JSX_HIGHLIGHT_QUERY), "",
-                &format!("{}\n{}", tree_sitter_typescript::LOCALS_QUERY, tree_sitter_javascript::LOCALS_QUERY)) },
-        Lang { name: "json", exts: &["json", "jsonc", "json5", "code-workspace"],
-            config: config(tree_sitter_json::LANGUAGE.into(), "json", tree_sitter_json::HIGHLIGHTS_QUERY, "", "") },
-        Lang { name: "python", exts: &["py", "pyi", "pyw"],
-            config: config(tree_sitter_python::LANGUAGE.into(), "python", tree_sitter_python::HIGHLIGHTS_QUERY, "", "") },
-        Lang { name: "java", exts: &["java"],
-            config: config(tree_sitter_java::LANGUAGE.into(), "java", tree_sitter_java::HIGHLIGHTS_QUERY, "", "") },
-        Lang { name: "c_sharp", exts: &["cs", "csx"],
-            config: config(tree_sitter_c_sharp::LANGUAGE.into(), "c_sharp", tree_sitter_c_sharp::HIGHLIGHTS_QUERY, "", "") },
-        Lang { name: "go", exts: &["go"],
-            config: config(tree_sitter_go::LANGUAGE.into(), "go", tree_sitter_go::HIGHLIGHTS_QUERY, "", "") },
-        Lang { name: "rust", exts: &["rs"],
-            config: config(tree_sitter_rust::LANGUAGE.into(), "rust", tree_sitter_rust::HIGHLIGHTS_QUERY, tree_sitter_rust::INJECTIONS_QUERY, "") },
-        Lang { name: "php", exts: &["php", "phtml", "php5", "php7", "phps"],
-            config: config(tree_sitter_php::LANGUAGE_PHP.into(), "php", tree_sitter_php::HIGHLIGHTS_QUERY, tree_sitter_php::INJECTIONS_QUERY, "") },
-        Lang { name: "ruby", exts: &["rb", "rake", "gemspec", "ru"],
-            config: config(tree_sitter_ruby::LANGUAGE.into(), "ruby", tree_sitter_ruby::HIGHLIGHTS_QUERY, "", tree_sitter_ruby::LOCALS_QUERY) },
-        Lang { name: "yaml", exts: &["yaml", "yml"],
-            config: config(tree_sitter_yaml::LANGUAGE.into(), "yaml", tree_sitter_yaml::HIGHLIGHTS_QUERY, "", "") },
-        Lang { name: "bash", exts: &["sh", "bash", "zsh", "ksh", "bats", "envrc"],
-            config: config(tree_sitter_bash::LANGUAGE.into(), "bash", tree_sitter_bash::HIGHLIGHT_QUERY, "", "") },
-        Lang { name: "markdown", exts: &["md", "markdown", "mdx"],
-            config: config(tree_sitter_md::LANGUAGE.into(), "markdown", tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
+                &format!("{}\n{}", tree_sitter_typescript::LOCALS_QUERY, tree_sitter_javascript::LOCALS_QUERY))),
+        Lang::new("json", &["json", "jsonc", "json5", "code-workspace"], || config(tree_sitter_json::LANGUAGE.into(), "json", tree_sitter_json::HIGHLIGHTS_QUERY, "", "")),
+        Lang::new("python", &["py", "pyi", "pyw"], || config(tree_sitter_python::LANGUAGE.into(), "python", tree_sitter_python::HIGHLIGHTS_QUERY, "", "")),
+        Lang::new("java", &["java"], || config(tree_sitter_java::LANGUAGE.into(), "java", tree_sitter_java::HIGHLIGHTS_QUERY, "", "")),
+        Lang::new("c_sharp", &["cs", "csx"], || config(tree_sitter_c_sharp::LANGUAGE.into(), "c_sharp", tree_sitter_c_sharp::HIGHLIGHTS_QUERY, "", "")),
+        Lang::new("go", &["go"], || config(tree_sitter_go::LANGUAGE.into(), "go", tree_sitter_go::HIGHLIGHTS_QUERY, "", "")),
+        Lang::new("rust", &["rs"], || config(tree_sitter_rust::LANGUAGE.into(), "rust", tree_sitter_rust::HIGHLIGHTS_QUERY, tree_sitter_rust::INJECTIONS_QUERY, "")),
+        Lang::new("php", &["php", "phtml", "php5", "php7", "phps"], || config(tree_sitter_php::LANGUAGE_PHP.into(), "php", tree_sitter_php::HIGHLIGHTS_QUERY, tree_sitter_php::INJECTIONS_QUERY, "")),
+        Lang::new("ruby", &["rb", "rake", "gemspec", "ru"], || config(tree_sitter_ruby::LANGUAGE.into(), "ruby", tree_sitter_ruby::HIGHLIGHTS_QUERY, "", tree_sitter_ruby::LOCALS_QUERY)),
+        Lang::new("yaml", &["yaml", "yml"], || config(tree_sitter_yaml::LANGUAGE.into(), "yaml", tree_sitter_yaml::HIGHLIGHTS_QUERY, "", "")),
+        Lang::new("bash", &["sh", "bash", "zsh", "ksh", "bats", "envrc"], || config(tree_sitter_bash::LANGUAGE.into(), "bash", tree_sitter_bash::HIGHLIGHT_QUERY, "", "")),
+        Lang::new("markdown", &["md", "markdown", "mdx"], || config(tree_sitter_md::LANGUAGE.into(), "markdown", tree_sitter_md::HIGHLIGHT_QUERY_BLOCK,
                 // Inline text goes to the inline grammar, as editors set it up.
-                &format!("{}\n((inline) @injection.content (#set! injection.language \"markdown_inline\"))", tree_sitter_md::INJECTION_QUERY_BLOCK), "") },
-        Lang { name: "markdown_inline", exts: &[],
-            config: config(tree_sitter_md::INLINE_LANGUAGE.into(), "markdown_inline", tree_sitter_md::HIGHLIGHT_QUERY_INLINE, tree_sitter_md::INJECTION_QUERY_INLINE, "") },
-        Lang { name: "sql", exts: &["sql", "ddl", "dml", "prs"],
-            config: config(tree_sitter_sequel::LANGUAGE.into(), "sql", tree_sitter_sequel::HIGHLIGHTS_QUERY, "", "") },
+                &format!("{}\n((inline) @injection.content (#set! injection.language \"markdown_inline\"))", tree_sitter_md::INJECTION_QUERY_BLOCK), "")),
+        Lang::new("markdown_inline", &[], || config(tree_sitter_md::INLINE_LANGUAGE.into(), "markdown_inline", tree_sitter_md::HIGHLIGHT_QUERY_INLINE, tree_sitter_md::INJECTION_QUERY_INLINE, "")),
+        Lang::new("sql", &["sql", "ddl", "dml", "prs"], || config(tree_sitter_sequel::LANGUAGE.into(), "sql", tree_sitter_sequel::HIGHLIGHTS_QUERY, "", "")),
     ]
 }
 
@@ -166,7 +161,7 @@ fn highlight(reg: &Registry, hl: &mut Highlighter, lang: &Lang, text: &str, tab:
     let mut lines: Vec<Vec<(usize, usize, &'static str)>> = vec![Vec::new(); line_count];
     if text.len() > MAX_BYTES { return Ok(lines); }
     let events = hl
-        .highlight(&lang.config, text.as_bytes(), None, None, |name| reg.named(name).map(|l| &l.config))
+        .highlight(lang.config(), text.as_bytes(), None, None, |name| reg.named(name).map(|l| l.config()))
         .map_err(|e| format!("{e:?}"))?;
     let mut stack: Vec<usize> = Vec::new();
     // Where we are: the line, and the UTF-16 column at byte `at`.

@@ -13,6 +13,7 @@ import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, set
 import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel, worktreeSpaceRow, newSpaceMenu, programIcon } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
+const LOOSE_EVERY = 60000; // ranch: how often a worktree without a space has its work read again
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -209,11 +210,16 @@ export default class Spaces extends View {
   }
 
   // ranch: each repository's worktrees and their work, for the worktree rows and badges.
+  // Checkouts a space shows are read every time; the others at most once a minute (LOOSE_EVERY).
   async refreshTrees(keys) {
     const repos = new Map();
     for (const k of keys) { const g = this.git[k]; if (g) repos.set(g.repo, g); }
+    const ps = panes(), shown = spaces().map((s) => place(s, ps)).filter(Boolean);
+    const inside = (at, dir) => at === dir || at.startsWith(dir + "/");
     await Promise.all([...repos].map(async ([repo, g]) => {
-      try { this.trees[repo] = await worktreesWithWork(g.main, JSON.parse(repo)[0]); } catch { /* keep what it had */ }
+      const prev = this.trees[repo] ?? [], at = new Map(prev.map((c) => [c.path, c.readAt ?? 0]));
+      const fresh = (path) => shown.some((s) => inside(s, path)) || Date.now() - (at.get(path) ?? 0) > LOOSE_EVERY;
+      try { this.trees[repo] = await worktreesWithWork(g.main, JSON.parse(repo)[0], prev, fresh); } catch { /* keep what it had */ }
     }));
   }
 
