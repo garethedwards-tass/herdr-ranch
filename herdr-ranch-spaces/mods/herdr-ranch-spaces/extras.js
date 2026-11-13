@@ -4,7 +4,7 @@
 
 import { div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { openOverlay, exec, notify, spaces, nextCommand } from "herdr";
+import { openOverlay, exec, notify, spaces, panes, run, nextCommand } from "herdr";
 import { linkOf, openLinkDialog } from "./links.js";
 import { LinkDialog } from "./link-dialog.js";
 import { SpaceMenu } from "./menu.js";
@@ -33,6 +33,7 @@ export function start(v, cx) {
   v.trees = {};
   v.unfolded = new Set(load("spaces.unfolded", []));
   v.pulling = new Set();
+  v.openSpaces = new Set(load("spaces.terminals", []));
   v.handle = cx.focus_handle();
   cx.spawn(async () => {
     try {
@@ -109,6 +110,7 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
           .on_click((_e, cx) => { cx.stop_propagation(); openGit(w.id); }))
         .child(where)))
       .when(Boolean(busy), (el) => el.child(busy)))
+    .child(terminalsToggle(v, w, t) ?? div())
     .when(Boolean(account), (el) => el.child(div().id(`space-account-${w.id}`).flex_none().max_w(70).truncate().px(5).rounded(4).text_size(11).text_color(t.ansi5 ?? t.accent).cursor_pointer()
       .hover((s) => s.bg(t.hover)).tooltip(`Account: ${account.label}${account.claudeDir ? `\nClaude Code: ${account.claudeDir}` : ""}${account.ghUser ? `\nGitHub: ${account.ghUser}` : ""}\nClick to change`)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -149,4 +151,54 @@ export function looseRow(v, r, t) {
     .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(r.c.branch && base(r.c.path) === r.c.branch.replace(/\//g, "-") ? "" : base(r.c.path)))
     .when(r.c.locked, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("locked")))
     .child(work(v, `loose-work-${r.c.path}`, r.c, null, t) ?? div());
+}
+
+// A space's terminals (every tab's terminal panes): { pane, terminal, title, program, cwd, branch, status }.
+function terminalsOf(w) {
+  const tabs = new Map((w.tabs ?? []).map((t) => [t.id, t]));
+  return panes().filter((p) => p.terminal && tabs.has(p.tab));
+}
+const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
+
+// The fold for a space's terminals: a terminal icon and how many; a click shows them under it.
+function terminalsToggle(v, w, t) {
+  const n = terminalsOf(w).length;
+  if (!n) return null;
+  const open = v.openSpaces.has(w.id);
+  return h_flex().id(`space-terms-${w.id}`).flex_none().gap(2).items_center().px(3).rounded(4).text_size(11).text_color(open ? t.foreground : t.dim).cursor_pointer()
+    .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(open ? "Hide its terminals" : `Show its ${n} terminal${n === 1 ? "" : "s"}`)
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => {
+      cx.stop_propagation();
+      open ? v.openSpaces.delete(w.id) : v.openSpaces.add(w.id);
+      save("spaces.terminals", [...v.openSpaces]);
+      cx.notify();
+    })
+    .child(svg(CHROME("terminal")).size(11).flex_none())
+    .child(String(n));
+}
+
+const STATUS = { blocked: "blocked", done: "done", working: "working", idle: "idle" };
+// Under an unfolded space: each terminal with its program, title, folder and branch, and its
+// agent's status. A click goes to it; the eye peeks at it without leaving the shown space.
+export function terminalRows(v, w, t) {
+  if (!v.openSpaces?.has(w.id)) return [];
+  return terminalsOf(w).map((p) => {
+    // A title that only says user@host or a path (a shell's default) says nothing: the program's name instead.
+    const title = clean(p.title), telling = title && title !== p.program?.name && !title.includes("@") && !/^[~/]/.test(title);
+    const name = telling ? title : p.program?.name || "terminal";
+    const where = [p.cwd ? base(p.cwd) : "", p.branch ?? ""].filter(Boolean).join(" · ");
+    const color = t[STATUS[p.status]] ?? t.dim;
+    return h_flex().id(`term-${p.pane}`).h(24).flex_none().pl(36).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+      .text_size(12).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+      .on_click(() => run("pane.focus", { pane: p.pane }))
+      .child(p.status ? div().size(6).flex_none().rounded(3).bg(color) : svg(CHROME("terminal")).size(11).flex_none().text_color(t.dim))
+      .child(div().flex_shrink(0).max_w(140).truncate().child(name))
+      .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(where))
+      .child(div().id(`peek-${p.pane}`).flex_none().size(18).flex().items_center().justify_center().rounded(4).text_color(t.dim)
+        .hover((s) => s.bg(t.raised ?? t.hover).text_color(t.foreground)).tooltip("Peek: see it here, without switching spaces")
+        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+        .on_click((_e, cx) => { cx.stop_propagation(); run("terminal.peek", { terminal: p.terminal }); })
+        .child(svg(`${ICONS}/eye.svg`).size(12)));
+  });
 }

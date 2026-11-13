@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, props } from "herdr";
 // ranch: what Herdr Ranch adds, and its git reads.
-import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow } from "./extras.js";
+import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
 
@@ -296,6 +296,8 @@ export default class Spaces extends View {
     // ranch: worktree rows (not on the rail), drawn by extras.js; a row's machine.
     const rows = this.ordered().filter((r) => !collapsed || r.kind === "space");
     const draw = (r) => (r.kind === "more" ? moreRow(this, r, t) : r.kind === "loose" ? looseRow(this, r, t) : collapsed ? this.compact(r, t) : this.row(r, t));
+    // ranch: an unfolded space's terminals under it.
+    const drawAll = (list) => list.flatMap((r) => [draw(r), ...(r.kind === "space" && !collapsed ? terminalRows(this, r.w, t) : [])]);
     const machineOf = (r) => (r.w ? r.w.machine ?? null : r.on ?? JSON.parse(r.repo)[0]);
     const remote = [...new Set([...rows.map(r => r.w?.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const loading = m => {
@@ -304,7 +306,7 @@ export default class Spaces extends View {
         || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
     const loadingRow = m => h_flex().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 0 : 8).items_center().when(collapsed, el => el.justify_center()).text_size(12).text_color(t.dim).child(collapsed ? "…" : "Loading…");
-    if (!remote.length) return loading(null) && !rows.length ? [loadingRow(null)] : rows.map(draw);
+    if (!remote.length) return loading(null) && !rows.length ? [loadingRow(null)] : drawAll(rows);
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
       const mine = rows.filter((r) => machineOf(r) === m);
@@ -357,7 +359,7 @@ export default class Spaces extends View {
             .text_size(11).text_color(t.foreground).bg(t.raised).cursor_pointer().hover(s => s.bg(t.hover))
             .on_click((_e, cx) => { cx.stop_propagation(); cx.write_to_clipboard(login); this.copiedLogin = login; cx.notify(); })
             .child(this.copiedLogin === login ? "Copied" : "Copy")))] : [];
-      return [cell(head), ...guidance, ...(folded ? [] : mine.length ? mine.map(draw) : [loading(m) ? loadingRow(m) : cell(empty)])];
+      return [cell(head), ...guidance, ...(folded ? [] : mine.length ? drawAll(mine) : [loading(m) ? loadingRow(m) : cell(empty)])];
     });
   }
 

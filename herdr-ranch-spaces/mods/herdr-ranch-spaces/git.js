@@ -99,14 +99,13 @@ export function arrange(list, trees = {}, open = new Set()) {
   return out;
 }
 
-// After the name, only what it doesn't already say: "herdr · spike". The repository goes on a
-// worktree row and when the name is the repository; the branch when the name is the branch, and
-// main/master go (nearly every space is on one), as in Herdr's own list.
+// After the name: the repository when the name doesn't say it, then the branch ("herdr · spike"). The repository goes on a
+// worktree row and when the name is the repository. The branch always shows, main and master too.
 export function tail(g, tree, name) {
   if (!g) return "";
   const same = (a) => (a ?? "").toLowerCase() === (name ?? "").toLowerCase();
   const branch = g.branch ?? "detached";
-  return [tree || same(g.name) ? "" : g.name, same(branch) || branch === "main" || branch === "master" ? "" : branch].filter(Boolean).join(" · ");
+  return [tree || same(g.name) ? "" : g.name, branch].filter(Boolean).join(" · ");
 }
 
 // A space's link as a short label: the Jira or Linear key, else the GitHub repository's name.

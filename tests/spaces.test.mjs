@@ -58,9 +58,9 @@ test("arrange: worktree spaces under their repo, checkouts without a space folde
 
 test("tail: only what the name doesn't say", () => {
   assert.equal(tail({ name: "herdr", branch: "spike" }, null, "work"), "herdr · spike");
-  assert.equal(tail({ name: "herdr", branch: "main" }, null, "herdr"), "");
-  assert.equal(tail({ name: "herdr", branch: "master" }, null, "work"), "herdr");
-  assert.equal(tail({ name: "herdr", branch: "spike" }, "├─", "spike"), "");
+  assert.equal(tail({ name: "herdr", branch: "main" }, null, "herdr"), "main");
+  assert.equal(tail({ name: "herdr", branch: "master" }, null, "work"), "herdr · master");
+  assert.equal(tail({ name: "herdr", branch: "spike" }, "├─", "spike"), "spike");
   assert.equal(tail({ name: "herdr", branch: null }, "└─", "x"), "detached");
   assert.equal(tail(null, null, "x"), "");
 });
