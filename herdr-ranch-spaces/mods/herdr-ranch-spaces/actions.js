@@ -46,5 +46,5 @@ export function openAccount(space) {
 
 // `action` "fetch" or "pull": run it as soon as the dialog has read the checkout.
 export function openGit(space, tab = "status", at = null, action = null) {
-  openOverlay({ mod: MOD, kind: "dialog", width: 620, height: 600, props: { dialog: "git", space, tab, ...(at ? { folder: at.folder, on: at.on ?? null } : {}), ...(action ? { action } : {}) } });
+  openOverlay({ mod: MOD, kind: "dialog", width: 620, height: at ? 700 : 600, props: { dialog: "git", space, tab, ...(at ? { folder: at.folder, on: at.on ?? null } : {}), ...(action ? { action } : {}) } });
 }

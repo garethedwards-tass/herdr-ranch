@@ -9,12 +9,12 @@
 // overwritten), or cancel. Conflicts block a switch. The status is read again right before.
 // Tab switches Status / Branches, ↑/↓ choose a branch, Enter switches, Esc closes.
 
-import { View, div } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { props, closeOverlay, theme, spaces, panes, exec, run, notify } from "herdr";
-import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage } from "./git.js";
+import { props, closeOverlay, theme, spaces, panes, exec, run, notify, knownAgents } from "herdr";
+import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage, workIn, checkoutAt } from "./git.js";
 import { openRemove } from "./actions.js";
-import { accountOf, argvAs } from "./accounts.js";
+import { accountOf, argvAs, runAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
 const MAX_FILES = 300, MAX_BRANCHES = 100;
@@ -47,6 +47,8 @@ export class GitDialog extends View {
         if (g) {
           this.checkouts = await worktrees(g.main, this.on);
           [this.st, this.list] = await Promise.all([status(g.top, this.on), branches(g.main, this.on, this.checkouts)]);
+          // A worktree without a space: what it holds, and the agents a space can start with.
+          if (this.folder) [this.info, this.agents] = await Promise.all([this.worktreeInfo(g), knownAgents({ on: this.on }).then((l) => l.filter((a) => a.installed && a.run?.length)).catch(() => [])]);
         }
         this.g = g;
       } catch (e) { this.g ??= null; this.error = String(e?.message ?? e); }
@@ -60,11 +62,22 @@ export class GitDialog extends View {
 
   close() { closeOverlay(props().overlay); run(`${MOD}.focus`); }
 
-  // A space on this worktree, as its repository's account when it has one.
-  createSpace() {
+  // A space on this worktree with a terminal or an agent, as its repository's account if any.
+  createSpace(agent = null) {
     const a = accountOf(null, { main: this.g.main, on: this.on });
+    const argv = agent ? (a ? runAs(a, agent.run) : agent.run) : a ? argvAs(a) : null;
     this.close();
-    run("space.new", { folder: this.g.top, machine: this.on ?? "", ...(a ? { argv: argvAs(a) } : {}) });
+    run("space.new", { folder: this.g.top, machine: this.on ?? "", ...(argv ? { argv } : {}) });
+  }
+
+  // Its last commit, what isn't pushed anywhere, and whether it's locked.
+  async worktreeInfo(g) {
+    const git = (args) => exec("git", args, { cwd: g.top, on: this.on }).catch(() => ({ code: 1, stdout: "" }));
+    const [last, remote] = await Promise.all([git(["log", "-1", "--format=%h%x09%s%x09%an%x09%ct"]), git(["remote"])]);
+    const [hash, subject, author, at] = last.code === 0 ? last.stdout.trim().split("\t") : [];
+    const work = await workIn(g.top, this.on, remote.code === 0 && remote.stdout.trim() !== "").catch(() => null);
+    const c = checkoutAt(this.checkouts, g.top);
+    return { hash, subject, author, at: Number(at) || 0, unpushed: work?.unpushed ?? null, locked: Boolean(c?.locked) };
   }
 
   // One git command at a time; its output goes to a toast, its error into the dialog.
@@ -202,6 +215,21 @@ export class GitDialog extends View {
       .child(label);
   }
 
+  // The worktree's details: path, branch and upstream, last commit, unpushed commits, locked.
+  worktreeView(t, g, st) {
+    const i = this.info, line = (label, value, color) => h_flex().gap(8).min_h(20).items_center()
+      .child(div().w(84).flex_none().text_size(12).text_color(t.dim).child(label))
+      .child(div().flex_1().min_w(0).truncate().text_size(12.5).text_color(color ?? t.foreground).child(value));
+    const ago = (s) => { if (!s) return ""; const d = Date.now() / 1000 - s; return d < 3600 ? `${Math.max(1, Math.round(d / 60))}m ago` : d < 86400 ? `${Math.round(d / 3600)}h ago` : `${Math.round(d / 86400)}d ago`; };
+    return v_flex().gap(1).p(10).rounded(8).border_1().border_color(t.border).bg(t.background)
+      .child(line("Folder", g.top))
+      .child(line("Branch", `${st?.branch ?? "detached"}${st?.upstream ? `  → ${st.upstream}` : "  (no upstream)"}`, st?.branch ? t.accent : t.ansi3))
+      .child(line("Last commit", i?.hash ? `${i.hash} ${i.subject}` : i ? "none" : "…"))
+      .when(Boolean(i?.author), (el) => el.child(line("", `${i.author} · ${ago(i.at)}`, t.muted)))
+      .child(line("Not pushed", i ? (i.unpushed == null ? "?" : i.unpushed === 0 ? "nothing" : `${i.unpushed} commit${i.unpushed === 1 ? "" : "s"} on no remote`) : "…", i?.unpushed > 0 ? t.ansi2 : t.muted))
+      .when(Boolean(i?.locked), (el) => el.child(line("Locked", "yes: git won't prune or remove it without --force", t.ansi3)));
+  }
+
   statusView(t) {
     const st = this.st;
     if (!st.files.length) return div().p(10).text_color(t.dim).child("Nothing to commit: the working tree is clean.");
@@ -261,9 +289,13 @@ export class GitDialog extends View {
         .when(Boolean(st), (el) => el
           .child(this.button("git-fetch", "Fetch", t, (cx) => this.fetch(cx), { disabled: Boolean(this.busy) }))
           .child(this.button("git-pull", st.behind > 0 ? `Pull ↓${st.behind}` : "Pull", t, (cx) => this.pull(cx), { primary: st.behind > 0, disabled: Boolean(this.busy) || !st.upstream || st.gone }))))
-      // A worktree without a space: its right-click menu's actions, as buttons.
+      // A worktree without a space: what it holds, then its right-click menu's actions.
+      .when(Boolean(this.folder && g), (el) => el.child(this.worktreeView(t, g, st)))
+      .when(Boolean(this.folder && g), (el) => el.child(h_flex().gap(6).items_center().flex_wrap()
+        .child(div().text_size(12).text_color(t.muted).child("Create space with"))
+        .child(this.button("git-space-terminal", "Terminal", t, () => this.createSpace()))
+        .children((this.agents ?? []).map((a, i) => this.button(`git-space-agent-${i}`, a.name, t, () => this.createSpace(a))))))
       .when(Boolean(this.folder && g), (el) => el.child(h_flex().gap(6).items_center()
-        .child(this.button("git-create-space", "Create space here", t, () => this.createSpace()))
         .child(this.button("git-delete-wt", "Delete worktree…", t, () => { this.close(); openRemove({ path: g.top, main: g.main, on: this.on, branch: st?.branch ?? null }); }, { disabled: !g.linked }))
         .child(this.button("git-copy-path", this.copied ? "Copied" : "Copy path", t, (cx) => { cx.write_to_clipboard(g.top); this.copied = true; cx.notify(); }))))
       .when(g === undefined, (el) => el.child(div().text_color(t.muted).child("…")))
