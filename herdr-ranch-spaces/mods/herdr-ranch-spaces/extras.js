@@ -299,7 +299,7 @@ function terminalRow(p, t, depth, first = null) {
       .text_size(13).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("pane.focus", { pane: p.pane }))
       // An agent shows its own icon (Herdr's program table), a plain terminal the terminal icon.
-      .child(programIcon(p.program, t) ?? svg(CHROME("terminal")).size(13).flex_none().text_color(t.dim))
+      .child(programIcon(p.program, t) ?? svg(`${ICONS}/square-terminal.svg`).size(13).flex_none().text_color(t.dim))
       .child(div().flex_shrink(0).max_w(140).truncate().child(name))
       .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(where))
       .when(Boolean(p.status), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color)))

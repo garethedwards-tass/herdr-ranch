@@ -20,12 +20,12 @@ const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
 export function menuItems(p, agents = []) {
   // A new tab in a space: a terminal or an agent, as the space's account when it has one.
   const newTabs = (id, acct) => [
-    ["New terminal", CHROME("terminal"), () => run("tab.new", { space: id, ...(acct ? { argv: argvAs(acct) } : {}) })],
+    ["New terminal", `${ICONS}/square-terminal.svg`, () => run("tab.new", { space: id, ...(acct ? { argv: argvAs(acct) } : {}) })],
     ...agents.map((a) => [`New ${a.name}`, null, () => run("tab.new", { space: id, name: a.name, argv: acct ? runAs(acct, a.run) : a.run }), a]),
   ];
   if (p.menu === "new-tab") return newTabs(p.space, p.account ? accounts().find((a) => a.id === p.account) ?? null : null);
   if (p.menu === "new-space") return [
-    ["Terminal", CHROME("terminal"), () => run("space.new", { machine: p.machine ?? "" })],
+    ["Terminal", `${ICONS}/square-terminal.svg`, () => run("space.new", { machine: p.machine ?? "" })],
     ...agents.map((a) => [a.name, null, () => run("space.new", { machine: p.machine ?? "", argv: a.run }), a]),
   ];
   const acct = p.account ? accounts().find((a) => a.id === p.account) ?? null : null;
