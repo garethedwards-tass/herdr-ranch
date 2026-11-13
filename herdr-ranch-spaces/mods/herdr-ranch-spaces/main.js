@@ -406,7 +406,7 @@ export default class Spaces extends View {
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
-      .px(8)
+      .pl(2).pr(8) // ranch: less room before the fold chevron
       .h(rowHeight({ tree }))
       .flex_none()
       .justify_center()
