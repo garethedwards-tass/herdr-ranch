@@ -726,7 +726,7 @@ export default class SpaceIssues extends View {
           .child(div().flex_none().font_semibold().child("Issues"))
           .child(div().flex_1().min_w(0).text_size(fs.meta).text_color(t.dim).truncate().child(this.loading && this.issues.length ? `${source} · Refreshing…` : source))
           .when(wide, (e) => e.child(search.w(220)))
-          .child(iconButton("refresh", this.loading ? svg(SPINNER).size(14).spin(900) : "↻", (cx) => this.refresh(cx)))
+          .child(iconButton("refresh", this.loading ? svg(SPINNER).size(14).spin(900) : div().text_size(16).child("↻"), (cx) => this.refresh(cx)))
           .child(iconButton("settings", svg(COG).size(14), () => openSettings("herdr-ranch-issues")))
           .when(Boolean(overlay), (e) => e.child(close)))
         .when(!wide, (e) => e.child(search.w_full()))
