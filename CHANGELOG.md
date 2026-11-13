@@ -5,6 +5,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 ## Unreleased
 
 - **Pull requests:** the **Files** tab shows each file's diff, as on GitHub's Files changed: **Unified** or **Split** (old left, new right; `S` switches), with line numbers and hunk headers. A click on a file opens or closes it, **Expand all** (`E`) opens them all, and **Viewed** folds a file away until the next push. Large diffs show their first 400 lines with **Show more**. Read through `gh`, nothing is written to GitHub.
+- **Pull requests:** a **Commits** tab (`4`) lists the commits by day with their checks. A click opens a commit's diff in the same view; `[` and `]` step to the older and newer commit, a click on a sha copies it.
 
 ## v0.5.0
 

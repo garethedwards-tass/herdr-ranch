@@ -122,6 +122,48 @@ export async function files(number, where) {
   return list;
 }
 
+// The Commits tab: the pull request's last COMMITS commits, oldest first, with each one's
+// check state, in one GraphQL query (the REST list has no checks). `total` counts them all.
+export const COMMITS = 100;
+const COMMITS_QUERY = `query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) {
+  pullRequest(number: $number) { commits(last: ${COMMITS}) { totalCount nodes { commit {
+    oid abbreviatedOid messageHeadline messageBody authoredDate author { name user { login } } statusCheckRollup { state } } } } } } }`;
+const ROLLUP = { SUCCESS: "pass", FAILURE: "fail", ERROR: "fail", PENDING: "pending", EXPECTED: "pending" };
+export async function commits(number, where) {
+  const [owner, name] = where.github.split("/");
+  const out = JSON.parse(await gh(["api", "graphql", "-f", `query=${COMMITS_QUERY}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "-F", `number=${number}`], where));
+  const c = out.data?.repository?.pullRequest?.commits;
+  const list = (c?.nodes ?? []).map((n) => n.commit).filter(Boolean).map((x) => ({
+    sha: x.oid, short: x.abbreviatedOid ?? x.oid.slice(0, 7), title: (x.messageHeadline ?? "").trim(), body: (x.messageBody ?? "").trim(),
+    author: x.author?.user?.login ?? x.author?.name ?? "?", login: x.author?.user?.login ?? null, at: x.authoredDate,
+    checks: ROLLUP[x.statusCheckRollup?.state] ?? null,
+  }));
+  return { list, total: c?.totalCount ?? list.length };
+}
+
+// One commit's files with their patches, as for the Files tab.
+export async function commitFiles(sha, where) {
+  const out = await gh(["api", "--paginate", `repos/${where.github}/commits/${sha}`,
+    "--jq", ".files[] | {filename, previous_filename, status, additions, deletions, changes, patch}"], where);
+  const list = [];
+  for (const line of out.split("\n")) {
+    if (list.length >= FILES) break;
+    if (line.trim()) list.push(prepareFile(JSON.parse(line)));
+  }
+  return list;
+}
+
+// Commits grouped by the day they were written, oldest day first, as GitHub lists them.
+export function byDay(list) {
+  const days = [];
+  for (const c of list) {
+    const day = (c.at ?? "").slice(0, 10);
+    if (days[days.length - 1]?.day !== day) days.push({ day, commits: [] });
+    days[days.length - 1].commits.push(c);
+  }
+  return days;
+}
+
 const ORDER = { fail: 0, pending: 1, pass: 2 };
 const EVENT = {
   review_requested: (e) => `requested a review from ${e.requested_reviewer?.login ?? e.requested_team?.name ?? "someone"}`,

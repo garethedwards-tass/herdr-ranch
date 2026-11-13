@@ -14,7 +14,7 @@ const STATUS = { added: ["added", "ansi2"], removed: ["deleted", "ansi1"], renam
 const num = (n, w) => (n == null ? "" : String(n)).padStart(w);
 
 // `files`: the list's rows (path and counts) until the diffs load. `d`: { files (prepared, or
-// null while loading), error, mode, isOpen(path), isViewed(path), limit(path), toggle(path, cx),
+// null while loading), error, mode, viewed (offer Viewed), hideGithub, isOpen(path), isViewed(path), limit(path), toggle(path, cx),
 // view(path, cx), more(path, cx), setMode(mode, cx), all(open, cx), retry(cx), github (url of
 // the pull request's files on GitHub), openUrl }.
 export function filesTab(rows, t, k, d, more) {
@@ -28,8 +28,9 @@ export function filesTab(rows, t, k, d, more) {
     .child(segmented("diff-mode", [["unified", "Unified"], ["split", "Split"]], d.mode, (m, cx) => d.setMode(m, cx), t, false))
     .when(Boolean(loaded), (e) => e.child(k.button("diff-all", anyOpen ? "Collapse all" : "Expand all", (cx) => d.all(!anyOpen, cx), { hint: "E" })))
     .child(div().flex_1())
-    .when(Boolean(loaded), (e) => e.child(`${viewed} of ${loaded.length} viewed`))
-    .child(k.button("diff-github", "Files on GitHub", () => d.openUrl(d.github)));
+    .when(Boolean(loaded) && d.viewed, (e) => e.child(`${viewed} of ${loaded.length} viewed`))
+    .when(!d.viewed && Boolean(loaded), (e) => e.child(`${loaded.length} file${loaded.length === 1 ? "" : "s"}`))
+    .when(!d.hideGithub, (e) => e.child(k.button("diff-github", "Files on GitHub", () => d.openUrl(d.github))));
 
   // One line of the unified view: both numbers and the sign in one fixed-width run, then the
   // text, which wraps. Three elements a line keeps a long diff cheap to lay out.
@@ -77,7 +78,7 @@ export function filesTab(rows, t, k, d, more) {
       .when(Boolean(st), (e) => e.child(k.pill(st[0], t[st[1]])))
       .child(div().flex_none().text_color(t.ansi2).child(`+${f.additions}`))
       .child(div().flex_none().w(44).text_right().text_color(t.ansi1).child(`−${f.deletions}`))
-      .when(Boolean(loaded), (e) => e.child(h_flex().id(`viewed-${i}`).flex_none().gap(5).items_center().px(6).py(1).rounded(5).border_1()
+      .when(Boolean(loaded) && d.viewed, (e) => e.child(h_flex().id(`viewed-${i}`).flex_none().gap(5).items_center().px(6).py(1).rounded(5).border_1()
         .border_color(seen ? t.accent : t.border).text_color(seen ? t.foreground : t.muted).cursor_pointer().hover((s) => s.bg(t.hover))
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click((_e, cx) => { cx.stop_propagation(); d.view(f.path, cx); })
