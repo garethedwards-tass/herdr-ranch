@@ -78,31 +78,27 @@ function noGitChip(w, known, t) {
 
 const SHORT = { sync: () => "✓", dirty: (c) => String(c.changes), behind: (_c, g) => `↓${g.behind}`, diverged: () => "↕", ahead: (c, g) => `↑${Math.max(g.ahead ?? 0, c.unpushed ?? 0)}`, unknown: () => "…" };
 function gitChip(v, w, g, at, t) {
-  const c = checkoutAt(v.trees[g.repo], at), s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
-  return h_flex().id(`space-git-menu-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
-    .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer()
-    .hover((x) => x.bg(color + "2a")).tooltip(`${g.branch ?? "detached"}: ${s.say}\nClick for git: status, branches, pull, worktrees`)
-    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-    .on_click((_e, cx) => { cx.stop_propagation(); gitMenu(v, w, g, at); })
-    .child(svg(CHROME("git-branch")).size(10).flex_none())
-    .child(div().flex_1().min_w(0).truncate().child(g.branch ?? "detached"))
-    .child(div().flex_none().child(SHORT[s.state](c, g)));
+  return gitPill(`space-git-menu-${w.id}`, g.branch, checkoutAt(v.trees[g.repo], at), g, t, () => gitMenu(v, w, g, at));
 }
 
-// A worktree row's state on the right: ✓ in sync, n uncommitted, ↓n / ↕ / ↑n, in the git chip's
-// colors; a click (when given) opens the git popup.
-function stateMark(id, c, g, t, onClick = null) {
+// The pill itself: branch and state in the state's color, fixed width. `onClick` null: not a button.
+function gitPill(id, branch, c, g, t, onClick) {
   const s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
-  return div().id(id).flex_none().min_w(28).px(4).rounded(4).text_right().text_size(12.5).text_color(color)
-    .when(Boolean(onClick), (el) => el.cursor_pointer().hover((x) => x.bg(t.hover))
+  return h_flex().id(id).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
+    .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color)
+    .when(Boolean(onClick), (el) => el.cursor_pointer().hover((x) => x.bg(color + "2a"))
+      .tooltip(`${branch ?? "detached"}: ${s.say}\nClick for git: status, branches, pull, worktrees`)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); onClick(); }))
-    .child(SHORT[s.state](c ?? {}, g ?? {}));
+    .child(svg(CHROME("git-branch")).size(10).flex_none())
+    .child(div().flex_1().min_w(0).truncate().child(branch ?? "detached"))
+    .child(div().flex_none().child(SHORT[s.state](c ?? {}, g ?? {})));
 }
 
 // A worktree space under its repository's space: the same compact row as the worktrees without
-// a space (in the text color: it has a space), its fold for its terminals, the branch and folder,
-// and its state (a click opens the git popup). A click selects the space; right-click its menu.
+// a space (in the text color: it has a space), its fold for its terminals, a folder icon and the
+// worktree's folder name, and the spaces' git pill (branch and state; a click opens the git
+// popup). A click selects the space; right-click its menu.
 export function worktreeSpaceRow(v, r, t) {
   const { w, g, at } = r;
   const c = g ? checkoutAt(v.trees[g.repo], at) : null;
@@ -113,10 +109,9 @@ export function worktreeSpaceRow(v, r, t) {
     .on_click(() => run("space.select", { id: w.id }))
     .on_mouse_down("right", () => spaceMenu(w, g))
     .child(foldChevron(v, w, 0, t))
-    .child(svg(CHROME("git-branch")).size(13).flex_none().text_color(t.muted))
-    .child(div().flex_shrink(0).max_w(150).truncate().child(branch))
-    .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(folder && folder !== branch.replace(/\//g, "-") ? folder : ""))
-    .child(g ? stateMark(`wt-state-${w.id}`, c, g, t, () => gitMenu(v, w, g, at)) : div());
+    .child(svg(CHROME("folder")).size(13).flex_none().text_color(t.muted))
+    .child(div().flex_1().min_w(0).truncate().child(folder || w.name))
+    .child(g ? gitPill(`wt-git-${w.id}`, branch, c, g, t, () => gitMenu(v, w, g, at)) : div());
 }
 
 // The git button's popup: what the list knows about the checkout, and the git and worktree actions.
@@ -206,11 +201,10 @@ export function looseRow(v, r, t) {
     .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
     .on_mouse_down("right", () => checkoutMenu(r))
-    .child(svg(CHROME("git-branch")).size(13).flex_none().text_color(t.dim))
-    .child(div().flex_shrink(0).max_w(150).truncate().child(r.c.branch ?? "detached"))
-    .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(r.c.branch && base(r.c.path) === r.c.branch.replace(/\//g, "-") ? "" : base(r.c.path)))
+    .child(svg(CHROME("folder")).size(13).flex_none().text_color(t.dim))
+    .child(div().flex_1().min_w(0).truncate().child(base(r.c.path)))
     .when(r.c.locked, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("locked")))
-    .child(stateMark(`loose-state-${r.c.path}`, r.c, { ahead: 0, behind: 0 }, t));
+    .child(gitPill(`loose-git-${r.c.path}`, r.c.branch, r.c, { ahead: 0, behind: 0 }, t, null));
 }
 
 // A space's terminals (every tab's terminal panes): { pane, terminal, title, program, cwd, branch, status }.
