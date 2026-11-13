@@ -237,3 +237,12 @@ test("prs: every check state counts as pass, fail or pending", async () => {
   const [p] = await prGroups([pr(1, { statusCheckRollup: rollup })]);
   assert.deepEqual(p.checks, { pass: 4, fail: 8, pending: 7 });
 });
+
+test("list: each pull request carries when its newest commit was made (Pushed filter)", async () => {
+  const pr = (number, pushedAt) => ({ number, title: `PR ${number}`, author: { login: "a" }, headRefName: `b${number}`, baseRefName: "main", isDraft: false, reviewDecision: "", additions: 1, deletions: 0, updatedAt: "2026-11-01T00:00:00Z", url: `u${number}`, state: "OPEN", pushedAt });
+  state.exec = listExec([pr(1, "2026-11-12T10:00:00Z"), pr(2, null)]);
+  try {
+    const got = await listPrs({ github: "o/r", cwd: "/repo", on: null }, "me");
+    assert.deepEqual(got.map((p) => [p.number, p.pushedAt]), [[1, "2026-11-12T10:00:00Z"], [2, null]]);
+  } finally { state.exec = null; }
+});
