@@ -13,6 +13,8 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, theme, spaces, panes, exec, run, notify } from "herdr";
 import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage } from "./git.js";
+import { openRemove } from "./actions.js";
+import { accountOf, argvAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
 const MAX_FILES = 300, MAX_BRANCHES = 100;
@@ -57,6 +59,13 @@ export class GitDialog extends View {
   }
 
   close() { closeOverlay(props().overlay); run(`${MOD}.focus`); }
+
+  // A space on this worktree, as its repository's account when it has one.
+  createSpace() {
+    const a = accountOf(null, { main: this.g.main, on: this.on });
+    this.close();
+    run("space.new", { folder: this.g.top, machine: this.on ?? "", ...(a ? { argv: argvAs(a) } : {}) });
+  }
 
   // One git command at a time; its output goes to a toast, its error into the dialog.
   git(label, args, cx, done) {
@@ -252,6 +261,11 @@ export class GitDialog extends View {
         .when(Boolean(st), (el) => el
           .child(this.button("git-fetch", "Fetch", t, (cx) => this.fetch(cx), { disabled: Boolean(this.busy) }))
           .child(this.button("git-pull", st.behind > 0 ? `Pull ↓${st.behind}` : "Pull", t, (cx) => this.pull(cx), { primary: st.behind > 0, disabled: Boolean(this.busy) || !st.upstream || st.gone }))))
+      // A worktree without a space: its right-click menu's actions, as buttons.
+      .when(Boolean(this.folder && g), (el) => el.child(h_flex().gap(6).items_center()
+        .child(this.button("git-create-space", "Create space here", t, () => this.createSpace()))
+        .child(this.button("git-delete-wt", "Delete worktree…", t, () => { this.close(); openRemove({ path: g.top, main: g.main, on: this.on, branch: st?.branch ?? null }); }, { disabled: !g.linked }))
+        .child(this.button("git-copy-path", this.copied ? "Copied" : "Copy path", t, (cx) => { cx.write_to_clipboard(g.top); this.copied = true; cx.notify(); }))))
       .when(g === undefined, (el) => el.child(div().text_color(t.muted).child("…")))
       .when(g === null, (el) => el.child(div().text_color(t.muted).child(this.error || "This space isn't in a git repository.")))
       .when(Boolean(st), (el) => el

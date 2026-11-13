@@ -4,7 +4,7 @@
 
 import { div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { openOverlay, exec, notify, spaces, panes, run, nextCommand } from "herdr";
+import { openOverlay, spaces, panes, run, nextCommand } from "herdr";
 import { linkOf, openLinkDialog } from "./links.js";
 import { LinkDialog } from "./link-dialog.js";
 import { SpaceMenu } from "./menu.js";
@@ -14,7 +14,7 @@ import { GitDialog } from "./git-dialog.js";
 import { AccountDialog } from "./account-dialog.js";
 import { accountOf } from "./accounts.js";
 import { openNew, openGit, openAccount, ICONS } from "./actions.js";
-import { tail, linkLabel, base, checkoutAt, hasWork, workText } from "./git.js";
+import { linkLabel, base, checkoutAt, hasWork } from "./git.js";
 
 export const MOD = "herdr-ranch-spaces";
 const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
@@ -89,6 +89,36 @@ function gitChip(v, w, g, at, t) {
     .child(div().flex_none().child(SHORT[s.state](c, g)));
 }
 
+// A worktree row's state on the right: ✓ in sync, n uncommitted, ↓n / ↕ / ↑n, in the git chip's
+// colors; a click (when given) opens the git popup.
+function stateMark(id, c, g, t, onClick = null) {
+  const s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
+  return div().id(id).flex_none().min_w(28).px(4).rounded(4).text_right().text_size(11.5).text_color(color)
+    .when(Boolean(onClick), (el) => el.cursor_pointer().hover((x) => x.bg(t.hover))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); onClick(); }))
+    .child(SHORT[s.state](c ?? {}, g ?? {}));
+}
+
+// A worktree space under its repository's space: the same compact row as the worktrees without
+// a space (in the text color: it has a space), its fold for its terminals, the branch and folder,
+// and its state (a click opens the git popup). A click selects the space; right-click its menu.
+export function worktreeSpaceRow(v, r, t) {
+  const { w, g, at } = r;
+  const c = g ? checkoutAt(v.trees[g.repo], at) : null;
+  const folder = g?.top ? base(g.top) : "";
+  const branch = g?.branch ?? "detached";
+  return h_flex().id(`space-${w.id}`).h(24).flex_none().px(8).pl(21).gap(7).items_center().rounded(6).cursor_pointer().text_size(12)
+    .text_color(t.foreground).when(w.active, (el) => el.bg(t.selected)).when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
+    .on_click(() => run("space.select", { id: w.id }))
+    .on_mouse_down("right", () => spaceMenu(w, g))
+    .child(foldChevron(v, w, 0, t))
+    .child(svg(CHROME("git-branch")).size(13).flex_none().text_color(t.muted))
+    .child(div().flex_shrink(0).max_w(150).truncate().child(branch))
+    .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(folder && folder !== branch.replace(/\//g, "-") ? folder : ""))
+    .child(g ? stateMark(`wt-state-${w.id}`, c, g, t, () => gitMenu(v, w, g, at)) : div());
+}
+
 // The git button's popup: what the list knows about the checkout, and the git and worktree actions.
 function gitMenu(v, w, g, at) {
   const c = checkoutAt(v.trees[g.repo], at);
@@ -99,41 +129,6 @@ function gitMenu(v, w, g, at) {
 export function spaceMenu(w, g) {
   const account = accountOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 260, height: 420, props: { menu: w.id, git: g ? (g.linked ? "linked" : "main") : null, account: account?.id ?? null } });
-}
-
-// ↓n on a row: `git pull --ff-only` in that checkout, a toast with how it went. `again(repo)`
-// reads that repository's places again.
-function pull(v, id, w, g, cx, again) {
-  if (v.pulling.has(id)) return;
-  v.pulling.add(id); cx.notify();
-  cx.spawn(async (cx) => {
-    const r = await exec("git", ["pull", "--ff-only"], { cwd: g.top, on: w.machine ?? null, timeout: 600_000 }).catch((e) => ({ code: 1, stderr: String(e?.message ?? e) }));
-    v.pulling.delete(id);
-    if (r.code === 0) notify({ title: `Pulled ${g.name}`, body: (r.stdout || "").trim().split("\n").pop()?.slice(0, 200) ?? "", level: "success", timeout: 2500 });
-    else notify({ title: `Couldn't pull ${g.name}`, body: `${(r.stderr || r.stdout || "").trim().slice(0, 300)}\nOpen Git on the space for Pull with rebase.`, level: "error", timeout: 8000 });
-    again(g.repo, cx);
-    cx.notify();
-  });
-}
-
-// Outstanding work in a checkout: ● uncommitted files (ansi3), ↑ commits ahead of the upstream
-// or on no remote (ansi2), ↓ behind (ansi1, a click pulls when `onPull`); a green check when
-// there's none (null until the checkout's work is known).
-function work(v, id, c, g, t, onPull) {
-  const up = Math.max(g?.ahead ?? 0, c?.unpushed ?? 0), down = g?.behind ?? 0, changes = c?.changes ?? 0;
-  // Nothing to commit, push or pull: a green check (once the checkout's work is known).
-  if (!changes && !up && !down) return c && c.changes != null ? h_flex().id(id).flex_none().items_center().text_color(t.ansi2)
-    .tooltip(`In sync: nothing to commit${g?.ahead === 0 && c.unpushed === 0 ? ", push or pull" : ""}`)
-    .child(svg(CHROME("check")).size(11)) : null;
-  const words = [workText(c), g?.ahead > 0 && `${g.ahead} ahead of its upstream`, down > 0 && `${down} behind its upstream`].filter(Boolean).join("\n");
-  return h_flex().id(id).flex_none().gap(4).items_center().text_size(11.5).tooltip(words || "Outstanding work")
-    .when(changes > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`●${changes}`)))
-    .when(up > 0, (el) => el.child(div().flex_none().text_color(t.ansi2).child(`↑${up}`)))
-    .when(down > 0, (el) => el.child(div().id(`${id}-pull`).flex_none().px(2).rounded(3).text_color(t.ansi1)
-      .when(Boolean(onPull), (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(v.pulling.has(id) ? "Pulling…" : `${down} behind its upstream: click to pull (fast-forward only)`)
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .on_click((_e, cx) => { cx.stop_propagation(); onPull(cx); }))
-      .child(v.pulling.has(id) ? "…" : `↓${down}`)));
 }
 
 function button(id, path, tip, t, onClick, color = null) {
@@ -184,14 +179,14 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
 
 // "n worktrees without a space": folds a repository's checkouts that no space shows.
 export function moreRow(v, r, t) {
-  return h_flex().id(`more-${r.repo}`).h(24).flex_none().px(8).pl(40).gap(6).items_center().rounded(6).cursor_pointer()
+  return h_flex().id(`more-${r.repo}`).h(24).flex_none().px(8).pl(21).gap(7).items_center().rounded(6).cursor_pointer()
     .text_size(12).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.muted))
     .on_click((_e, cx) => {
       r.open ? v.unfolded.delete(r.repo) : v.unfolded.add(r.repo);
       save("spaces.unfolded", [...v.unfolded]);
       cx.notify();
     })
-    .child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(13).flex_none())
+    .child(div().w(12).flex_none().flex().justify_center().child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(13)))
     .child(div().truncate().child(`${r.count} worktree${r.count === 1 ? "" : "s"} without a space`))
     .when(r.busy > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.busy} with work`)));
 }
@@ -203,17 +198,18 @@ function checkoutMenu(r) {
   openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 300, height: 260, props: { menu: "checkout", path: c.path, main: r.main, on: r.on ?? null, branch: c.branch, account: accountOf(null, { main: r.main, on: r.on ?? null })?.id ?? null, info } });
 }
 
-// A worktree no space shows: a click or right-click opens its menu (no space is made).
+// A worktree no space shows: a click opens its Git dialog (with its menu's actions), right-click
+// its menu (no space is made either way).
 export function looseRow(v, r, t) {
   return h_flex().id(`loose-${r.c.path}`).h(24).flex_none().px(8).pl(40).gap(7).items_center().rounded(6).cursor_pointer().text_size(12)
     .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
-    .on_click(() => checkoutMenu(r))
+    .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
     .on_mouse_down("right", () => checkoutMenu(r))
     .child(svg(CHROME("git-branch")).size(13).flex_none().text_color(t.dim))
     .child(div().flex_shrink(0).max_w(150).truncate().child(r.c.branch ?? "detached"))
     .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(r.c.branch && base(r.c.path) === r.c.branch.replace(/\//g, "-") ? "" : base(r.c.path)))
     .when(r.c.locked, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("locked")))
-    .child(work(v, `loose-work-${r.c.path}`, r.c, null, t) ?? div());
+    .child(stateMark(`loose-state-${r.c.path}`, r.c, { ahead: 0, behind: 0 }, t));
 }
 
 // A space's terminals (every tab's terminal panes): { pane, terminal, title, program, cwd, branch, status }.
@@ -257,7 +253,7 @@ export function terminalRows(v, w, t, depth = 1) {
     const name = telling ? title : p.program?.name || "terminal";
     const where = [p.cwd ? base(p.cwd) : "", p.branch ?? ""].filter(Boolean).join(" · ");
     const color = t[STATUS[p.status]] ?? t.dim;
-    return h_flex().id(`term-${p.pane}`).h(24).flex_none().pl(depth > 1 ? 58 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`term-${p.pane}`).h(24).flex_none().pl(depth > 1 ? 59 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
       .text_size(12).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("pane.focus", { pane: p.pane }))
       .child(p.status ? div().size(6).flex_none().rounded(3).bg(color) : svg(CHROME("terminal")).size(11).flex_none().text_color(t.dim))
