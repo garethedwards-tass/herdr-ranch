@@ -4,7 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
-- **Refresh buttons:** the refresh button in Changes, History, Issues, Pull requests and Reviews is an icon (Lucide's refresh-cw, like the cog beside it) at 15px and centered with the cog, instead of a small ↻ text glyph.
+- **Refresh buttons:** the refresh button in Changes, History, Issues, Pull requests and Reviews is an icon (Lucide's refresh-cw, like the cog beside it) at 13px (it looks the size of the 14px cog) and centered with it, instead of a small ↻ text glyph.
 - **Files:** the Files panel in the mod-buttons layout colors code the way the diff views do (`ranch-highlight`: CFML, JavaScript, SQL and the rest), with **Editor** to switch to Herdr's own editor for selecting text. Other files open as before.
 - **Accounts per space:** pick an account for a space in Spaces (right-click, **Account…**): a Claude Code login (its own config folder) and a GitHub account from `gh`. Worktree spaces follow their repository's. **New tab as** and **New Claude Code as** the account open terminals with `CLAUDE_CONFIG_DIR` and `GH_TOKEN` set (the token fetched inside the shell, never on a command line), and new worktree spaces start that way. Agents shows those sessions too.
 - **Agents:** a new agents list in place of Herdr's own in the mod-buttons layout, a copy of it with Claude Code's own records added: each Claude Code agent shows the context in use (`36%`), and a click opens a popup with the model and effort, context, replies, tokens, cost and lines when saved, running time, tasks and subagents. Under the agent: its task list (`3/7` and the task in progress) and its running subagents. Read from `~/.claude`, read only.

@@ -233,7 +233,7 @@ export default class History extends View {
         .child(div().flex_none().font_semibold().child("History"))
         .child(div().flex_1().min_w(0).text_size(fs.meta).text_color(t.dim).truncate().child(this.loading && this.commits ? `${repo} · Refreshing…` : repo))
         .when(full && wide, (e) => e.child(box.w(220)))
-        .child(iconButton("history-refresh", busy ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(15), (cx) => this.refresh(cx, true))))
+        .child(iconButton("history-refresh", busy ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(13), (cx) => this.refresh(cx, true))))
       .when(full && !wide, (e) => e.child(box.w_full()))
       .when(full, (e) => e.child(h_flex().gap(8).items_center().flex_wrap()
         .child(segmented("filter", [[null, "All"], ["mine", "Mine"], ["merges", "Merges"], ["recent", "Recent"]], this.filter, (v, cx) => { this.filter = v; this.cursor = 0; }, t))
