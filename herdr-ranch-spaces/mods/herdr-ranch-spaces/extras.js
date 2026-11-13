@@ -70,10 +70,14 @@ function pull(v, id, w, g, cx, again) {
 }
 
 // Outstanding work in a checkout: ● uncommitted files (ansi3), ↑ commits ahead of the upstream
-// or on no remote (ansi2), ↓ behind (ansi1, a click pulls when `onPull`). Null when there's none.
+// or on no remote (ansi2), ↓ behind (ansi1, a click pulls when `onPull`); a green check when
+// there's none (null until the checkout's work is known).
 function work(v, id, c, g, t, onPull) {
   const up = Math.max(g?.ahead ?? 0, c?.unpushed ?? 0), down = g?.behind ?? 0, changes = c?.changes ?? 0;
-  if (!changes && !up && !down) return null;
+  // Nothing to commit, push or pull: a green check (once the checkout's work is known).
+  if (!changes && !up && !down) return c && c.changes != null ? h_flex().id(id).flex_none().items_center().text_color(t.ansi2)
+    .tooltip(`In sync: nothing to commit${g?.ahead === 0 && c.unpushed === 0 ? ", push or pull" : ""}`)
+    .child(svg(CHROME("check")).size(11)) : null;
   const words = [workText(c), g?.ahead > 0 && `${g.ahead} ahead of its upstream`, down > 0 && `${down} behind its upstream`].filter(Boolean).join("\n");
   return h_flex().id(id).flex_none().gap(4).items_center().text_size(11.5).tooltip(words || "Outstanding work")
     .when(changes > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`●${changes}`)))
