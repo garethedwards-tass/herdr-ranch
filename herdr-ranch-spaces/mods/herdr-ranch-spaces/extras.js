@@ -161,7 +161,6 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
           .on_click((_e, cx) => { cx.stop_propagation(); openGit(w.id); }))
         .child(where)))
     )
-    .child(terminalsCount(w, t) ?? div())
     .when(Boolean(account), (el) => el.child(div().id(`space-account-${w.id}`).flex_none().max_w(70).truncate().px(5).rounded(4).text_size(11).text_color(t.ansi5 ?? t.accent).cursor_pointer()
       .hover((s) => s.bg(t.hover)).tooltip(`Account: ${account.label}${account.claudeDir ? `\nClaude Code: ${account.claudeDir}` : ""}${account.ghUser ? `\nGitHub: ${account.ghUser}` : ""}\nClick to change`)
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -235,12 +234,6 @@ export function foldChevron(v, w, children, t) {
       cx.notify();
     })
     .child(svg(CHROME(open ? "chevron-down" : "chevron-right")).size(11));
-}
-
-// How many terminals a space has: a plain count after its name.
-function terminalsCount(w, t) {
-  const n = terminalsOf(w).length;
-  return n ? h_flex().flex_none().gap(2).items_center().px(3).text_size(11).text_color(t.dim).child(svg(CHROME("terminal")).size(11).flex_none()).child(String(n)) : null;
 }
 
 const STATUS = { blocked: "blocked", done: "done", working: "working", idle: "idle" };
