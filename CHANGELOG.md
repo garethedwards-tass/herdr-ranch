@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Changes, History:** the diff list redraws only when the diff changes, not on every agent status or focus change, so a large open diff no longer rebuilds every few seconds.
 - **Faster colors:** `ranch-highlight` builds a language only when a file needs it, instead of all 21 at every start: a run went from about 0.3 s to a few hundredths, so diffs and files color sooner. Rebuild it with `./install.sh` (or `cargo build --release` in `ranch-highlight/`).
 - **Spaces:** a repository's worktrees without a space have their git state read at most once a minute (those with a space every refresh), instead of two git runs per worktree on every change.
 - **Spaces:** Git status and Switch branch are separate dialogs, each from its own menu item, instead of two tabs of one.
