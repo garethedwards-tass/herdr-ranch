@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
-import { parseLog, parseShow, searchArgs, search } from "../herdr-ranch-history/mods/herdr-ranch-history/git.js";
+import { parseLog, searchArgs, search } from "../herdr-ranch-history/mods/herdr-ranch-history/git.js";
+import { parseShow } from "../herdr-ranch-history/mods/herdr-ranch-history/diff.js";
 
 const US = "\x1f", RS = "\x1e";
 const rec = (sha, parents, refs, title, at = "2026-11-12T10:00:00+10:00", author = "Ann") => [sha, sha.slice(0, 7), author, at, parents, refs, title].join(US) + RS;

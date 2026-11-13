@@ -59,7 +59,8 @@ function fragment(f, side) {
 }
 
 // Highlights the given files (prepared by diff.js) in place: each gets `hl = { old, new }`.
-// `git`: { cwd, oldRev, newRev } when both commits may be in that local repository, else null.
+// `git`: { cwd, oldRev, newRev } when both commits may be in that local repository, else null;
+// a `newRev` of "" means the working tree (the file on disk).
 // Sides git can't give (a missing commit, a shallow clone) are done from the hunks.
 export async function highlightFiles(files, git) {
   const todo = files.filter((f) => f.hunks.length && !f.hl);
@@ -70,14 +71,15 @@ export async function highlightFiles(files, git) {
       const id = `${i}:${side}`, path = side === "old" ? f.from ?? f.path : f.path;
       if ((side === "old" && f.status === "added") || (side === "new" && f.status === "removed")) continue;
       const rev = side === "old" ? git?.oldRev : git?.newRev;
-      if (git?.cwd && rev) reqs.push({ id, path, git: { cwd: git.cwd, rev, path }, tab: TAB });
+      if (git?.cwd && side === "new" && rev === "") reqs.push({ id, path, file: `${git.cwd}/${path}`, tab: TAB });
+      else if (git?.cwd && rev) reqs.push({ id, path, git: { cwd: git.cwd, rev, path }, tab: TAB });
       else { const fr = fragment(f, side); frag.set(id, fr.at); reqs.push({ id, path, text: fr.text, tab: TAB }); }
     }
   });
   let got = await run(reqs);
   if (!got) return false;
   // Sides git couldn't read: again from the hunks.
-  const retry = reqs.filter((r) => r.git && (got.get(r.id)?.error || !got.get(r.id))).map((r) => {
+  const retry = reqs.filter((r) => (r.git || r.file) && (got.get(r.id)?.error || !got.get(r.id))).map((r) => {
     const [i, side] = r.id.split(":"), fr = fragment(todo[Number(i)], side);
     frag.set(r.id, fr.at);
     return { id: r.id, path: r.path, text: fr.text, tab: TAB };
