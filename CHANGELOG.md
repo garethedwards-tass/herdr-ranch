@@ -2,6 +2,10 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
+## Unreleased
+
+- **History:** a new panel with the git commit history of the repository you're in: by day, filters (Mine, Merges, Recent), this branch or all, a search across the whole history (`author:`, `path:`, `code:`, `since:`, a sha), and each commit's diffs, unified or split.
+
 ## v0.5.0
 
 - **Reviews:** Mermaid and draw.io diagrams show as pictures: a ` ```mermaid ` block, a ` ```drawio ` block (or ` ```xml ` holding draw.io XML), and an image line pointing at a `.drawio`, `.drawio.svg` or `.dio` file. They render with the tools you have installed (`mmdc` from mermaid-cli, the draw.io app), once per diagram; without them, or when a diagram has an error, the block shows its code with the reason above it. **Source** still shows the text.
