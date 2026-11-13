@@ -122,7 +122,13 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().truncate().child(label))))
-    .when(!label, (el) => el.child(button(`space-link-new-${w.id}`, `${ICONS}/link.svg`, "Link space: its GitHub repository and Jira or Linear project", t, () => openLinkDialog(MOD, w))))
+    // Not linked: the same chip in grey, "Link".
+    .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().gap(3).items_center().px(5).rounded(4)
+      .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(11).text_color(t.dim).cursor_pointer()
+      .hover((s) => s.bg(t.dim + "2a").text_color(t.muted)).tooltip("Link space: its GitHub repository and Jira or Linear project")
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
+      .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child("Link")))
     .when(Boolean(g), (el) => el.child(button(`space-worktree-${w.id}`, `${ICONS}/branch-plus.svg`, "New worktree from a branch or an issue", t, () => openNew(w.id, "branch"))));
 }
 
