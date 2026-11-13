@@ -74,7 +74,7 @@ done
 # each keeps a copy): warn about a copy that differs from its source.
 for src in "$repo"/shared/*.js; do
   file=$(basename "$src")
-  for mod in herdr-ranch-prs herdr-ranch-issues herdr-ranch-reviews; do
+  for mod in herdr-ranch-prs herdr-ranch-issues herdr-ranch-reviews herdr-ranch-spaces; do
     cmp -s "$src" "$repo/$mod/mods/$mod/$file" || echo "stale $mod/mods/$mod/$file: copy shared/$file over it"
   done
 done
