@@ -94,7 +94,7 @@ function button(id, path, tip, t, onClick) {
 }
 
 // What follows a space's name, in place of Herdr's gitTail: the repository and branch (a click
-// opens Git), its work, its link chip, and on the shown space Link space and New worktree.
+// opens Git), its work, its link chip (or Link space when it has none), and New worktree.
 export function spaceTail(v, { w, g, tree, at }, t, again) {
   const link = linkOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   const label = linkLabel(link);
@@ -122,8 +122,8 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().truncate().child(label))))
-    .when(w.active && !label, (el) => el.child(button(`space-link-new-${w.id}`, `${ICONS}/link.svg`, "Link space: its GitHub repository and Jira or Linear project", t, () => openLinkDialog(MOD, w))))
-    .when(w.active && Boolean(g), (el) => el.child(button(`space-worktree-${w.id}`, `${ICONS}/branch-plus.svg`, "New worktree from a branch or an issue", t, () => openNew(w.id, "branch"))));
+    .when(!label, (el) => el.child(button(`space-link-new-${w.id}`, `${ICONS}/link.svg`, "Link space: its GitHub repository and Jira or Linear project", t, () => openLinkDialog(MOD, w))))
+    .when(Boolean(g), (el) => el.child(button(`space-worktree-${w.id}`, `${ICONS}/branch-plus.svg`, "New worktree from a branch or an issue", t, () => openNew(w.id, "branch"))));
 }
 
 // "n worktrees without a space": folds a repository's checkouts that no space shows.
