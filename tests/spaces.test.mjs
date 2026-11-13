@@ -95,9 +95,10 @@ test("work: uncommitted files and commits on no remote, read without writing und
 test("arrange: the fold counts the worktrees with work", () => {
   const R = JSON.stringify([null, "/src/r/.git"]);
   const list = [{ w: { id: "m", machine: null }, i: 0, g: { repo: R, main: "/src/r", linked: false }, at: "/src/r" }];
-  const trees = { [R]: [{ path: "/src/r", main: true }, { path: "/w/a", changes: 2 }, { path: "/w/b", changes: 0, unpushed: 0 }] };
+  const trees = { [R]: [{ path: "/src/r", main: true }, { path: "/w/a", changes: 2 }, { path: "/w/b", changes: 0, unpushed: 0 }, { path: "/w/c", changes: 0, unpushed: 1 }] };
   const more = arrange(list, trees).find((r) => r.kind === "more");
-  assert.equal(more.count, 2); assert.equal(more.busy, 1);
+  assert.equal(more.count, 3); assert.equal(more.busy, 2);
+  assert.equal(more.dirty, 1); assert.equal(more.unpushed, 1);
   assert.equal(arrange(list, trees, new Set([R])).find((r) => r.kind === "loose").main, "/src/r");
 });
 

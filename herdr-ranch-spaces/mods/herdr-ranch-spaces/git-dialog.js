@@ -232,8 +232,10 @@ export class GitDialog extends View {
       .child(line("Branch", h_flex().flex_1().min_w(0).gap(8).items_center().text_size(12.5)
         .child(div().min_w(0).truncate().text_color(st?.branch ? t.accent : t.ansi3).child(st?.branch ?? "detached"))
         .child(div().flex_none().text_color(t.dim).child(st?.upstream ? `→ ${st.upstream}` : "no upstream"))))
-      .child(line("Changes", changed ? `${changed} uncommitted file${changed === 1 ? "" : "s"}` : "clean", changed ? t.ansi3 : t.ansi2))
-      .child(line("Not pushed", i ? (i.unpushed == null ? "?" : i.unpushed === 0 ? "nothing" : `${i.unpushed} commit${i.unpushed === 1 ? "" : "s"} on no remote`) : "…", i?.unpushed > 0 ? t.ansi2 : t.muted))
+      .child(line("Uncommitted", changed ? `${changed} file${changed === 1 ? "" : "s"}` : "none", changed ? t.ansi3 : t.ansi2))
+      .child(line("Not pushed", i ? (i.unpushed == null ? "?" : i.unpushed === 0 ? "nothing: every commit is on a remote" : `${i.unpushed} commit${i.unpushed === 1 ? "" : "s"} only in this worktree`) : "…", i?.unpushed > 0 ? t.accent : t.ansi2))
+      // Detached with commits nowhere else: deleting the worktree leaves nothing pointing at them.
+      .when(i?.unpushed > 0 && !st?.branch, (el) => el.child(line("", "detached: push them or make a branch before deleting it", t.ansi3)))
       .child(line("Last commit", i?.hash ? i.subject : i ? "none" : "…"))
       .when(Boolean(i?.hash), (el) => el.child(line("", `${i.hash} · ${i.author} · ${ago(i.at)}`, t.dim)))
       .when(Boolean(i?.locked), (el) => el.child(line("Locked", "git won't prune or remove it without --force", t.ansi3)))
@@ -247,7 +249,7 @@ export class GitDialog extends View {
 
   statusView(t) {
     const st = this.st;
-    if (!st.files.length) return div().p(10).text_color(t.dim).child("Nothing to commit: the working tree is clean.");
+    if (!st.files.length) return div().p(10).text_color(t.dim).child(this.info?.unpushed > 0 ? "No uncommitted files. Its commits that aren't pushed are listed above." : "Nothing to commit: the working tree is clean.");
     let left = MAX_FILES;
     const groups = GROUPS.map(([kind, label, color]) => {
       const files = st.files.filter((f) => f.kind === kind);

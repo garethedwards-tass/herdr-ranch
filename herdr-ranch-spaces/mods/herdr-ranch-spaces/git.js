@@ -94,7 +94,7 @@ export function arrange(list, trees = {}, open = new Set()) {
     const unfolded = open.has(r.g.repo);
     const tail = [
       ...kids.map((k) => ({ kind: "space", ...k })),
-      ...(loose.length ? [{ kind: "more", repo: r.g.repo, count: loose.length, busy: loose.filter(hasWork).length, open: unfolded }] : []),
+      ...(loose.length ? [{ kind: "more", repo: r.g.repo, count: loose.length, busy: loose.filter(hasWork).length, dirty: loose.filter((c) => c.changes > 0).length, unpushed: loose.filter((c) => c.unpushed > 0).length, open: unfolded }] : []),
       ...(unfolded ? loose.map((c) => ({ kind: "loose", repo: r.g.repo, main: r.g.main, c, on: r.w.machine ?? null })) : []),
     ];
     // `parent`: the space they fold under; the loose rows count once, in their own fold.

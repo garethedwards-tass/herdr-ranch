@@ -184,7 +184,9 @@ export function moreRow(v, r, t) {
     .child(div().w(12).flex_none().flex().justify_center().child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(13)))
     .child(svg(`${ICONS}/unplug.svg`).size(13).flex_none())
     .child(div().truncate().child(`${r.count} worktree${r.count === 1 ? "" : "s"} without a space`))
-    .when(r.busy > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.busy} with work`)));
+    // Which work: uncommitted files (amber), commits on no remote (blue, like the pill's ↑).
+    .when(r.dirty > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.dirty} uncommitted`)))
+    .when(r.unpushed > 0, (el) => el.child(div().flex_none().text_color(t.accent).child(`· ${r.unpushed} unpushed`)));
 }
 
 // A worktree without a space's menu (click or right-click), with the git popup's header.
