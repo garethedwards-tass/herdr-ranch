@@ -185,20 +185,20 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
 // "n worktrees without a space": folds a repository's checkouts that no space shows.
 export function moreRow(v, r, t) {
   return h_flex().id(`more-${r.repo}`).h(24).flex_none().px(8).pl(40).gap(6).items_center().rounded(6).cursor_pointer()
-    .text_size(11.5).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.muted))
+    .text_size(12).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.muted))
     .on_click((_e, cx) => {
       r.open ? v.unfolded.delete(r.repo) : v.unfolded.add(r.repo);
       save("spaces.unfolded", [...v.unfolded]);
       cx.notify();
     })
-    .child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(11).flex_none())
+    .child(svg(CHROME(r.open ? "chevron-down" : "chevron-right")).size(13).flex_none())
     .child(div().truncate().child(`${r.count} worktree${r.count === 1 ? "" : "s"} without a space`))
     .when(r.busy > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.busy} with work`)));
 }
 
 // A worktree no space shows: a click opens its Git dialog (no space is made); right-click for more.
 export function looseRow(v, r, t) {
-  return h_flex().id(`loose-${r.c.path}`).h(26).flex_none().px(8).pl(40).gap(8).items_center().rounded(6).cursor_pointer()
+  return h_flex().id(`loose-${r.c.path}`).h(24).flex_none().px(8).pl(40).gap(7).items_center().rounded(6).cursor_pointer().text_size(12)
     .text_color(hasWork(r.c) ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(`${r.c.path}\nClick for its git status, right-click to create a space there or delete it`)
     .on_click(() => openGit(null, "status", { folder: r.c.path, on: r.on }))
     .on_mouse_down("right", () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 220, height: 180, props: { menu: "checkout", path: r.c.path, main: r.main, on: r.on ?? null, branch: r.c.branch, account: accountOf(null, { main: r.main, on: r.on ?? null })?.id ?? null } }))
