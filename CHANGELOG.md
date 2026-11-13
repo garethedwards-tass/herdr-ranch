@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Spaces:** the Git dialog's Status lists the commits that aren't pushed anywhere, under the uncommitted files.
 - **Spaces:** the worktree fold says what kind of work it counts ("n uncommitted", "n unpushed"), and a worktree's dialog says "Uncommitted: none" and "n commits only in this worktree" instead of "clean" (with a warning when it's detached).
 - **Spaces:** worktree rows show the worktree's folder name, and their branch and state in the same pill as the spaces.
 - **Spaces:** a worktree without a space opens a Git dialog with its details (folder, branch, last commit, unpushed commits) and **Create space with** a terminal or an installed agent.

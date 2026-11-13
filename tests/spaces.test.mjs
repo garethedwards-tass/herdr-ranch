@@ -201,3 +201,13 @@ test("runAs: any program as an account, its arguments after the exports", () => 
   assert.match(argv[2], /^export CLAUDE_CONFIG_DIR="\$HOME"'\/\.claude-w'; exec "\$@"$/);
   assert.deepEqual(argv.slice(3), ["sh", "claude", "--model", "opus"]);
 });
+
+test("notPushed: commits on no remote, none without a remote", async () => {
+  const { notPushed, parseCommits } = await import("../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js");
+  assert.deepEqual(parseCommits("9d90a0d\tFix it\tGareth E\t1700000000\n"), [{ hash: "9d90a0d", subject: "Fix it", author: "Gareth E", at: 1700000000 }]);
+  state.exec = (cmd, args) => (args[0] === "remote" ? { code: 0, stdout: "origin\n" } : { code: 0, stdout: "a1\tOne\tX\t1\nb2\tTwo\tY\t2\n" });
+  assert.equal((await notPushed("/w", null)).length, 2);
+  state.exec = (cmd, args) => (args[0] === "remote" ? { code: 0, stdout: "" } : { code: 0, stdout: "a1\tOne\tX\t1\n" });
+  assert.deepEqual(await notPushed("/w", null), []);
+  state.exec = null;
+});

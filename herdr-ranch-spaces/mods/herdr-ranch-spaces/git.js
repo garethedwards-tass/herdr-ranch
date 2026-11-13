@@ -255,3 +255,16 @@ export function switchRisk(files) {
   return { tracked: f.filter((x) => x.kind !== "untracked" && x.kind !== "conflict"), conflicts: f.filter((x) => x.kind === "conflict"), untracked: f.filter((x) => x.kind === "untracked").length };
 }
 export const stashMessage = (from, to) => `herdr-ranch: ${from ?? "detached"} before switching to ${to}`;
+
+// `git log --format=%h%x09%s%x09%an%x09%ct` lines as [{ hash, subject, author, at }].
+export function parseCommits(text) {
+  return (text ?? "").split("\n").filter(Boolean).map((l) => { const [hash, subject, author, at] = l.split("\t"); return { hash, subject: subject ?? "", author: author ?? "", at: Number(at) || 0 }; });
+}
+
+// The commits on HEAD that no remote has, newest first (at most `max`); [] without a remote.
+export async function notPushed(top, on, max = 30) {
+  const remote = await exec("git", ["remote"], { cwd: top, on });
+  if (remote.code !== 0 || !remote.stdout.trim()) return [];
+  const r = await exec("git", ["log", `-n${max}`, "--format=%h%x09%s%x09%an%x09%ct", "HEAD", "--not", "--remotes"], { cwd: top, on });
+  return r.code === 0 ? parseCommits(r.stdout) : [];
+}

@@ -12,7 +12,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, theme, spaces, panes, exec, run, notify, knownAgents } from "herdr";
-import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage, workIn, checkoutAt, base } from "./git.js";
+import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage, workIn, checkoutAt, base, notPushed } from "./git.js";
 import { openRemove } from "./actions.js";
 import { accountOf, argvAs, runAs } from "./accounts.js";
 
@@ -46,7 +46,7 @@ export class GitDialog extends View {
         const g = folder ? await probe(folder, this.on) : null;
         if (g) {
           this.checkouts = await worktrees(g.main, this.on);
-          [this.st, this.list] = await Promise.all([status(g.top, this.on), branches(g.main, this.on, this.checkouts)]);
+          [this.st, this.list, this.commits] = await Promise.all([status(g.top, this.on), branches(g.main, this.on, this.checkouts), notPushed(g.top, this.on).catch(() => [])]);
           // A worktree without a space: what it holds, and the agents a space can start with.
           if (this.folder) [this.info, this.agents] = await Promise.all([this.worktreeInfo(g), knownAgents({ on: this.on }).then((l) => l.filter((a) => a.installed && a.run?.length)).catch(() => [])]);
         }
@@ -249,7 +249,8 @@ export class GitDialog extends View {
 
   statusView(t) {
     const st = this.st;
-    if (!st.files.length) return div().p(10).text_color(t.dim).child(this.info?.unpushed > 0 ? "No uncommitted files. Its commits that aren't pushed are listed above." : "Nothing to commit: the working tree is clean.");
+    const commits = this.commits ?? [];
+    if (!st.files.length && !commits.length) return div().p(10).text_color(t.dim).child("Clean: nothing uncommitted, and every commit is on a remote.");
     let left = MAX_FILES;
     const groups = GROUPS.map(([kind, label, color]) => {
       const files = st.files.filter((f) => f.kind === kind);
@@ -262,7 +263,15 @@ export class GitDialog extends View {
           .child(div().w(18).flex_none().text_size(11).text_color(t[color] ?? t.dim).child(`${f.x}${f.y}`.replace(/ /g, "·")))
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(f.path))));
     }).filter(Boolean);
-    return v_flex().gap(6).children(groups)
+    const ago = (x) => { if (!x) return ""; const d = Date.now() / 1000 - x; return d < 3600 ? `${Math.max(1, Math.round(d / 60))}m` : d < 86400 ? `${Math.round(d / 3600)}h` : `${Math.round(d / 86400)}d`; };
+    const head = (text, n, color) => h_flex().gap(6).py(4).text_size(11).text_color(t.muted).child(text).child(div().text_color(color).child(String(n)));
+    const pushedNot = commits.length ? [v_flex().gap(1).flex_none()
+      .child(head("Not pushed: only here", commits.length, t.accent))
+      .children(commits.map((c, n) => h_flex().id(`np-${n}`).gap(8).h(22).px(6).rounded(4).items_center().hover((s) => s.bg(t.hover))
+        .child(div().w(64).flex_none().text_size(11.5).text_color(t.accent).child(c.hash))
+        .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.foreground).child(c.subject))
+        .child(div().flex_none().text_size(11).text_color(t.dim).child(`${c.author.split(" ")[0]} · ${ago(c.at)}`))))] : [];
+    return v_flex().gap(6).children(groups).when(!st.files.length, (el) => el.child(div().px(6).text_size(12).text_color(t.dim).child("No uncommitted files."))).children(pushedNot)
       .when(st.files.length > MAX_FILES, (el) => el.child(div().text_size(11).text_color(t.dim).child(`and ${st.files.length - MAX_FILES} more`)));
   }
 
