@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
 import { place, probe, parseWorktrees, arrange, tail, linkLabel, countStatus, workIn, checkoutAt, hasWork, workText, issueBranch, parseRefs, addArgs, worktreePath, parseStatus, switchArgs, diverged, switchRisk, stashMessage } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js";
 import { source, looksLikeKey } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/issues.js";
-import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, parseGhAccounts } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/accounts.js";
+import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/accounts.js";
 
 test("place: the first terminal's live folder, else the space's folder", () => {
   const s = { folder: "/made", tabs: [{ id: "t1" }] };
@@ -192,4 +192,11 @@ test("gitState: the git button's color, most pressing first", async () => {
   assert.equal(st({ changes: 0, unpushed: 2 }, { ahead: 0, behind: 0 }), "ahead");
   assert.equal(st({ changes: 0, unpushed: 0 }, { ahead: 0, behind: 0 }), "sync");
   assert.equal(gitState({ changes: 0, unpushed: 0 }, {}).color, "ansi2");
+});
+
+test("runAs: any program as an account, its arguments after the exports", () => {
+  const argv = runAs({ claudeDir: "~/.claude-w" }, ["claude", "--model", "opus"]);
+  assert.deepEqual(argv.slice(0, 2), ["sh", "-c"]);
+  assert.match(argv[2], /^export CLAUDE_CONFIG_DIR="\$HOME"'\/\.claude-w'; exec "\$@"$/);
+  assert.deepEqual(argv.slice(3), ["sh", "claude", "--model", "opus"]);
 });

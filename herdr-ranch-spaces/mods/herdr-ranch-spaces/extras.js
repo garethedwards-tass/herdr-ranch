@@ -2,7 +2,7 @@
 // changed only where it calls into this file; RECIPE.md lists those places). Each function takes
 // the list's view (`v`) for its state: v.trees (repo -> worktrees with work), v.unfolded, v.pulling.
 
-import { div, svg } from "gpui-kit";
+import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { openOverlay, spaces, panes, run, nextCommand } from "herdr";
 import { linkOf, openLinkDialog } from "./links.js";
@@ -242,12 +242,38 @@ export function foldChevron(v, w, children, t) {
     .child(svg(CHROME(open ? "chevron-down" : "chevron-right")).size(11));
 }
 
+// An agent's icon from Herdr's program table: a one-color glyph (in the text color) or a picture.
+export function programIcon(program, t, size = 13) {
+  if (!program?.agent || !program.icon) return null;
+  return program.tint ? svg(program.icon).size(size).flex_none().text_color(t.muted) : image(program.icon).w(size).h(size).flex_none();
+}
+
+// The + for a new space: a menu of Terminal and each agent Herdr knows is installed there.
+export function newSpaceMenu(machine) {
+  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 240, height: 300, props: { menu: "new-space", machine: machine ?? "" } });
+}
+
 const STATUS = { blocked: "blocked", done: "done", working: "working", idle: "idle" };
 // Under an unfolded space (deeper under a worktree space): each terminal with its program, title, folder and branch, and its
 // agent's status. A click goes to it; the eye peeks at it without leaving the shown space.
 export function terminalRows(v, w, t, depth = 1) {
   if (!isOpen(v, w.id)) return [];
-  return terminalsOf(w).map((p) => {
+  return [...terminalsOf(w).map((p) => terminalRow(p, t, depth)), newTabRow(w, t, depth)];
+}
+
+// "+ New terminal or agent…" at the end of a space's terminals: a menu of both, as its account.
+function newTabRow(w, t, depth) {
+  return h_flex().id(`term-new-${w.id}`).h(22).flex_none().pl(depth > 1 ? 59 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
+    .text_size(11.5).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
+    .on_click(() => {
+      const a = accountOf(w, null);
+      openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 240, height: 260, props: { menu: "new-tab", space: w.id, account: a?.id ?? null } });
+    })
+    .child(svg(CHROME("plus")).size(11).flex_none())
+    .child(div().truncate().child("New terminal or agent…"));
+}
+
+function terminalRow(p, t, depth) {
     // A title that only says user@host or a path (a shell's default) says nothing: the program's name instead.
     const title = clean(p.title), telling = title && title !== p.program?.name && !title.includes("@") && !/^[~/]/.test(title);
     const name = telling ? title : p.program?.name || "terminal";
@@ -256,13 +282,14 @@ export function terminalRows(v, w, t, depth = 1) {
     return h_flex().id(`term-${p.pane}`).h(24).flex_none().pl(depth > 1 ? 59 : 40).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
       .text_size(12).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click(() => run("pane.focus", { pane: p.pane }))
-      .child(p.status ? div().size(6).flex_none().rounded(3).bg(color) : svg(CHROME("terminal")).size(11).flex_none().text_color(t.dim))
+      // An agent shows its own icon (Herdr's program table), a plain terminal the terminal icon.
+      .child(programIcon(p.program, t) ?? svg(CHROME("terminal")).size(11).flex_none().text_color(t.dim))
       .child(div().flex_shrink(0).max_w(140).truncate().child(name))
       .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child(where))
+      .when(Boolean(p.status), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color)))
       .child(div().id(`peek-${p.pane}`).flex_none().size(18).flex().items_center().justify_center().rounded(4).text_color(t.dim)
         .hover((s) => s.bg(t.raised ?? t.hover).text_color(t.foreground)).tooltip("Peek: see it here, without switching spaces")
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click((_e, cx) => { cx.stop_propagation(); run("terminal.peek", { terminal: p.terminal }); })
         .child(svg(`${ICONS}/eye.svg`).size(12)));
-  });
 }
