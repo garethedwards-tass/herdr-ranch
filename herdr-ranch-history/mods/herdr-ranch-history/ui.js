@@ -4,7 +4,7 @@
 
 import { div } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { settings } from "herdr";
+import { settings, appHome, exec, readTextFile, writeTextFile } from "herdr";
 
 export const fs = { body: 13, meta: 12, tiny: 11 };
 export function readSizes() {
@@ -37,4 +37,19 @@ export function segmented(id, options, current, pick, t) {
       .when(current === value, (e) => e.bg(t.selected).font_semibold())
       .when(current !== value, (e) => e.text_color(t.muted).hover((x) => x.bg(t.hover).text_color(t.foreground)))
       .on_click((_e, cx) => { pick(value, cx); cx.notify(); }).child(label)));
+}
+
+// The refresh button's icon, Lucide's refresh-cw: the same file Issues and Pull requests write
+// (data/herdr-ranch/icons), written here too since svg() can't read a linked mod folder.
+export const REFRESH_ICON = "data/herdr-ranch/icons/refresh.svg";
+let refreshWritten = null;
+export function writeRefreshIcon() {
+  refreshWritten ??= (async () => {
+    const dir = `${appHome()}/data/herdr-ranch/icons`, path = `${dir}/refresh.svg`;
+    const text = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>\n`;
+    await exec("mkdir", ["-p", dir]).catch(() => null);
+    const now = await readTextFile(path).catch(() => null);
+    if (now !== text) await writeTextFile(path, text, now).catch(() => null);
+  })();
+  return refreshWritten;
 }
