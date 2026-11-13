@@ -13,12 +13,12 @@ function counts(rollup) {
 }
 
 export function node(pr) {
-  const { statusCheckRollup, assignees, reviewRequests, ...rest } = pr;
+  const { statusCheckRollup, assignees, reviewRequests, pushedAt, ...rest } = pr;
   return {
     ...rest,
     assignees: { nodes: (assignees ?? []).map((a) => ({ login: a.login })) },
     reviewRequests: { nodes: (reviewRequests ?? []).map((r) => ({ requestedReviewer: r.login ? { login: r.login } : { name: r.name } })) },
-    commits: { nodes: [{ commit: { statusCheckRollup: statusCheckRollup?.length ? { contexts: counts(statusCheckRollup) } : null } }] },
+    commits: { nodes: [{ commit: { committedDate: pushedAt ?? null, statusCheckRollup: statusCheckRollup?.length ? { contexts: counts(statusCheckRollup) } : null } }] },
   };
 }
 
