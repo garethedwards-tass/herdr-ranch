@@ -261,7 +261,9 @@ const STATUS = { blocked: "blocked", done: "done", working: "working", idle: "id
 // agent's status. A click goes to it; the eye peeks at it without leaving the shown space.
 export function terminalRows(v, w, t, depth = 1) {
   if (!isOpen(v, w.id)) return [];
-  return [...terminalsOf(w).map((p) => terminalRow(p, t, depth)), newTabRow(w, t, depth)];
+  // The space's own folder and branch (its first terminal's): a row repeats them only when its own differ.
+  const list = terminalsOf(w), first = list.find((p) => p.cwd) ?? null;
+  return [...list.map((p) => terminalRow(p, t, depth, first)), newTabRow(w, t, depth)];
 }
 
 // "+ New terminal or agent…" at the end of a space's terminals: a menu of both, as its account.
@@ -276,11 +278,12 @@ function newTabRow(w, t, depth) {
     .child(div().flex_1().min_w(0).truncate().child("New agent or terminal…"));
 }
 
-function terminalRow(p, t, depth) {
+function terminalRow(p, t, depth, first = null) {
     // A title that only says user@host or a path (a shell's default) says nothing: the program's name instead.
     const title = clean(p.title), telling = title && title !== p.program?.name && !title.includes("@") && !/^[~/]/.test(title);
     const name = telling ? title : p.program?.name || "terminal";
-    const where = [p.cwd ? base(p.cwd) : "", p.branch ?? ""].filter(Boolean).join(" · ");
+    // Only what differs from the space: another folder, another branch.
+    const where = [p.cwd && p.cwd !== first?.cwd ? base(p.cwd) : "", p.branch && p.branch !== first?.branch ? p.branch : ""].filter(Boolean).join(" · ");
     const color = t[STATUS[p.status]] ?? t.dim;
     return h_flex().id(`term-${p.pane}`).h(26).flex_none().pl(depth > 1 ? 38 : 19).pr(6).gap(7).items_center().rounded(6).cursor_pointer()
       .text_size(13).text_color(p.focused ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
