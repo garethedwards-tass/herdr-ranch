@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Spaces:** Git status and Switch branch are separate dialogs, each from its own menu item, instead of two tabs of one.
 - **Spaces:** a click on a file or an unpushed commit in the Git dialog's Status opens its diff in place. The worktree dialog drops the Branches tab and, for a detached worktree, offers **Make a branch…**.
 - **Spaces:** the Git dialog's Status lists the commits that aren't pushed anywhere, under the uncommitted files.
 - **Spaces:** the worktree fold says what kind of work it counts ("n uncommitted", "n unpushed"), and a worktree's dialog says "Uncommitted: none" and "n commits only in this worktree" instead of "clean" (with a warning when it's detached).

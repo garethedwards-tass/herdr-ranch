@@ -195,12 +195,6 @@ export class GitDialog extends View {
         .child(this.button("git-cancel", "Cancel", t, (cx) => { this.confirm = null; cx.notify(); })));
   }
 
-  setTab(tab, cx) {
-    this.tab = tab;
-    if (tab === "branches") { try { this.input.focus(); } catch { /* not shown yet */ } } else this.handle.focus();
-    cx.notify();
-  }
-
   key(e, cx) {
     const n = this.rows().length;
     if (this.confirm) {
@@ -212,7 +206,6 @@ export class GitDialog extends View {
       return cx.stop_propagation();
     }
     if (e.key === "escape") this.close();
-    else if (e.key === "tab" && !this.folder) this.setTab(this.tab === "status" ? "branches" : "status", cx);
     else if (this.tab === "branches" && (e.key === "down" || e.key === "up") && n) { this.at = (this.at + (e.key === "down" ? 1 : n - 1)) % n; cx.notify(); }
     else return;
     cx.stop_propagation();
@@ -347,15 +340,12 @@ export class GitDialog extends View {
 
   render() {
     const t = theme(), g = this.g, st = this.st;
-    const tab = (id, label) => div().id(`git-tab-${id}`).px(10).py(3).rounded(6).text_size(12).cursor_pointer()
-      .when(this.tab === id, (el) => el.bg(t.selected).text_color(t.foreground)).when(this.tab !== id, (el) => el.text_color(t.muted).hover((s) => s.bg(t.hover)))
-      .on_click((_e, cx) => this.setTab(id, cx)).child(label);
     const upstream = st ? (st.gone ? "upstream gone" : st.upstream ? `→ ${st.upstream}` : "no upstream") : "";
     return v_flex().id("spaces-git").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx)).size_full().p(16).gap(10).bg(t.popover).text_size(13)
       .child(h_flex().gap(8).items_center()
         .child(v_flex().flex_1().min_w(0)
           .child(h_flex().gap(6).items_center()
-            .child(div().font_semibold().text_color(t.foreground).child(g ? (this.folder ? base(g.top) : g.name) : "Git"))
+            .child(div().font_semibold().text_color(t.foreground).child(g ? (this.folder ? base(g.top) : this.tab === "branches" ? `Switch branch · ${g.name}` : g.name) : "Git"))
             .when(Boolean(st) && !this.folder, (el) => el.child(div().min_w(0).truncate().text_color(t.accent).child(st.branch ?? "detached"))))
           .when(Boolean(this.folder && g), (el) => el.child(div().text_size(11.5).text_color(t.dim).child(`Worktree of ${g.name} · no space`)))
           .when(Boolean(st) && !this.folder, (el) => el.child(h_flex().gap(8).text_size(11.5).text_color(t.dim)
@@ -363,7 +353,7 @@ export class GitDialog extends View {
             .when(st.ahead > 0, (el) => el.child(div().flex_none().text_color(t.ansi2).child(`↑${st.ahead}`)))
             .when(st.behind > 0, (el) => el.child(div().flex_none().text_color(t.ansi1).child(`↓${st.behind}`)))
             .child(div().flex_none().child(`${st.files.length} changed`)))))
-        .when(Boolean(st), (el) => el
+        .when(Boolean(st) && (this.tab === "status" || this.folder), (el) => el
           .child(this.button("git-fetch", "Fetch", t, (cx) => this.fetch(cx), { disabled: Boolean(this.busy) }))
           .child(this.button("git-pull", st.behind > 0 ? `Pull ↓${st.behind}` : "Pull", t, (cx) => this.pull(cx), { primary: st.behind > 0, disabled: Boolean(this.busy) || !st.upstream || st.gone }))))
       // A worktree without a space: what it holds, then its right-click menu's actions.
@@ -377,7 +367,8 @@ export class GitDialog extends View {
       .when(g === null, (el) => el.child(div().text_color(t.muted).child(this.error || "This space isn't in a git repository.")))
       .when(Boolean(st), (el) => el
         // A worktree keeps its branch: no Branches tab there, its Status only.
-        .child(this.folder ? div().text_size(11.5).text_color(t.muted).child("Status") : h_flex().gap(2).child(tab("status", "Status")).child(tab("branches", "Branches")))
+        // One view per dialog (Git status, or Switch branch), no tabs.
+        .when(this.tab === "status" || this.folder, (el) => el.child(div().text_size(11.5).text_color(t.muted).child(this.commits?.length || st.files.length ? "Uncommitted and unpushed" : "Status")))
         .child(this.confirm ? this.confirmView(t) : this.tab === "status" || this.folder
           ? v_flex().id("git-status").flex_1().min_h(0).overflow_y_scrollbar().child(this.statusView(t))
           : this.branchesView(t)))
@@ -387,6 +378,6 @@ export class GitDialog extends View {
       .child(h_flex().justify_end().gap(6).text_size(11).text_color(t.dim)
         .when(Boolean(this.folder && g), (el) => el.child(this.button("git-delete-wt", "Delete worktree…", t, () => { this.close(); openRemove({ path: g.top, main: g.main, on: this.on, branch: st?.branch ?? null }); }, { disabled: !g.linked, danger: true })).child(div().flex_1()))
         .when(Boolean(this.busy), (el) => el.child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
-        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch · esc close" : "esc close") : this.tab === "branches" ? "tab status · ↑↓ choose · ↵ switch · esc close" : "tab branches · esc close"));
+        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch · esc close" : "esc close") : this.tab === "branches" ? "↑↓ choose · ↵ switch · esc close" : "esc close"));
   }
 }
