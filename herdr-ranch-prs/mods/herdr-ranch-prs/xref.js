@@ -11,7 +11,7 @@
 //   prs:     { number, github }
 //   issues:  { key, site?, github?, url? } (a Jira or Linear key, or "#12" for a GitHub issue)
 
-import { shared, setShared, run, layout, panes, spaces, exec } from "herdr";
+import { shared, setShared, run, layout, panes, spaces, exec, window as appWindow } from "herdr";
 
 export const MODS = { history: "herdr-ranch-history", prs: "herdr-ranch-prs", issues: "herdr-ranch-issues" };
 const LABEL = { "herdr-ranch-history": "History", "herdr-ranch-prs": "PRs", "herdr-ranch-issues": "Issues" };
@@ -107,6 +107,24 @@ export function linkFor(main, on) {
 export function prefixesFor(link) {
   const list = [link?.jira?.key, link?.linear?.key].filter(Boolean);
   return list.length ? list : null;
+}
+
+// The Jira site for a repository's keys: its link's, else the one most spaces link to, or null.
+export function jiraSite(link) {
+  if (link?.jira?.site) return link.jira.site;
+  const counts = new Map();
+  for (const l of Object.values(shared("space-links") ?? {})) if (l?.jira?.site) counts.set(l.jira.site, (counts.get(l.jira.site) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+// A Jira key's page on a site, or null (no site, or not a Jira key: #12, a Linear key's site isn't Jira).
+export const jiraUrl = (site, key) => (site && /^[A-Z][A-Z0-9_]*-\d+$/.test(key ?? "") ? `https://${site}/browse/${key}` : null);
+
+// Opens a web page in the browser (as links.js openUrl, which History doesn't keep): only http(s).
+export function openWeb(url) {
+  if (!/^https?:\/\/[^\s]+$/i.test(url ?? "")) return;
+  const os = (() => { try { return appWindow().platform; } catch { return "macos"; } })();
+  const [cmd, args] = os === "windows" ? ["rundll32", ["url.dll,FileProtocolHandler", url]] : os === "linux" ? ["xdg-open", [url]] : ["open", [url]];
+  exec(cmd, args).catch(() => null);
 }
 
 // "owner/repo" from a GitHub pull request or issue URL, or null.

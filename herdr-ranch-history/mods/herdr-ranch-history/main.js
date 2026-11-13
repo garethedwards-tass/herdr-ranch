@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, focused, spaces, notify } from "herdr";
 import { repoOf, tip, log, show, search, me, one, remoteUrl, prsOf, LOG } from "./git.js";
-import { MODS, openIn, takeOpen, ticketKeys, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor } from "./xref.js";
+import { MODS, openIn, takeOpen, ticketKeys, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor, jiraSite, jiraUrl, openWeb } from "./xref.js";
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
 import { filesTab } from "./files-tab.js";
 import { highlightFiles } from "./highlight.js";
@@ -159,7 +159,9 @@ export default class History extends View {
     for (const n of prRefs(c.title)) pr(n);
     const text = `${c.title}\n${d.body ?? ""}`;
     for (const n of closingRefs(text)) if (!prs.has(n)) out.push({ id: `is-${n}`, label: `Issue #${n}`, issue: `#${n}` });
-    for (const key of ticketKeys(text, prefixesFor(linkFor(this.repo?.main, this.repo?.on)))) out.push({ id: `tk-${key}`, label: key, issue: key });
+    // A key opens in Issues, and on its Jira site too (not a Linear team's key).
+    const link = linkFor(this.repo?.main, this.repo?.on), site = jiraSite(link), linear = link?.linear?.key?.toUpperCase();
+    for (const key of ticketKeys(text, prefixesFor(link))) out.push({ id: `tk-${key}`, label: key, issue: key, jira: key.split("-")[0] === linear ? null : jiraUrl(site, key) });
     return out;
   }
   follow(l) {
@@ -380,7 +382,8 @@ export default class History extends View {
         .children(c.refs.map((r) => k.pill(r))))
       .when(links.length > 0, (e) => e.child(h_flex().gap(6).items_center().flex_wrap().text_size(fs.meta)
         .child(div().text_color(t.dim).child("Linked"))
-        .children(links.map((l) => k.button(`h-link-${l.id}`, l.label, () => this.follow(l))))));
+        .children(links.flatMap((l) => [k.button(`h-link-${l.id}`, l.label, () => this.follow(l)),
+          ...(l.jira ? [k.button(`h-jira-${l.id}`, "Jira ↗", () => openWeb(l.jira))] : [])]))));
     return v_flex().id("history-commit").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).gap(12)
       .child(card).children(filesTab([], t, k, this.diffProps(c.sha), 0))
       .child(h_flex().flex_none().gap(12).pt(4).text_size(fs.tiny).text_color(t.muted)

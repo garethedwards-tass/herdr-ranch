@@ -134,7 +134,11 @@ export function detail(pr, t, a) {
     k.section("Development", issues.length ? v_flex().gap(4).children(issues.map((x) => h_flex().id(x.id).gap(6).items_center().min_w(0).text_size(fs.meta)
         .when(Boolean(x.url || x.issue), (e) => e.cursor_pointer().hover((s) => s.text_color(t.accent)).on_click(() => (x.issue ? a.openIssue(x.issue) : a.openUrl(x.url))))
         .child(icon(x.kind, kindColor(x.kind, t), 13)).child(div().flex_none().text_color(t.dim).child(x.label))
-        .child(div().min_w(0).truncate().when(Boolean(x.done), (e) => e.line_through().text_color(t.muted)).child(x.title))))
+        .child(div().flex_1().min_w(0).truncate().when(Boolean(x.done), (e) => e.line_through().text_color(t.muted)).child(x.title))
+        // A Jira key opens in Issues; this opens it on Jira.
+        .when(Boolean(x.issue && x.id.startsWith("ji-") && x.url), (e) => e.child(div().id(`${x.id}-jira`).flex_none().px(5).rounded(4).text_size(fs.tiny).text_color(t.muted)
+          .hover((s) => s.bg(t.hover).text_color(t.accent)).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => { cx.stop_propagation(); a.openUrl(x.url); }).child("Jira ↗")))))
       : div().text_size(fs.meta).text_color(t.dim).child("No linked issue")),
     k.section("Changes", h_flex().gap(6).text_size(fs.meta).child(div().text_color(t.ansi2).child(`+${pr.additions}`)).child(div().text_color(t.ansi1).child(`−${pr.deletions}`))
       .when(pr.changedFiles != null, (e) => e.child(div().text_color(t.dim).child(`${pr.changedFiles} file${pr.changedFiles === 1 ? "" : "s"}`)))),

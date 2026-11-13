@@ -17,7 +17,8 @@ const dayLabel = (day) => {
 
 // `c`: { list (null while loading), total, error, open (the open commit), at (its index),
 // pick(sha, cx), back(cx), step(by, cx), retry(cx), copy(sha, cx), url(sha), openUrl, diff,
-// history (opens a sha in the History panel; null without a local checkout) }.
+// history (opens a sha in the History panel; null without a local checkout), jiraKeys(text)
+// ([{ key, url }] of the linked Jira project), openIssue({ key, site, url }) }.
 export function commitsTab(t, k, c) {
   if (c.error) return [h_flex().gap(8).items_center().text_size(fs.meta).text_color(t.ansi1).child(`Commits didn't load: ${c.error}`).child(k.button("commits-retry", "Retry", (cx) => c.retry(cx)))];
   if (!c.list) return [div().text_size(fs.meta).text_color(t.dim).child("Loading the commits…")];
@@ -60,5 +61,9 @@ function commitPage(t, k, c) {
     .child(h_flex().gap(6).items_center().text_size(fs.meta).text_color(t.muted)
       .child(div().font_semibold().text_color(t.foreground).child(x.author)).child(x.at ? `committed ${ago(x.at)} ago` : "")
       .when(Boolean(x.checks), (e) => e.child(icon(CHECK[x.checks], kindColor(CHECK[x.checks], t), 13))));
-  return [head, ...filesTab([], t, k, { ...c.diff, hideGithub: true }, 0)];
+  // The Jira keys the message names: each opens in Issues, or on Jira.
+  const keys = c.jiraKeys?.(`${x.title}\n${x.body ?? ""}`) ?? [];
+  const linked = keys.length ? h_flex().gap(6).items_center().flex_wrap().text_size(fs.meta).child(div().text_color(t.dim).child("Linked"))
+    .children(keys.flatMap((j) => [k.button(`commit-key-${j.key}`, j.key, () => c.openIssue({ key: j.key, url: j.url })), k.button(`commit-jira-${j.key}`, "Jira ↗", () => c.openUrl(j.url))])) : null;
+  return [linked ? head.child(linked) : head, ...filesTab([], t, k, { ...c.diff, hideGithub: true }, 0)];
 }
