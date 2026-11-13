@@ -1,0 +1,26 @@
+[package]
+name = "ranch-highlight"
+version = "0.5.0"
+edition = "2021"
+description = "Syntax highlighting for Herdr Ranch's diff views, with tree-sitter"
+license = "MIT"
+publish = false
+
+[[bin]]
+name = "ranch-highlight"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tree-sitter = "0.27.2"
+tree-sitter-cfml = { git = "https://github.com/cfmleditor/tree-sitter-cfml", rev = "24051c091c9c1a69b36914533aee7aa3286d5526", version = "0.26.44" }
+tree-sitter-css = "0.25.0"
+tree-sitter-highlight = "0.27.2"
+tree-sitter-html = "0.23.2"
+tree-sitter-javascript = "0.25.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
