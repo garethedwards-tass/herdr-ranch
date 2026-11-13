@@ -13,7 +13,7 @@ const FIELDS = `number title author { login } assignees(first: 20) { nodes { log
     checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }`;
 const LIST = (states, first) => `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
   pullRequests(states: ${states}, first: ${first}, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${FIELDS} } } } }`;
-const VIEW = "number,title,body,url,author,headRefName,headRefOid,baseRefName,isDraft,state,mergedAt,reviewDecision,mergeStateStatus,statusCheckRollup,comments,reviews,additions,deletions,changedFiles,createdAt,reviewRequests,latestReviews,assignees,labels,files,closingIssuesReferences,isCrossRepository";
+const VIEW = "number,title,body,url,author,headRefName,headRefOid,baseRefName,baseRefOid,isDraft,state,mergedAt,reviewDecision,mergeStateStatus,statusCheckRollup,comments,reviews,additions,deletions,changedFiles,createdAt,reviewRequests,latestReviews,assignees,labels,files,closingIssuesReferences,isCrossRepository";
 
 // where: { cwd, on, github }; `github` ("owner/repo") picks the repository, so the
 // folder only matters for which machine and sign-in runs gh.

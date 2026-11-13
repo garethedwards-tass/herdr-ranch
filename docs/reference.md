@@ -17,6 +17,7 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
   - `open`, `xdg-open` or `rundll32` for the browser buttons;
   - for Reviews: `node` (the `ranch-review` CLI), `herdr-app` and `hc` (opening the review, pasting into an agent), `osascript` (screenshots from the clipboard, macOS);
   - `sh` in the mod-buttons layout, to list the installed mods;
+  - `ranch-highlight` (this repository's `ranch-highlight/`, built by `install.sh` with `cargo`) for the diffs' colors: it reads only the text it's given, a file, or a git blob (`git show <rev>:<path>`) of a local checkout. The requests go through a file in `~/.config/herdr-app/data/herdr-ranch/highlight/`, deleted after each run;
   - History: `git` only (`rev-parse`, `for-each-ref`, `log`, `show`, `config user.name`), read only.
 - **Network:**
   - Jira: `https://<your-site>/rest/api/3` with your token;

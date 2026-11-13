@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Highlighting:** diffs in Pull requests (Files, Commits) and History are syntax highlighted by `ranch-highlight`, a small tree-sitter helper in Rust that `install.sh` builds when Rust is installed: CFML (with cfscript, `<cfquery>` SQL and embedded HTML, CSS and JS), JavaScript, TypeScript, TSX, JSON, HTML, CSS, SQL, Python, Java, C#, Go, Rust, PHP, Ruby, YAML, Bash and Markdown. Whole files are highlighted when the commits are in a local checkout, so a hunk inside a comment or a string colors right; otherwise the hunk lines are. Without the helper the diffs stay plain.
 - **Pull requests:** the **Files** tab shows each file's diff, as on GitHub's Files changed: **Unified** or **Split** (old left, new right; `S` switches), with line numbers and hunk headers. A click on a file opens or closes it, **Expand all** (`E`) opens them all, and **Viewed** folds a file away until the next push. Large diffs show their first 400 lines with **Show more**. Read through `gh`, nothing is written to GitHub.
 - **Pull requests:** a **Commits** tab (`4`) lists the commits by day with their checks. A click opens a commit's diff in the same view; `[` and `]` step to the older and newer commit, a click on a sha copies it.
 - **Pull requests:** a **Pushed** filter lists the open pull requests with a commit in the last 7 days, latest push first, each with the age of its last push.

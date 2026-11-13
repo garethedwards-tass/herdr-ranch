@@ -8,6 +8,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
 import { me, list, mentioned, hasGhStack, TRANSIENT, view, files, commits, commitFiles, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
 import { fileKey, FIRST_LINES, MORE_LINES } from "./diff.js";
+import { highlightFiles } from "./highlight.js";
 import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
@@ -475,9 +476,15 @@ export default class PullRequests extends View {
     const where = this.where, github = where.github, number = pr.number;
     if (this.tab === "commits") {
       const c = this.commitOpen();
-      return c ? { key: `${github}@${c.sha}`, load: () => commitFiles(c.sha, where), url: `https://github.com/${github}/commit/${c.sha}`, viewed: false } : null;
+      return c ? { key: `${github}@${c.sha}`, load: () => commitFiles(c.sha, where), url: `https://github.com/${github}/commit/${c.sha}`, viewed: false, git: this.localGit(`${c.sha}^`, c.sha) } : null;
     }
-    return { key: fileKey(github, number, pr.headRefOid, ""), load: () => files(number, where), url: `${pr.url}/files`, viewed: true };
+    return { key: fileKey(github, number, pr.headRefOid, ""), load: () => files(number, where), url: `${pr.url}/files`, viewed: true, git: this.localGit(pr.baseRefOid, pr.headRefOid) };
+  }
+  // Where the highlighter can read whole files: this computer's checkout of the repository (it
+  // may lack the commits; the highlighter then works from the hunks).
+  localGit(oldRev, newRev) {
+    const repo = this.where?.repo;
+    return repo?.main && !repo.on && oldRev && newRev ? { cwd: repo.main, oldRev, newRev } : null;
   }
   // Diffs load the first time they show (they can be large) and are kept, the last PAGES.
   loadDiffs(cx, again = false) {
@@ -501,6 +508,10 @@ export default class PullRequests extends View {
         }
       }
       try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
+      // Then the colors, when the highlighter is installed: the diff shows plain until they come.
+      if (got.files && await highlightFiles(got.files.filter((f) => !f.why), s.git).catch(() => false)) {
+        try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
+      }
     });
   }
   isViewed(k) { try { return localStorage.getItem(`viewed:${k}`) === "1"; } catch { return false; } }
