@@ -11,10 +11,10 @@ jobs:
       - name: The mods' copies of shared/ match
         run: |
           for f in shared/*.js; do
-            for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-reviews herdr-ranch-history; do
+            for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-reviews herdr-ranch-history herdr-ranch-spaces; do
               copy="$m/mods/$m/$(basename "$f")"
-              # xref.js lives in History, Pull requests and Issues; every other shared file in the three lists.
-              case "$(basename "$f"):$m" in xref.js:herdr-ranch-reviews) continue ;; xref.js:*) ;; *:herdr-ranch-history) continue ;; esac
+              # xref.js lives in History, Pull requests and Issues; every other shared file in Issues, Pull requests, Reviews and Spaces.
+              case "$(basename "$f"):$m" in xref.js:herdr-ranch-reviews|xref.js:herdr-ranch-spaces) continue ;; xref.js:*) ;; *:herdr-ranch-history) continue ;; esac
               cmp -s "$f" "$copy" || { echo "stale copy: $copy"; exit 1; }
             done
           done
@@ -57,7 +57,7 @@ jobs:
           ./install.sh
           ./install.sh --layout
 
-          for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-reviews; do
+          for m in herdr-ranch-issues herdr-ranch-prs herdr-ranch-reviews herdr-ranch-spaces herdr-ranch-agents; do
             [ -L "$HERDR_APP_HOME/mods/$m" ] || { echo "missing link: $m"; exit 1; }
           done
           [ -d "$HERDR_APP_HOME/mods/mod-buttons-bar" ] || { echo "missing mod-buttons-bar"; exit 1; }

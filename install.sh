@@ -74,9 +74,9 @@ done
 # each keeps a copy): warn about a copy that differs from its source.
 for src in "$repo"/shared/*.js; do
   file=$(basename "$src")
-  for mod in herdr-ranch-prs herdr-ranch-issues herdr-ranch-reviews herdr-ranch-history; do
-    # xref.js lives in History, Pull requests and Issues; every other shared file in the three lists.
-    case "$file:$mod" in xref.js:herdr-ranch-reviews) continue ;; xref.js:*) ;; *:herdr-ranch-history) continue ;; esac
+  for mod in herdr-ranch-prs herdr-ranch-issues herdr-ranch-reviews herdr-ranch-history herdr-ranch-spaces; do
+    # xref.js lives in History, Pull requests and Issues; every other shared file in Issues, Pull requests, Reviews and Spaces.
+    case "$file:$mod" in xref.js:herdr-ranch-reviews|xref.js:herdr-ranch-spaces) continue ;; xref.js:*) ;; *:herdr-ranch-history) continue ;; esac
     cmp -s "$src" "$repo/$mod/mods/$mod/$file" || echo "stale $mod/mods/$mod/$file: copy shared/$file over it"
   done
 done
