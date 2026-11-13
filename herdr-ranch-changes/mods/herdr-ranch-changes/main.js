@@ -150,7 +150,7 @@ export default class Changes extends View {
       .when(files.length > 0, (e) => e.child(div().flex_none().text_size(fs.meta).text_color(t.ansi2).child(`+${add}`)).child(div().flex_none().text_size(fs.meta).text_color(t.ansi1).child(`−${del}`)))
       .child(div().id("changes-refresh").size(24).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer().text_color(t.muted)
         .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.refresh(cx))
-        .child(this.loading ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(15)));
+        .child(this.loading ? svg(SPINNER).size(14).spin(900) : svg(REFRESH_ICON).size(13)));
     const ready = Boolean(this.message.trim()) && files.length > 0 && !this.busy;
     const box = v_flex().flex_none().gap(4).px(10).py(8).border_t_1().border_color(t.border)
       .when(Boolean(this.note), (e) => e.child(div().text_size(fs.meta).text_color(t.ansi1).child(this.note)))
