@@ -80,7 +80,7 @@ GitHub issues work the same way as Jira ones:
 - **Grouped by what they wait on:** review requested, yours to fix, ready to merge, open, recently closed.
 - **At a glance:** a state icon (open, draft, merged), the checks as one icon and a count, the diff size, the review verdict and the author.
 - **Filters:** Assigned, Created, Mentioned, Review requests and Recent.
-- **A page per pull request, like GitHub's:** tabs for the conversation, checks and changed files; the conversation ends in a merge box (checks, review required, mergeable); reviewers with their verdict, and the issues it closes or names (Jira keys too) in the sidebar. ⌘↵ reviews it with an agent, B copies the branch, 1 2 3 switch tabs.
+- **A page per pull request, like GitHub's:** tabs for the conversation, checks and changed files with their diffs, unified or split (S), with a Viewed tick per file; the conversation ends in a merge box (checks, review required, mergeable); reviewers with their verdict, and the issues it closes or names (Jira keys too) in the sidebar. ⌘↵ reviews it with an agent, B copies the branch, 1 2 3 switch tabs.
 - **Agent review:** starts an agent that checks the pull request out, builds, tests and reports, without writing to GitHub.
 
 ## Reviews
