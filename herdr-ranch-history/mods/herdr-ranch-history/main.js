@@ -2,11 +2,15 @@
 // folder, on its space's machine), newest first, with branch and tag names. A click opens a
 // commit: its message and its files as diffs, unified or split. The mod-buttons tab bar gives
 // it a History button (mod.json `button`). Read only: it runs `git log` and `git show`.
+// A commit links to what it names (xref.js): the pull requests that contain it and the ticket
+// keys in its message open in Pull requests and Issues. Those two open commits here, and search
+// here for a ticket key.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { theme, focused, spaces } from "herdr";
-import { repoOf, tip, log, show, search, me, LOG } from "./git.js";
+import { theme, focused, spaces, notify } from "herdr";
+import { repoOf, tip, log, show, search, me, one, remoteUrl, prsOf, LOG } from "./git.js";
+import { MODS, openIn, takeOpen, ticketKeys, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor } from "./xref.js";
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
 import { filesTab } from "./files-tab.js";
 import { highlightFiles } from "./highlight.js";
@@ -45,6 +49,9 @@ export default class History extends View {
     this.open = null; this.detail = new Map(); this.fileOpen = new Map(); this.fileLimit = new Map();
     this.cursor = 0; this.query = ""; this.filter = null; this.width = Number(load("width", "0")) || 0; this.keys = false;
     this.handle = cx.focus_handle();
+    // Requests from Pull requests and Issues (xref.js): the last one handled, and a counter that
+    // stops a refresh already running from putting back the repository a request moved away from.
+    this.xseen = null; this.repoGen = 0;
     // Typing filters the loaded commits at once; a pause searches the whole history with git.
     this.found = null; this.searching = false; this.searchSeq = 0;
     this.search = InputState.new({ placeholder: "Search commits" });
@@ -72,11 +79,13 @@ export default class History extends View {
     const w = this.where();
     const key = w ? `${w.on ?? ""}|${w.cwd}` : null;
     this.loading = true;
+    // A request that moved to another repository meanwhile (useRepo) owns `loading` now.
+    const gen = this.repoGen, moved = () => gen !== this.repoGen;
     cx.spawn(async (cx) => {
       try {
         let repo = this.repo;
         // No focused folder (the panel itself has the keyboard): stay on the last repository.
-        if (key && key !== this.whereKey) { repo = await repoOf(w.cwd, w.on); this.whereKey = key; }
+        if (key && key !== this.whereKey) { repo = await repoOf(w.cwd, w.on); if (moved()) return; this.whereKey = key; }
         const changed = repo?.top !== this.repo?.top || repo?.on !== this.repo?.on;
         if (changed) { this.repo = repo; this.commits = null; this.open = null; this.cursor = 0; this.tip = null; this.error = null; }
         if (!repo) { this.loading = false; cx.notify(); return; }
@@ -84,14 +93,78 @@ export default class History extends View {
         if (!force && now === this.tip && this.commits) { this.loading = false; return; }
         this.tip = now;
         const fresh = await repoOf(repo.top, repo.on);
+        if (moved()) return;
         if (fresh) this.repo = fresh;
         if (changed || this.me === undefined) this.me = await me(this.repo);
-        this.commits = await log(this.repo, this.scope === "all");
+        // The GitHub repository, for the pull requests a commit is in: Link space's, else origin's.
+        if (changed || this.github === undefined) this.github = linkFor(this.repo.main, this.repo.on)?.github || githubFromRemote(await remoteUrl(this.repo)) || null;
+        const commits = await log(this.repo, this.scope === "all");
+        if (moved()) return;
+        this.commits = commits;
         this.error = null;
-      } catch (e) { this.error = String(e?.message ?? e); }
+      } catch (e) { if (moved()) return; this.error = String(e?.message ?? e); }
       this.loading = false;
       cx.notify();
     });
+  }
+
+  // Another mod asks to show a commit or a search (xref.js), in the repository it names.
+  openRequest(w, cx) {
+    cx.spawn(async (cx) => {
+      let repo = this.repo;
+      if (w.cwd && !(repo && (repo.main === w.cwd || repo.top === w.cwd) && (repo.on ?? null) === (w.on ?? null))) {
+        repo = await repoOf(w.cwd, w.on ?? null);
+        if (!repo) { notify({ title: "History can't read that repository", body: w.cwd, level: "info", timeout: 5000 }); return; }
+        this.useRepo(repo, cx);
+        // Now, for the commit opened below: the refresh that also sets it is still running.
+        this.github = linkFor(repo.main, repo.on)?.github || githubFromRemote(await remoteUrl(repo)) || null;
+      }
+      if (!repo) return;
+      if (w.search) {
+        this.open = null; this.filter = null; this.cursor = 0; this.found = null; this.query = w.search;
+        try { this.search.set_value(w.search); } catch { /* the box shows it on the next change */ }
+        this.query = w.search; this.runSearch(w.search, ++this.searchSeq, cx);
+      }
+      if (w.sha) {
+        let c = this.commits?.find((x) => x.sha.startsWith(w.sha)) ?? this.extra?.get(w.sha);
+        if (!c) {
+          try { c = await one(repo, w.sha); } catch {
+            notify({ title: `Commit ${w.sha.slice(0, 7)} isn't in this checkout`, body: "Fetch it (git fetch), then try again.", level: "info", timeout: 5000 });
+            cx.notify(); return;
+          }
+        }
+        (this.extra ??= new Map()).set(c.sha, c);
+        this.pick(c, cx);
+      }
+      cx.notify();
+    });
+  }
+
+  // Shows another repository than the focused folder's, until the focus moves to another folder.
+  useRepo(repo, cx) {
+    const w = this.where();
+    if (w) this.whereKey = `${w.on ?? ""}|${w.cwd}`;
+    this.repoGen++; this.loading = false;
+    this.repo = repo; this.commits = null; this.open = null; this.cursor = 0; this.tip = null; this.error = null; this.me = undefined; this.github = undefined;
+    this.refresh(cx, true);
+  }
+
+  // What a commit links to: the pull requests GitHub says contain it and the one its title names
+  // (a merge or squash), the issues it closes ("fixes #4"), and ticket keys in its message
+  // (only the linked project's keys when Link space names one).
+  linked(c, d) {
+    const out = [], prs = new Set();
+    const pr = (n, title) => { if (prs.has(n)) return; prs.add(n); out.push({ id: `pr-${n}`, label: `PR #${n}${title ? ` · ${title.length > 40 ? `${title.slice(0, 40)}…` : title}` : ""}`, pr: n }); };
+    for (const p of d.prs ?? []) pr(p.number, p.title);
+    for (const n of prRefs(c.title)) pr(n);
+    const text = `${c.title}\n${d.body ?? ""}`;
+    for (const n of closingRefs(text)) if (!prs.has(n)) out.push({ id: `is-${n}`, label: `Issue #${n}`, issue: `#${n}` });
+    for (const key of ticketKeys(text, prefixesFor(linkFor(this.repo?.main, this.repo?.on)))) out.push({ id: `tk-${key}`, label: key, issue: key });
+    return out;
+  }
+  follow(l) {
+    if (l.pr) openIn(MODS.prs, { number: l.pr, github: this.github });
+    else openIn(MODS.issues, { key: l.issue, github: this.github });
   }
 
   runSearch(q, seq, cx) {
@@ -130,8 +203,10 @@ export default class History extends View {
     if (at >= 0) this.cursor = at;
     if (!this.detail.has(c.sha)) {
       this.detail.set(c.sha, { files: null, body: "", error: null });
-      const repo = this.repo;
+      const repo = this.repo, github = this.github;
       cx.spawn(async (cx) => {
+        // The pull requests that contain it, asked of GitHub alongside.
+        const prs = github ? prsOf(repo, github, c.sha) : Promise.resolve([]);
         let got;
         try { got = { ...(await show(repo, c.sha)), error: null }; } catch (e) { got = { files: null, body: "", error: String(e?.message ?? e) }; }
         this.detail.set(c.sha, got);
@@ -146,6 +221,8 @@ export default class History extends View {
           }
         }
         cx.notify();
+        got.prs = await prs;
+        if (got.prs.length) cx.notify();
         // Then the colors: whole files from this repository (a merge against its first parent).
         const git = repo.on ? null : { cwd: repo.top, oldRev: `${c.sha}^`, newRev: c.sha };
         if (got.files && await highlightFiles(got.files.filter((f) => !f.why), git).catch(() => false)) cx.notify();
@@ -205,8 +282,10 @@ export default class History extends View {
     }
   }
 
-  render() {
+  render(cx) {
     readSizes();
+    const req = takeOpen(MODS.history, this.xseen);
+    if (req) { this.xseen = req.seq; try { cx.timer.after(0, (cx) => this.openRequest(req.what ?? {}, cx)); } catch { /* the next render */ this.xseen = null; } }
     const t = theme(), k = kit(t), wide = this.width >= WIDE;
     const root = v_flex().id("history-root").size_full().min_h(0).bg(t.background).text_size(fs.body).text_color(t.foreground)
       .on_size_change((size, cx) => { const w = Math.round(size.width); if (w !== this.width) { this.width = w; save("width", String(w)); cx.notify(); } })
@@ -285,6 +364,7 @@ export default class History extends View {
     const c = this.commits?.find((x) => x.sha === this.open) ?? this.extra?.get(this.open);
     if (!c) return div().p(14).text_color(t.dim).child("This commit is no longer in the list.");
     const d = this.detail.get(c.sha) ?? {}, list = this.shown(), at = list.findIndex((x) => x.sha === c.sha);
+    const links = this.linked(c, d);
     const card = v_flex().gap(6).px(12).py(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
       .child(h_flex().gap(6).items_center().text_size(fs.meta)
         .child(k.button("h-back", "← History", (cx) => this.back(cx), { hint: "Esc" }))
@@ -297,7 +377,10 @@ export default class History extends View {
       .child(h_flex().gap(6).items_center().flex_wrap().text_size(fs.meta).text_color(t.muted)
         .child(div().font_semibold().text_color(t.foreground).child(c.author)).child(`committed ${ago(c.at)} ago`)
         .child(div().font_family(MONO).text_color(t.accent).child(c.short))
-        .children(c.refs.map((r) => k.pill(r))));
+        .children(c.refs.map((r) => k.pill(r))))
+      .when(links.length > 0, (e) => e.child(h_flex().gap(6).items_center().flex_wrap().text_size(fs.meta)
+        .child(div().text_color(t.dim).child("Linked"))
+        .children(links.map((l) => k.button(`h-link-${l.id}`, l.label, () => this.follow(l))))));
     return v_flex().id("history-commit").flex_1().min_h(0).overflow_y_scrollbar().px(12).py(10).gap(12)
       .child(card).children(filesTab([], t, k, this.diffProps(c.sha), 0))
       .child(h_flex().flex_none().gap(12).pt(4).text_size(fs.tiny).text_color(t.muted)

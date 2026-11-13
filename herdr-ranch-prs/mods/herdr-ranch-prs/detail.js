@@ -10,6 +10,7 @@ import { fs, icon, kindColor, liveAgent, AGENT_STATUS, imagesAsLinks, openUrl } 
 import { kit, pageLayout } from "./page-kit.js";
 import { filesTab as filesView } from "./files-tab.js";
 import { commitsTab } from "./commits-tab.js";
+import { repoOfUrl, sameRepo } from "./xref.js";
 
 const VERDICT = { APPROVED: ["approved", "check", "ansi2"], CHANGES_REQUESTED: ["changes requested", "x", "ansi1"], COMMENTED: ["commented", "comment", "muted"], DISMISSED: ["dismissed", "x", "dim"], REQUESTED: ["requested", "pending", "ansi3"] };
 const KEY = /(?<![A-Za-z0-9_])[A-Z][A-Z0-9_]{1,19}-\d+(?![0-9])/g;
@@ -44,7 +45,8 @@ export function prepare(pr) {
 
 // `pr` is a prepared page, or the list's row (`loading: true`) until the page arrives: the
 // header shows at once and the rest says it is loading. `a`: { error, nav, open, review,
-// copyBranch, tab, pickTab, wide, login, jira (site), jiraIssues, keys (footer), diff (the
+// copyBranch, tab, pickTab, wide, login, jira (site), jiraIssues, keys (footer), openIssue (opens
+// an issue in Issues: { key, site?, github?, url } of xref.js), diff (the
 // Files tab's state and actions, see files-tab.js), commits (the Commits tab's, see commits-tab.js) }.
 export function detail(pr, t, a) {
   const k = kit(t), loading = Boolean(pr.loading);
@@ -107,11 +109,16 @@ export function detail(pr, t, a) {
 
   const people = (logins) => (logins?.length ? v_flex().gap(5).children(logins.map((l) => k.person(l))) : div().text_size(fs.meta).text_color(t.dim).child("Nobody"));
   const issues = [
-    ...(pr.issues ?? []).map((i) => ({ id: `gi-${i.number}`, label: `#${i.number}`, title: i.repo && i.repo !== a.github ? i.repo : "", url: i.url, kind: "issue" })),
+    // An issue of this repository opens in Issues; one of another repository on GitHub.
+    ...(pr.issues ?? []).map((i) => {
+      const repo = i.repo ?? repoOfUrl(i.url), here = !repo || sameRepo(repo, a.github);
+      return { id: `gi-${i.number}`, label: `#${i.number}`, title: here ? "" : repo, url: i.url, kind: "issue", issue: here && a.openIssue ? { key: `#${i.number}`, github: a.github, url: i.url } : null };
+    }),
     // Only keys of the space's linked Jira project: "UTF-8" or "SHA-256" in a title aren't issues.
     ...(pr.keys ?? []).filter((key) => a.jiraKey && key.startsWith(`${a.jiraKey}-`)).map((key) => {
       const j = a.jiraIssues?.[key];
-      return { id: `ji-${key}`, label: key, title: j?.summary ?? "", url: a.jira ? `https://${a.jira}/browse/${key}` : null, kind: j?.kind ?? "issue", done: j?.done };
+      const url = a.jira ? `https://${a.jira}/browse/${key}` : null;
+      return { id: `ji-${key}`, label: key, title: j?.summary ?? "", url, kind: j?.kind ?? "issue", done: j?.done, issue: a.openIssue ? { key, site: a.jira, url } : null };
     }),
   ];
   const lead = liveAgent(a.agents);
@@ -125,7 +132,7 @@ export function detail(pr, t, a) {
     k.section("Assignees", people(pr.assignees)),
     (pr.labels ?? []).length > 0 && k.section("Labels", h_flex().flex_wrap().gap(4).children(pr.labels.map((l) => k.label(l)))),
     k.section("Development", issues.length ? v_flex().gap(4).children(issues.map((x) => h_flex().id(x.id).gap(6).items_center().min_w(0).text_size(fs.meta)
-        .when(Boolean(x.url), (e) => e.cursor_pointer().hover((s) => s.text_color(t.accent)).on_click(() => a.openUrl(x.url)))
+        .when(Boolean(x.url || x.issue), (e) => e.cursor_pointer().hover((s) => s.text_color(t.accent)).on_click(() => (x.issue ? a.openIssue(x.issue) : a.openUrl(x.url))))
         .child(icon(x.kind, kindColor(x.kind, t), 13)).child(div().flex_none().text_color(t.dim).child(x.label))
         .child(div().min_w(0).truncate().when(Boolean(x.done), (e) => e.line_through().text_color(t.muted)).child(x.title))))
       : div().text_size(fs.meta).text_color(t.dim).child("No linked issue")),

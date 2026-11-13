@@ -9,6 +9,7 @@ The git commit history of the repository you're working in, in a side panel next
 - While a search is on, a line under the header says what's happening: "Searching the whole history…", "n in the whole history", or the error (`ansi1`).
 - **Footer:** ↑ ↓ move, ↵ open, Esc clear (while searching).
 - **A commit:** a `surface` card with **← History** (Esc), ↑ ↓ for the newer and older commit, **Copy sha**, the title, the message body (code font, cut at 1500 characters), "author committed 2d ago", the sha and its refs; under it the commit's files as the Pull requests Files tab shows them (`files-tab.js`): Unified | Split (`S`), Expand all (`E`), a card per file with its diff. No Viewed and no GitHub link.
+- **Linked** (in the commit card, when there is any): a button per pull request that contains the commit (`PR #12 · title`), per issue it closes (`Issue #4`) and per ticket key in its message (`TASS-123`); a click opens it in Pull requests or Issues.
 
 ## How it behaves
 
@@ -18,7 +19,9 @@ The git commit history of the repository you're working in, in a side panel next
 - **Filters** (on top of the search): Mine (author is `git config user.name`), Merges, Recent (the last 7 days).
 - **A commit:** `git show -s --format=%B` for the message, and `git show --format= --patch --no-color --no-ext-diff -M --first-parent --diff-merges=first-parent` for its files (a merge against its first parent, as GitHub shows it), parsed into the Files tab's shape (`parseShow`, then `prepareFile` from `diff.js`). The last 30 commits are kept. Files open by themselves up to 800 lines; Expand all opens up to 2500.
 - **Keys:** list: ↑ ↓ move the highlight, ↵ opens, Esc clears the search. A commit: ↑ ↓ or `[` `]` newer and older, `S` unified or split, `E` expand or collapse all, Esc or ⌫ back.
-- Read only: nothing but `git rev-parse`, `git for-each-ref`, `git log`, `git show` and `git config user.name`.
+- **Linked** (`xref.js`, shared with Pull requests and Issues): the pull requests from `gh api repos/<github>/commits/<sha>/pulls` (the GitHub repository is Link space's, else the `origin` remote's) and from the title (`Merge pull request #n`, `(#n)` at the end); closing refs (`fixes|closes|resolves #n`); ticket keys, only the linked Jira or Linear prefix when Link space names one (any case), else any `KEY-123` except words like UTF, SHA, ISO, RFC. A click writes shared `ranch-open` and shows that mod (its side panel, its tab, else a new tab).
+- **Opened from elsewhere:** Pull requests and Issues ask for `{ sha }` or `{ search }` with `{ cwd, on }`. History shows that repository (until the focus moves to another folder), opens the commit (`git log -1 <sha>`; a toast says to fetch when the checkout lacks it) or runs the search.
+- Read only: nothing but `git rev-parse`, `git for-each-ref`, `git log`, `git show`, `git remote get-url origin`, `git config user.name`, and `gh api` for the pull requests of a commit.
 
 ## Built from
 

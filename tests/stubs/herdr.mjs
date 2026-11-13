@@ -14,6 +14,9 @@ globalThis.fetch = async (url, init = {}) => {
   return state.fetch(url, init);
 };
 export const spaces = () => state.spaces;
+export const layout = () => state.layout ?? null;
+export const panes = () => state.panes ?? [];
+export const focused = () => state.focused ?? null;
 export const shared = (k) => state.shared[k];
 export const setShared = (k, v) => { state.shared[k] = v; };
 export const readTextFile = async (p) => state.files[p] ?? null;

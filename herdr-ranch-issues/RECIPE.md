@@ -105,3 +105,8 @@ One template per mode (segmented), a monospace textarea, the placeholders as chi
 - **Assigned**, **Created**, **Mentioned** and **Recent** narrow the list; **All** shows everything.
 - **Link space…** opens the dialog and saves a link; **Start agent** opens the dialog with the branch and prompt filled in and starts the agent in a new worktree space.
 - With 500 issues, the list and page redraw without the "interrupted" banner.
+
+
+## Linked
+
+Through `xref.js` (shared with History and Pull requests): History and Pull requests open an issue here by key (`TASS-12`, a Linear key, or `#12`); one not in the list is made from the key and the space's projects. The page's **Commits** section lists up to 8 of the newest 20 commits on any branch whose message names the key as a whole word (`git log --all -i -E --grep`), each opening in History, and **Search History**. Development's pull requests of this repository open in Pull requests.
