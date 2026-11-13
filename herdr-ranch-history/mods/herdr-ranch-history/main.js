@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, focused, spaces, notify } from "herdr";
 import { repoOf, tip, log, show, search, me, one, remoteUrl, prsOf, LOG } from "./git.js";
-import { MODS, openIn, takeOpen, ticketKeys, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor, jiraSite, jiraUrl, openWeb } from "./xref.js";
+import { MODS, openIn, takeOpen, ticketKeys, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor, jiraSiteFor, jiraUrl, openWeb } from "./xref.js";
 import { FIRST_LINES, MORE_LINES } from "./diff.js";
 import { filesTab } from "./files-tab.js";
 import { highlightFiles } from "./highlight.js";
@@ -110,14 +110,19 @@ export default class History extends View {
 
   // Another mod asks to show a commit or a search (xref.js), in the repository it names.
   openRequest(w, cx) {
+    // A later request (or another repository) supersedes this one after any await.
+    const gen = this.reqGen = (this.reqGen ?? 0) + 1, stale = () => gen !== this.reqGen;
     cx.spawn(async (cx) => {
       let repo = this.repo;
       if (w.cwd && !(repo && (repo.main === w.cwd || repo.top === w.cwd) && (repo.on ?? null) === (w.on ?? null))) {
         repo = await repoOf(w.cwd, w.on ?? null);
+        if (stale()) return;
         if (!repo) { notify({ title: "History can't read that repository", body: w.cwd, level: "info", timeout: 5000 }); return; }
         this.useRepo(repo, cx);
         // Now, for the commit opened below: the refresh that also sets it is still running.
-        this.github = linkFor(repo.main, repo.on)?.github || githubFromRemote(await remoteUrl(repo)) || null;
+        const github = linkFor(repo.main, repo.on)?.github || githubFromRemote(await remoteUrl(repo)) || null;
+        if (stale() || this.repo !== repo) return;
+        this.github = github;
       }
       if (!repo) return;
       if (w.search) {
@@ -129,10 +134,12 @@ export default class History extends View {
         let c = this.commits?.find((x) => x.sha.startsWith(w.sha)) ?? this.extra?.get(w.sha);
         if (!c) {
           try { c = await one(repo, w.sha); } catch {
+            if (stale()) return;
             notify({ title: `Commit ${w.sha.slice(0, 7)} isn't in this checkout`, body: "Fetch it (git fetch), then try again.", level: "info", timeout: 5000 });
             cx.notify(); return;
           }
         }
+        if (stale() || this.repo !== repo) return;
         (this.extra ??= new Map()).set(c.sha, c);
         this.pick(c, cx);
       }
@@ -146,6 +153,9 @@ export default class History extends View {
     if (w) this.whereKey = `${w.on ?? ""}|${w.cwd}`;
     this.repoGen++; this.loading = false;
     this.repo = repo; this.commits = null; this.open = null; this.cursor = 0; this.tip = null; this.error = null; this.me = undefined; this.github = undefined;
+    // The old repository's search and its results don't belong here.
+    this.query = ""; this.found = null; this.searchSeq++; this.extra = new Map();
+    try { this.search.set_value(""); } catch { /* cleared on the next change */ }
     this.refresh(cx, true);
   }
 
@@ -160,13 +170,13 @@ export default class History extends View {
     const text = `${c.title}\n${d.body ?? ""}`;
     for (const n of closingRefs(text)) if (!prs.has(n)) out.push({ id: `is-${n}`, label: `Issue #${n}`, issue: `#${n}` });
     // A key opens in Issues, and on its Jira site too (not a Linear team's key).
-    const link = linkFor(this.repo?.main, this.repo?.on), site = jiraSite(link), linear = link?.linear?.key?.toUpperCase();
-    for (const key of ticketKeys(text, prefixesFor(link))) out.push({ id: `tk-${key}`, label: key, issue: key, jira: key.split("-")[0] === linear ? null : jiraUrl(site, key) });
+    const link = linkFor(this.repo?.main, this.repo?.on);
+    for (const key of ticketKeys(text, prefixesFor(link))) { const site = jiraSiteFor(key, link); out.push({ id: `tk-${key}`, label: key, issue: key, site, jira: jiraUrl(site, key) }); }
     return out;
   }
   follow(l) {
     if (l.pr) openIn(MODS.prs, { number: l.pr, github: this.github });
-    else openIn(MODS.issues, { key: l.issue, github: this.github });
+    else openIn(MODS.issues, { key: l.issue, github: this.github, site: l.site ?? undefined, url: l.jira ?? undefined });
   }
 
   runSearch(q, seq, cx) {
