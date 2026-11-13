@@ -3,8 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
-import { ticketKeys, jiraSite, jiraUrl, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor, repoOfUrl, sameRepo, takeOpen, openIn, reveal, mentionPattern, mentionArgs, commitsMentioning, MODS } from "../shared/xref.js";
-import { repoOf, one, prsOf } from "../herdr-ranch-history/mods/herdr-ranch-history/git.js";
+import { ticketKeys, jiraSite, jiraSiteFor, jiraUrl, prRefs, closingRefs, githubFromRemote, linkFor, prefixesFor, repoOfUrl, sameRepo, takeOpen, openIn, reveal, mentionPattern, mentionArgs, commitsMentioning, MODS } from "../shared/xref.js";
+import { repoOf, one, prsOf, mainOf } from "../herdr-ranch-history/mods/herdr-ranch-history/git.js";
 
 const US = "\x1f", RS = "\x1e";
 
@@ -49,8 +49,11 @@ test("takeOpen: a fresh request for this mod, once", () => {
   state.shared["ranch-open"] = { to: MODS.prs, what: { number: 3 }, seq: "s1", at: Date.now() };
   assert.equal(takeOpen(MODS.issues, null), null);
   assert.equal(takeOpen(MODS.prs, null).what.number, 3);
-  assert.equal(takeOpen(MODS.prs, "s1"), null);
-  state.shared["ranch-open"].at = Date.now() - 60000;
+  // Taken: a second copy (the panel and a tab) doesn't open it again.
+  assert.equal(takeOpen(MODS.prs, null), null);
+  state.shared["ranch-open"] = { to: MODS.prs, what: { number: 4 }, seq: "s2", at: Date.now() };
+  assert.equal(takeOpen(MODS.prs, "s2"), null);
+  state.shared["ranch-open"] = { to: MODS.prs, what: { number: 5 }, seq: "s3", at: Date.now() - 60000 };
   assert.equal(takeOpen(MODS.prs, null), null);
 });
 
@@ -90,6 +93,10 @@ test("commitsMentioning: a whole-word grep on every branch, parsed", async () =>
 });
 
 test("History: repoOf finds the main checkout of a worktree; one and prsOf", async () => {
+  assert.equal(mainOf(".git", "/r"), "/r");
+  assert.equal(mainOf("../../.git", "/r/src/lib"), "/r");
+  assert.equal(mainOf("/r/.git", "/w/feat"), "/r");
+  assert.equal(mainOf("/srv/bare.git", "/srv"), "");
   state.exec = (cmd, args) => (args[0] === "rev-parse" ? { code: 0, stdout: "/w/feat\nfeat\n/r/.git\n", stderr: "" } : null);
   assert.deepEqual(await repoOf("/w/feat", null), { top: "/w/feat", branch: "feat", main: "/r", on: null });
   state.exec = (cmd, args) => (args[0] === "log" ? { code: 0, stdout: `${"b".repeat(40)}${US}bbbbbbb${US}Ann${US}2026-11-12T10:00:00+10:00${US}p1${US}${US}Fix (#5)${RS}`, stderr: "" } : null);
@@ -110,4 +117,15 @@ test("jiraSite and jiraUrl: the link's site, else the most linked one; only Jira
   assert.equal(jiraUrl(null, "TASS-12"), null);
   state.shared["space-links"] = {};
   assert.equal(jiraSite(null), null);
+});
+
+test("prefixesFor and jiraSiteFor: unlinked repositories use what other spaces link", () => {
+  state.shared["space-links"] = { a: { jira: { site: "acme.atlassian.net", key: "TASS" } }, b: { linear: { key: "ENG" } } };
+  assert.deepEqual(prefixesFor(null), ["TASS", "ENG"]);
+  assert.deepEqual(ticketKeys("GPT-4 and TASS-3 and ENG-9", prefixesFor(null)), ["TASS-3", "ENG-9"]);
+  assert.equal(jiraSiteFor("TASS-3", null), "acme.atlassian.net");
+  assert.equal(jiraSiteFor("ENG-9", null), null);
+  assert.equal(jiraSiteFor("OPS-1", { jira: { site: "mine.atlassian.net", key: "OPS" } }), "mine.atlassian.net");
+  state.shared["space-links"] = {};
+  assert.equal(prefixesFor(null), null);
 });

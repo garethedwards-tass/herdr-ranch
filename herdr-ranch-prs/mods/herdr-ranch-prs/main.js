@@ -15,7 +15,7 @@ import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
 import { kit, PAGE_WIDE } from "./page-kit.js";
-import { MODS, openIn, takeOpen, sameRepo, ticketKeys, jiraUrl } from "./xref.js";
+import { MODS, openIn, takeOpen, sameRepo, ticketKeys, jiraUrl, prefixesFor } from "./xref.js";
 import { LinkDialog } from "./link-dialog.js";
 import { AgentDialog, PromptsDialog } from "./agent-dialog.js";
 import { context, activeSpace, openLinkDialog, openSettings, settingsMenu, OPENS, PAGE, asSplit, pageMode, openPageDialog, pageDialog, splitView, drawn, openAgentDialog, writeIcons, icon, issueKind as issueKindOf, kindColor, avatar, segmented, fs, readSizes, openUrl, agentSpaces, agentChip, mostUrgent, liveAgent, AGENT_STATUS, goToSpace, migrateSettings, loadAvatars, avatarPics } from "./links.js";
@@ -623,7 +623,8 @@ export default class PullRequests extends View {
       // History needs this repository checked out here or on the space's machine.
       history: this.where?.repo?.main ? (sha) => this.openOther(MODS.history, { sha, cwd: this.where.repo.main, on: this.where.on ?? null }) : null,
       // The Jira keys a commit message names (the linked project's), each { key, url }.
-      jiraKeys: (text) => (this.where?.jira ? ticketKeys(text, this.where.jiraKey ? [this.where.jiraKey] : null).map((key) => ({ key, url: jiraUrl(this.where.jira, key) })) : []),
+      // Without a linked project key, only prefixes some space links (else GPT-4 would be a ticket).
+      jiraKeys: (text) => { const pre = this.where?.jiraKey ? [this.where.jiraKey] : prefixesFor(null); return this.where?.jira && pre ? ticketKeys(text, pre).map((key) => ({ key, url: jiraUrl(this.where.jira, key) })) : []; },
       openIssue: (what) => this.openOther(MODS.issues, what),
     };
   }

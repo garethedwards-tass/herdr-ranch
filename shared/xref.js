@@ -22,10 +22,14 @@ export function openIn(mod, what) {
   reveal(mod);
 }
 
-// The request for `mod` that this copy hasn't handled yet (`seen`: the last seq it handled), or null.
+// The request for `mod` that no copy has handled yet, or null. The first copy to see it takes it
+// (marked `taken`), so a mod shown in the side panel and in a tab opens it once. `seen` (the last
+// seq this copy handled) guards against the shared write arriving late.
 export function takeOpen(mod, seen) {
   const r = shared(OPEN);
-  return r && r.to === mod && r.seq !== seen && Date.now() - (r.at ?? 0) < FRESH ? r : null;
+  if (!r || r.to !== mod || r.taken || r.seq === seen || Date.now() - (r.at ?? 0) >= FRESH) return null;
+  setShared(OPEN, { ...r, taken: true });
+  return r;
 }
 
 function find(node, id) {
@@ -103,10 +107,27 @@ export function linkFor(main, on) {
   return Object.values(shared("space-links") ?? {}).find((l) => l?.main === main && (l.on ?? null) === (on ?? null)) ?? null;
 }
 
-// The ticket prefixes a repository's link names (its Jira project, its Linear team), or null.
+// The ticket prefixes a repository's link names (its Jira project, its Linear team); without
+// them, every prefix any space links to (so GPT-4 or COVID-19 aren't tickets); null when no space
+// links one (any key then counts).
 export function prefixesFor(link) {
-  const list = [link?.jira?.key, link?.linear?.key].filter(Boolean);
-  return list.length ? list : null;
+  const own = [link?.jira?.key, link?.linear?.key].filter(Boolean);
+  if (own.length) return own;
+  const all = new Set();
+  for (const l of Object.values(shared("space-links") ?? {})) for (const k of [l?.jira?.key, l?.linear?.key]) if (k) all.add(k);
+  return all.size ? [...all] : null;
+}
+// The Jira site of a key: the link's when its project is the key's, else the site of any space
+// linking that project, else (no space links it) the link's or the most linked site.
+export function jiraSiteFor(key, link) {
+  const prefix = (key ?? "").split("-")[0].toUpperCase();
+  if (link?.linear?.key?.toUpperCase() === prefix) return null;
+  if (link?.jira?.key?.toUpperCase() === prefix) return link.jira.site;
+  const links = Object.values(shared("space-links") ?? {});
+  const owner = links.find((l) => l?.jira?.key?.toUpperCase() === prefix);
+  if (owner) return owner.jira.site;
+  if (links.some((l) => l?.linear?.key?.toUpperCase() === prefix)) return null;
+  return jiraSite(link);
 }
 
 // The Jira site for a repository's keys: its link's, else the one most spaces link to, or null.

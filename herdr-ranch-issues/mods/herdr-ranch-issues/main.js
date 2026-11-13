@@ -258,7 +258,8 @@ export default class SpaceIssues extends View {
   // projects are known it waits for the list.
   openRequest(w, cx) {
     if (!w.key) return;
-    if (this.loading && !this.projects.length) { this.pendingOpen = w; return; }
+    // A fresh copy (or a space switch) hasn't loaded yet: `stale` until its refresh starts.
+    if (!this.projects.length && (this.loading || this.stale || this.spaceId === undefined)) { this.pendingOpen = w; return; }
     const i = this.issueFor(w);
     if (i) this.pick(i, cx);
     else if (w.url) openUrl(w.url);

@@ -17,10 +17,24 @@ async function git(args, where, timeout = 20000) {
 // the repository it was made from), or null outside one.
 export async function repoOf(cwd, on) {
   try {
-    const out = await git(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD", "--path-format=absolute", "--git-common-dir"], { cwd, on });
+    // Without --path-format (git 2.31+): the common dir comes relative to `cwd` unless it's elsewhere.
+    const out = await git(["rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD", "--git-common-dir"], { cwd, on });
     const [top, branch, common] = out.trim().split("\n");
-    return top ? { top, branch: branch === "HEAD" ? null : branch, main: (common ?? "").replace(/\/\.git\/?$/, "") || top, on: on ?? null } : null;
+    return top ? { top, branch: branch === "HEAD" ? null : branch, main: mainOf(common, cwd) || top, on: on ?? null } : null;
   } catch { return null; }
+}
+
+// The main checkout from `git rev-parse --git-common-dir` (absolute, or relative to `cwd`): its
+// folder without the trailing .git, or "" for a bare repository's.
+export function mainOf(common, cwd) {
+  const c = (common ?? "").trim();
+  if (!c) return "";
+  const parts = [];
+  for (const p of (/^([A-Za-z]:)?[\\/]/.test(c) ? c : `${cwd}/${c}`).split(/[\\/]/)) {
+    if (p === "..") parts.pop(); else if (p !== "." && (p || !parts.length)) parts.push(p);
+  }
+  const abs = parts.join("/");
+  return /\/\.git$/.test(abs) ? abs.replace(/\/\.git$/, "") : "";
 }
 
 // The origin remote's URL, or "".
