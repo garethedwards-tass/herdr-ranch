@@ -1,6 +1,7 @@
 // GitHub data through the `gh` CLI, so its sign-in, hosts and machines are used as-is.
 
 import { exec } from "herdr";
+import { prepareFile } from "./diff.js";
 
 // The list's own query, not `gh pr list --json statusCheckRollup`: that returns every check
 // run with its workflow, times and link (hundreds per refresh), which costs GitHub seconds,
@@ -12,7 +13,7 @@ const FIELDS = `number title author { login } assignees(first: 20) { nodes { log
     checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }`;
 const LIST = (states, first) => `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
   pullRequests(states: ${states}, first: ${first}, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { ${FIELDS} } } } }`;
-const VIEW = "number,title,body,url,author,headRefName,baseRefName,isDraft,state,mergedAt,reviewDecision,mergeStateStatus,statusCheckRollup,comments,reviews,additions,deletions,changedFiles,createdAt,reviewRequests,latestReviews,assignees,labels,files,closingIssuesReferences,isCrossRepository";
+const VIEW = "number,title,body,url,author,headRefName,headRefOid,baseRefName,isDraft,state,mergedAt,reviewDecision,mergeStateStatus,statusCheckRollup,comments,reviews,additions,deletions,changedFiles,createdAt,reviewRequests,latestReviews,assignees,labels,files,closingIssuesReferences,isCrossRepository";
 
 // where: { cwd, on, github }; `github` ("owner/repo") picks the repository, so the
 // folder only matters for which machine and sign-in runs gh.
@@ -104,6 +105,21 @@ export async function view(number, where) {
   pr.issues = (pr.closingIssuesReferences ?? []).map((i) => ({ number: i.number, url: i.url, repo: i.repository ? `${i.repository.owner?.login}/${i.repository.name}` : null }));
   delete pr.reviewRequests; delete pr.latestReviews; delete pr.closingIssuesReferences;
   return pr;
+}
+
+// The Files tab's diffs: each changed file with its patch, from the REST API (the GraphQL
+// files have no patch). One JSON object per line through --jq, so every page of --paginate
+// parses the same way. GitHub lists at most 3000 files; the tab shows the first FILES.
+export const FILES = 300;
+export async function files(number, where) {
+  const out = await gh(["api", "--paginate", `repos/${where.github}/pulls/${number}/files?per_page=100`,
+    "--jq", ".[] | {filename, previous_filename, status, additions, deletions, changes, patch}"], where);
+  const list = [];
+  for (const line of out.split("\n")) {
+    if (list.length >= FILES) break;
+    if (line.trim()) list.push(prepareFile(JSON.parse(line)));
+  }
+  return list;
 }
 
 const ORDER = { fail: 0, pending: 1, pass: 2 };

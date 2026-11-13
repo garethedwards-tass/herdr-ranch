@@ -6,7 +6,8 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, exec, nextCommand, shared, setShared, spaces, notify, run } from "herdr";
-import { me, list, mentioned, hasGhStack, TRANSIENT, view, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { me, list, mentioned, hasGhStack, TRANSIENT, view, files, haystack, words, matches, ago, hash, slug, GROUPS } from "./data.js";
+import { fileKey, FIRST_LINES, MORE_LINES } from "./diff.js";
 import { stacks, stackOf, stackAgent, agentMode } from "./stacks.js";
 import { detail, prepare } from "./detail.js";
 import { call } from "./jira-client.js";
@@ -17,6 +18,9 @@ import { context, activeSpace, openLinkDialog, openSettings, settingsMenu, OPENS
 
 const SPINNER = "mods/workspace-chrome/spinner.svg", COG = "mods/workspace-chrome/settings.svg";
 const WEEK = 7 * 24 * 3600 * 1000, WIDE = 720, ROOMY = 520, PAGES = 30;
+// Lines of diff the Files tab opens by itself, and what Expand all opens at most.
+const OPEN_LINES = 800, ALL_LINES = 2500;
+const savedDiffMode = () => { try { return localStorage.getItem("diff-mode") === "split" ? "split" : "unified"; } catch { return "unified"; } };
 
 // The last list per space, so switching back shows it at once while it refreshes.
 const remembered = (space) => { try { return JSON.parse(localStorage.getItem(`space:${space}`) ?? "null"); } catch { return null; } };
@@ -61,6 +65,7 @@ export default class PullRequests extends View {
     this.prs = []; this.login = null; this.error = null; this.loading = false;
     this.query = ""; this.filter = null; this.mentions = null; this.mentionsVersion = 0; this.open = null; this.page = null; this.pageError = null; this.width = lastWidth(); this.version = 0;
     this.gen = 0; this.data = new Map(); this.hay = new Map(); this.stacks = []; this.inStack = new Map(); this.collapsed = new Set(); this.saved = null; this.versions = 0; this.kept = new Map();
+    this.diffMode = savedDiffMode();
     this.handle = cx.focus_handle();
     cx.spawn(async (cx) => { await writeIcons(); cx.notify(); });
     // The open pull request's page is a view of its own: a live change redraws the list only,
@@ -81,7 +86,7 @@ export default class PullRequests extends View {
   pageOnly(p, cx) {
     this.prs = p.prs ?? []; this.where = p.where ?? null; this.login = p.login ?? null; this.pages = new Map(); this.page = null; this.pageError = null; this.pageW = 900;
     for (const l of p.avatars ?? []) avatarPics.add(l);
-    this.only = { at: Math.max(0, this.prs.findIndex((x) => x.number === p.number)) }; this.tab = p.tab ?? "conversation";
+    this.only = { at: Math.max(0, this.prs.findIndex((x) => x.number === p.number)) }; this.tab = p.tab ?? "conversation"; this.diffMode = savedDiffMode();
     this.handle = cx.focus_handle();
     // Focus can't move inside a render, so right after: Up/Down then reach the dialog.
     cx.timer.after(0, () => { try { this.handle.focus(); } catch { /* the pointer still works */ } });
@@ -251,10 +256,11 @@ export default class PullRequests extends View {
   load(number, cx) {
     const where = this.where, still = () => this.open === number && this.where?.github === where.github;
     this.page = this.pages.get(`${where.github}#${number}`) ?? null; this.pageError = null;
+    if (this.page && this.tab === "files") this.loadDiffs(cx);
     cx.spawn(async (cx) => {
       try {
         const page = await this.fetchPage(number, where);
-        if (still()) { this.page = page; this.pageError = null; }
+        if (still()) { this.page = page; this.pageError = null; if (this.tab === "files") this.loadDiffs(cx); }
         const people = [page.author?.login, ...page.conversation.map((c) => c.who), ...(page.reviewers ?? []).map((r) => r.login), ...(page.assignees ?? [])];
         cx.spawn(async (cx) => { if (await loadAvatars(people, page.url)) try { cx.notify(this.pageView); } catch { /* shown on the next change */ } });
       } catch (e) { if (still() && !this.page) this.pageError = String(e?.message ?? e); }
@@ -416,6 +422,12 @@ export default class PullRequests extends View {
     if (m.platform || m.control || m.alt) return false;
     if (e.key === "o") { openUrl(pr.url); return true; }
     if (e.key === "b") { this.copyBranch(cx); return true; }
+    if (this.tab === "files" && (e.key === "s" || e.key === "e")) {
+      const d = this.diffProps();
+      if (e.key === "s") d.setMode(d.mode === "split" ? "unified" : "split", cx);
+      else if (d.files) d.all(!d.files.some((f) => d.isOpen(f.path)), cx);
+      return true;
+    }
     const tab = { 1: "conversation", 2: "checks", 3: "files" }[e.key];
     if (tab) { this.pickTab(tab, cx); return true; }
     return false;
@@ -432,7 +444,77 @@ export default class PullRequests extends View {
     goToSpace(id);
   }
 
-  pickTab(tab, cx) { this.tab = tab; cx.notify(this.pageView); }
+  pickTab(tab, cx) { this.tab = tab; if (tab === "files") this.loadDiffs(cx); cx.notify(this.pageView); }
+
+  // The Files tab's diffs of the open pull request: loaded the first time the tab shows (they
+  // can be large), kept per repository and number like the pages.
+  diffState() {
+    // Only once the page is in: its head commit keys what was marked viewed.
+    const pr = this.page;
+    if (!this.where || !pr || pr.number !== this.open) return null;
+    this.diffs ??= new Map(); this.fileOpen ??= new Map(); this.fileLimit ??= new Map();
+    return { key: `${this.where.github}#${pr.number}`, pr };
+  }
+  loadDiffs(cx, again = false) {
+    const s = this.diffState();
+    if (!s || (!again && this.diffs.has(s.key))) return;
+    const where = this.where, number = s.pr.number;
+    this.diffs.set(s.key, { files: null, error: null });
+    cx.spawn(async (cx) => {
+      let got;
+      try { got = { files: await files(number, where), error: null }; } catch (e) { got = { files: null, error: String(e?.message ?? e).split("\n")[0] }; }
+      this.diffs.set(s.key, got);
+      if (this.diffs.size > PAGES) this.diffs.delete(this.diffs.keys().next().value);
+      // Open the first files, up to a budget of lines, and none marked viewed: the rest wait for a click.
+      if (got.files) {
+        let budget = OPEN_LINES;
+        for (const f of got.files) {
+          const k = this.fileKey(f.path, number);
+          if (this.fileOpen.has(k)) continue;
+          const open = !this.isViewed(f.path, number) && !f.why && Math.min(f.lines, FIRST_LINES) <= budget;
+          if (open) budget -= Math.min(f.lines, FIRST_LINES);
+          this.fileOpen.set(k, open);
+        }
+      }
+      try { cx.notify(this.pageView); } catch { /* shown on the next change */ }
+    });
+  }
+  fileKey(path, number = (this.page ?? this.picked)?.number) { return fileKey(this.where?.github, number, this.page?.headRefOid, path); }
+  isViewed(path, number) { try { return localStorage.getItem(`viewed:${this.fileKey(path, number)}`) === "1"; } catch { return false; } }
+  diffProps() {
+    const s = this.diffState();
+    const d = (s && this.diffs.get(s.key)) ?? { files: null, error: null };
+    const loaded = d.files ?? [];
+    const redraw = (cx) => cx.notify(this.pageView);
+    return {
+      files: d.files, error: d.error, loading: !d.files && !d.error, mode: this.diffMode ?? "unified",
+      github: `${(this.page ?? this.picked)?.url ?? ""}/files`, openUrl: (url) => openUrl(url),
+      isOpen: (p) => Boolean(this.fileOpen?.get(this.fileKey(p))),
+      isViewed: (p) => this.isViewed(p),
+      limit: (p) => this.fileLimit?.get(this.fileKey(p)) ?? FIRST_LINES,
+      toggle: (p, cx) => { const k = this.fileKey(p); this.fileOpen.set(k, !this.fileOpen.get(k)); redraw(cx); },
+      // Viewed folds the file away; unmarking it opens it again.
+      view: (p, cx) => {
+        const k = this.fileKey(p), now = !this.isViewed(p);
+        try { if (now) localStorage.setItem(`viewed:${k}`, "1"); else localStorage.removeItem(`viewed:${k}`); } catch { /* kept for this session only */ }
+        this.fileOpen.set(k, !now); redraw(cx);
+      },
+      more: (p, cx) => { const k = this.fileKey(p); this.fileLimit.set(k, (this.fileLimit.get(k) ?? FIRST_LINES) + MORE_LINES); redraw(cx); },
+      setMode: (m, cx) => { this.diffMode = m; try { localStorage.setItem("diff-mode", m); } catch { /* this session only */ } redraw(cx); },
+      // Expand all opens files with a diff up to a budget of lines, so one click can't draw thousands.
+      all: (open, cx) => {
+        let budget = ALL_LINES;
+        for (const f of loaded) {
+          const k = this.fileKey(f.path), cost = Math.min(f.lines, this.fileLimit.get(k) ?? FIRST_LINES);
+          const on = open && !f.why && cost <= budget;
+          if (on) budget -= cost;
+          this.fileOpen.set(k, on);
+        }
+        redraw(cx);
+      },
+      retry: (cx) => { this.loadDiffs(cx, true); redraw(cx); },
+    };
+  }
 
   copyBranch(cx) {
     const b = (this.page ?? this.picked)?.headRefName;
@@ -452,11 +534,11 @@ export default class PullRequests extends View {
       const working = agentSpaces(this.where?.repo?.main).prs.get((page ?? this.picked)?.number) ?? [];
       return detail(page ?? { ...this.picked, loading: true }, t, {
         error: this.pageError, nav, login: this.login, agents: working, go: (id) => this.go(id), jiraKey: this.where?.jiraKey, github: this.where?.github, jira: this.where?.jira, jiraIssues: page?.jiraIssues,
-        wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation",
+        wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation", diff: this.diffProps(),
         pickTab: (tab, cx) => this.pickTab(tab, cx), copyBranch: (cx) => this.copyBranch(cx), openUrl: (url) => openUrl(url),
         open: () => openUrl((this.page ?? this.picked).url),
         review: this.where?.repo ? () => this.review(this.page) : null,
-        keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3"], "tabs"],
+        keys: [...(this.only || asSplit("herdr-ranch-prs") ? [[["↑", "↓"], "previous / next"]] : []), [["1", "2", "3"], "tabs"], ...(this.tab === "files" ? [[["S"], "unified / split"], [["E"], "expand / collapse all"]] : []),
           ...(liveAgent(working) ? [[["⌘", "↵"], "go to agent"]] : canReview ? [[["⌘", "↵"], "Agent review"]] : []), [["O"], "open on GitHub"], [["B"], "copy branch"], [["Esc"], this.only ? "close" : "back"]],
       });
     } catch (e) { return div().p(14).text_color(t.ansi1).child(`Cannot show this pull request: ${e?.stack ?? e}`); }
