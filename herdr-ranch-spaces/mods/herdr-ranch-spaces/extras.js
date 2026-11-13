@@ -65,10 +65,21 @@ export function gitState(c, g) {
 // (cut short; whole in the tooltip) and the state in short (✓ in sync, n uncommitted (amber), ↓n to
 // pull, ↕ diverged, ↑n to push, … not read yet), tinted by the state's color. A click opens the
 // git popup.
+// Both chips are this wide, whatever they say: long words end in …, and rows never shift.
+const CHIP = 80;
+// The git chip of a folder outside git (grey, "no repo"), or not read yet ("…").
+function noGitChip(w, known, t) {
+  return h_flex().id(`space-git-none-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
+    .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(11).text_color(t.dim)
+    .tooltip(known ? "Not a git repository: its first terminal's folder isn't in one" : "Reading its git state…")
+    .child(svg(CHROME("git-branch")).size(10).flex_none())
+    .child(div().flex_1().min_w(0).truncate().child(known ? "no repo" : "…"));
+}
+
 const SHORT = { sync: () => "✓", dirty: (c) => String(c.changes), behind: (_c, g) => `↓${g.behind}`, diverged: () => "↕", ahead: (c, g) => `↑${Math.max(g.ahead ?? 0, c.unpushed ?? 0)}`, unknown: () => "…" };
 function gitChip(v, w, g, at, t) {
   const c = checkoutAt(v.trees[g.repo], at), s = gitState(c, g), color = (s.color && t[s.color]) || t.dim;
-  return h_flex().id(`space-git-menu-${w.id}`).flex_none().w(80).gap(3).px(5).items_center().rounded(4)
+  return h_flex().id(`space-git-menu-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
     .border_1().border_color(color + "55").bg(color + "14").text_size(11).text_color(color).cursor_pointer()
     .hover((x) => x.bg(color + "2a")).tooltip(`${g.branch ?? "detached"}: ${s.say}\nClick for git: status, branches, pull, worktrees`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -135,7 +146,7 @@ function button(id, path, tip, t, onClick, color = null) {
 
 // What follows a space's name, in place of Herdr's gitTail: the repository and branch (a click
 // opens Git), its work, its link chip (or Link space when it has none), and New worktree.
-export function spaceTail(v, { w, g, tree, at }, t, again) {
+export function spaceTail(v, { w, g, tree, at, known }, t, again) {
   const link = linkOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   const label = linkLabel(link);
   const account = accountOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
@@ -156,20 +167,20 @@ export function spaceTail(v, { w, g, tree, at }, t, again) {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openAccount(w.id); })
       .child(`@${account.label}`)))
-    .when(Boolean(label), (el) => el.child(h_flex().id(`space-link-${w.id}`).flex_none().max_w(90).gap(3).items_center().px(5).rounded(4)
+    .when(Boolean(label), (el) => el.child(h_flex().id(`space-link-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
       .border_1().border_color(t.accent + "55").bg(t.accent + "14").text_size(11).text_color(t.accent).cursor_pointer()
       .hover((s) => s.bg(t.accent + "2a")).tooltip([link.github, link.jira?.key && `${link.jira.site} · ${link.jira.key}`, link.linear?.name].filter(Boolean).join("\n") + "\nClick to change the link")
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
-      .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().truncate().child(label))))
+      .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().flex_1().min_w(0).truncate().child(label))))
     // Not linked: the same chip in grey, "Link".
-    .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().gap(3).items_center().px(5).rounded(4)
+    .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
       .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(11).text_color(t.dim).cursor_pointer()
       .hover((s) => s.bg(t.dim + "2a").text_color(t.muted)).tooltip("Link space: its GitHub repository and Jira or Linear project")
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child("Link")))
-    .when(Boolean(g), (el) => el.child(gitChip(v, w, g, at, t)));
+    .child(g ? gitChip(v, w, g, at, t) : noGitChip(w, known, t));
 }
 
 // "n worktrees without a space": folds a repository's checkouts that no space shows.
