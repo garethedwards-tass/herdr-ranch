@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, props } from "herdr";
 // ranch: what Herdr Ranch adds, and its git reads.
-import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen } from "./extras.js";
+import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
 
@@ -297,8 +297,19 @@ export default class Spaces extends View {
     const rows = this.ordered().filter((r) => !collapsed || r.kind === "space");
     const draw = (r) => (r.kind === "more" ? moreRow(this, r, t) : r.kind === "loose" ? looseRow(this, r, t) : collapsed ? this.compact(r, t) : this.row(r, t));
     // ranch: a space's terminals and worktrees fold under it (worktree spaces fold their own terminals).
-    const drawAll = (list) => list.flatMap((r) => (r.parent && !isOpen(this, r.parent) ? []
-      : [draw(r), ...(r.kind === "space" && !collapsed ? terminalRows(this, r.w, t, r.tree ? 2 : 1) : [])]));
+    // With both under it, "Terminals" and "Worktrees" labels keep the two groups apart.
+    const drawAll = (list) => {
+      const labelled = new Set();
+      return list.flatMap((r) => {
+        if (r.parent && !isOpen(this, r.parent)) return [];
+        const head = r.parent && labelled.has(r.parent) ? (labelled.delete(r.parent), [sectionLabel(`wt-label-${r.parent}`, "Worktrees", t)]) : [];
+        if (r.kind !== "space" || collapsed) return [...head, draw(r)];
+        const terms = terminalRows(this, r.w, t, r.tree ? 2 : 1);
+        const both = terms.length > 0 && r.children > 0;
+        if (both) labelled.add(r.w.id);
+        return [...head, draw(r), ...(both ? [sectionLabel(`term-label-${r.w.id}`, "Terminals", t)] : []), ...terms];
+      });
+    };
     const machineOf = (r) => (r.w ? r.w.machine ?? null : r.on ?? JSON.parse(r.repo)[0]);
     const remote = [...new Set([...rows.map(r => r.w?.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
     const loading = m => {

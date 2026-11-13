@@ -216,6 +216,9 @@ function terminalsOf(w) {
 }
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
 
+// A small label over a group under an unfolded space ("Terminals", "Worktrees").
+export const sectionLabel = (id, text, t) => div().id(id).h(18).flex_none().pl(40).flex().items_end().text_size(10.5).text_color(t.dim).child(text);
+
 export const isOpen = (v, id) => v.openSpaces?.has(id) ?? false;
 
 // The ▸/▾ at a space's start: folds its terminals and agents, its worktree spaces and its
