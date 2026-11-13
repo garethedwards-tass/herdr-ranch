@@ -217,6 +217,22 @@ const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
 // A small label over a group under an unfolded space ("Terminals", "Worktrees").
 export const sectionLabel = (id, text, t) => div().id(id).h(20).flex_none().pl(19).flex().items_end().text_size(11.5).text_color(t.dim).child(text);
 
+// The header's fold button: Collapse all when anything is open (every space and worktree space,
+// and the "worktrees without a space" lists), else Expand all (every space and worktree space).
+export function foldAllButton(v, t) {
+  const any = v.openSpaces.size > 0 || v.unfolded.size > 0;
+  return div().id("spaces-fold-all").size(26).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer()
+    .text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(any ? "Collapse all" : "Expand all")
+    .on_click((_e, cx) => {
+      if (any) { v.openSpaces.clear(); v.unfolded.clear(); }
+      else for (const s of spaces()) v.openSpaces.add(s.id);
+      save("spaces.terminals", [...v.openSpaces]);
+      save("spaces.unfolded", [...v.unfolded]);
+      cx.notify();
+    })
+    .child(svg(`${ICONS}/${any ? "chevrons-down-up" : "chevrons-up-down"}.svg`).size(14));
+}
+
 export const isOpen = (v, id) => v.openSpaces?.has(id) ?? false;
 
 // The ▸/▾ at a space's start: folds its terminals and agents, its worktree spaces and its

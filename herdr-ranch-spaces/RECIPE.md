@@ -4,7 +4,7 @@ Herdr's spaces list with git and links, in the sidebar of the mod-buttons layout
 
 ## What you see
 
-- **Header:** "Spaces" (`dim`) and **+** (a new space).
+- **Header:** "Spaces" (`dim`), **Collapse all** / **Expand all** (Lucide chevrons; collapse folds every space, worktree space and worktree list, expand opens every space and worktree space), and **+** (a new space).
 - **A space:** its avatar (the colors Herdr's own list stores in `shared("space.colors")`), its name, the repository when the name doesn't say it, then its link chip and its **git chip**.
 - **Git chip** (fixed width, 88, like the link chip, so the columns line up and the row never shifts; always shown: grey "no repo" for a folder outside git, "…" until read): the git-branch icon, the branch (ending in … when it doesn't fit; whole in the popup; "detached" off a branch) and the state, tinted like the link chip in the state's color, most pressing first: `n` uncommitted files (`ansi3`), `↓n` to pull (`ansi1`), `↕` diverged (`ansi1`), `↑n` to push (`accent`), `✓` in sync (`ansi2`), `…` until read (`dim`). No tooltip (the popup says it in words). A click opens the **git popup** at the pointer: a header (repository, branch, uncommitted / to push / to pull / clean, how many checkouts) and Git status…, Switch branch…, Fetch, Pull (both run in the Git dialog, which shows how it went), New worktree from a branch… / from an issue… / New worktree… (Herdr's), Open worktree…, and Remove worktree… on a worktree space.
 - **Work on worktrees without a space:** `●n` uncommitted files (`ansi3`), `↑n` commits not pushed anywhere (`ansi2`), or a green check.
