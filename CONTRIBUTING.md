@@ -4,11 +4,12 @@ Thanks for looking. Issues and pull requests are welcome at [jslowack/herdr-ranc
 
 ## How the repository is laid out
 
-- **One folder per mod** (`herdr-ranch-issues`, `herdr-ranch-prs`, `herdr-ranch-reviews`, `mod-buttons`), each with:
+- **One folder per mod** (`herdr-ranch-issues`, `herdr-ranch-prs`, `herdr-ranch-reviews`, `herdr-ranch-history`, `herdr-ranch-changes`, `mod-buttons`), each with:
   - `RECIPE.md`: the brief another agent builds the mod from (what you see, how it behaves, what it's built from, when it's done). Keep it in step with the code.
   - `mods/<name>/`: the mod itself, as Herdr loads it.
-  - `keys.json`: its keys, for users to merge into their own.
-- **`shared/`:** code the mods share. A mod can't import outside its own folder, so each mod keeps a copy. Edit the file in `shared/`, then copy it over the copies in `*/mods/*/`. `install.sh` and CI fail or warn on a stale copy.
+  - `keys.json`: its keys, for users to merge into their own (only mods that have keys).
+- **`shared/`:** code the mods share. A mod can't import outside its own folder, so each mod that uses a file keeps a copy (which mods copy which file is listed in `install.sh` and CI). Edit the file in `shared/`, then copy it over the copies in `*/mods/*/`. `install.sh` and CI fail or warn on a stale copy.
+- **`ranch-highlight/`:** the diffs' syntax highlighter, a small Rust program; `install.sh` builds it when `cargo` is installed.
 - **`install.sh`:** links the mods into Herdr's mods folder (flags in [docs/reference.md](docs/reference.md#installsh-flags)).
 - **`docs/`:** the [guide](docs/guide.md), the [reference](docs/reference.md), [Connect Jira](docs/connect-jira.md) and the images.
 - **`tests/`:** logic tests under `node --test`, with stubs for Herdr's built-in modules (`herdr`, `gpui-kit`, `gpui-base`) in `tests/stubs/`.
