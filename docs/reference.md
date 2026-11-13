@@ -16,7 +16,8 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
   - for the Jira and Linear sign-in: `security` (macOS), `secret-tool` (Linux) or PowerShell (Windows);
   - `open`, `xdg-open` or `rundll32` for the browser buttons;
   - for Reviews: `node` (the `ranch-review` CLI), `herdr-app` and `hc` (opening the review, pasting into an agent), `osascript` (screenshots from the clipboard, macOS);
-  - `sh` in the mod-buttons layout, to list the installed mods.
+  - `sh` in the mod-buttons layout, to list the installed mods;
+  - History: `git` only (`rev-parse`, `for-each-ref`, `log`, `show`, `config user.name`), read only.
 - **Network:**
   - Jira: `https://<your-site>/rest/api/3` with your token;
   - Linear: `https://api.linear.app/graphql` with your API key;

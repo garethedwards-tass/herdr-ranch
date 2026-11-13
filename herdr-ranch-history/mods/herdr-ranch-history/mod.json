@@ -1,0 +1,12 @@
+{
+  "version": "0.5.0",
+  "place": "none",
+  "title": "History · Herdr Ranch",
+  "focusable": true,
+  "button": {
+    "label": "History",
+    "icon": "history.svg",
+    "opens": "panel",
+    "order": 5
+  }
+}
