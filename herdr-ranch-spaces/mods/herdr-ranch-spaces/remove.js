@@ -1,8 +1,8 @@
 // Delete a worktree that no space shows: the list opens itself as a dialog with
 // props { dialog: "remove", path, main, on, branch }. It reads the checkout's work first and
 // says what would go: uncommitted files are lost, commits stay on the branch (which is kept).
-// Enter deletes, Esc cancels. A worktree a space shows goes through Herdr's own dialog instead,
-// which closes the space too.
+// Enter or the Delete button deletes, Esc or Cancel cancels. A worktree a space shows goes
+// through Herdr's own dialog instead, which closes the space too.
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -53,6 +53,11 @@ export class RemoveDialog extends View {
   render() {
     const t = theme(), p = props(), w = this.work;
     const line = (text, color) => div().text_color(color ?? t.muted).child(text);
+    const button = (id, text, danger, enabled, onClick) => h_flex().id(id).flex_none().items_center().px(12).py(5).rounded(6).text_size(12)
+      .when(danger, (e) => e.bg(enabled ? t.blocked : t.raised).text_color(enabled ? t.background : t.dim).font_semibold())
+      .when(!danger, (e) => e.border_1().border_color(t.border).bg(t.background).text_color(enabled ? t.foreground : t.dim))
+      .when(enabled, (e) => e.cursor_pointer().hover((s) => s.opacity(0.85)).on_click((_e, cx) => onClick(cx)))
+      .child(text);
     return v_flex().id("spaces-remove").track_focus(this.handle).size_full().p(16).gap(10).bg(t.popover).text_size(13)
       .on_key_down((e, cx) => {
         if (e.key === "escape") this.close();
@@ -68,8 +73,9 @@ export class RemoveDialog extends View {
       .when(Boolean(w) && !(w.changes > 0) && !(w.unpushed > 0), (el) => el.child(line("No uncommitted files, nothing unpushed.", t.ansi2)))
       .when(Boolean(this.error), (el) => el.child(line(this.error, t.blocked)))
       .child(div().flex_1())
-      .child(h_flex().justify_end().gap(6).text_size(11).text_color(t.dim)
-        .when(this.busy, (el) => el.child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
-        .child(this.busy ? "deleting…" : "↵ delete · esc cancel"));
+      .child(h_flex().justify_end().items_center().gap(8)
+        .when(this.busy, (el) => el.child(div().text_size(11).text_color(t.dim).frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
+        .child(button("spaces-remove-cancel", "Cancel  esc", false, !this.busy, () => this.close()))
+        .child(button("spaces-remove-go", this.busy ? "Deleting…" : "Delete  ↵", true, !this.busy && w !== undefined, (cx) => this.go(cx))));
   }
 }
