@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Highlighting:** CFML comments (`<!--- --->`, and HTML and SQL comments inside `.cfm` files) are grey like other comments; the CFML queries' extra `@spell` capture stopped them being colored at all.
 - **Spaces:** a Collapse all / Expand all button in the header.
 - **Changes, History:** the diff list redraws only when the diff changes, not on every agent status or focus change, so a large open diff no longer rebuilds every few seconds.
 - **Faster colors:** `ranch-highlight` builds a language only when a file needs it, instead of all 21 at every start: a run went from about 0.3 s to a few hundredths, so diffs and files color sooner. Rebuild it with `./install.sh` (or `cargo build --release` in `ranch-highlight/`).
