@@ -6,7 +6,7 @@
 // Herdr's own editor, for selecting text. Other files open in Herdr's editor as before.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, window, notify } from "herdr";
 import { supports, highlight, expand, codeView } from "./code-view.js"; // ranch
 
 // ranch: lines past this stay in Herdr's editor: the colored view builds every piece of a line it shows.
@@ -51,6 +51,10 @@ async function directory(path, on) {
 export default class Files extends View {
   init(_props, cx) {
     this.saved = new Map(); this.mode = loadMode(); // ranch: the view mode
+    // Selected lines of the colored view: [first, last] (0-based), the line a plain click picked,
+    // and whether Shift was held at the last press (a list's click doesn't carry modifiers).
+    this.sel = null; this.anchor = null; this.shift = false;
+    this.handle = cx.focus_handle();
     this.entries = new Map(); this.folders = new Set(); this.pending = new Set(); this.marks = {};
     this.refresh(cx);
     cx.timer.every(10000, cx => this.refresh(cx));
@@ -138,7 +142,7 @@ export default class Files extends View {
   }
 
   show(path, cx) {
-    this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.text = null; this.lines = null; this.spans = null;
+    this.code?.release(); this.code = null; this.file = path; this.fileError = null; this.text = null; this.lines = null; this.spans = null; this.sel = null; this.anchor = null;
     if (!path || !cx) return;
     const context = this.context, root = this.root, on = this.on;
     cx.spawn(async cx => {
@@ -172,6 +176,33 @@ export default class Files extends View {
     this.code = EditorState.new({ language: LANG[ext] ?? ext, readonly: true, value: this.text,
       font_family: settings().font_family, font_size: 12,
       syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
+  }
+
+  // Line selection in the colored view.
+  selection() {
+    return {
+      range: this.sel,
+      click: (i, cx) => {
+        if (this.shift && this.anchor != null) this.sel = [Math.min(this.anchor, i), Math.max(this.anchor, i)];
+        else { this.anchor = i; this.sel = [i, i]; }
+        cx.notify();
+      },
+    };
+  }
+  copySelection(cx) {
+    if (!this.sel || this.text == null) return;
+    const [a, b] = this.sel, n = b - a + 1;
+    cx.write_to_clipboard(this.text.split("\n").slice(a, b + 1).join("\n"));
+    notify({ title: `Copied ${n} line${n === 1 ? "" : "s"}`, level: "success", timeout: 2000 });
+  }
+  codeKey(e, cx) {
+    if (!this.lines || this.mode === "editor") return;
+    const m = e.modifiers ?? {};
+    if ((m.platform || m.control) && e.key === "c" && this.sel) this.copySelection(cx);
+    else if ((m.platform || m.control) && e.key === "a") { this.anchor = 0; this.sel = [0, this.lines.length - 1]; cx.notify(); }
+    else if (e.key === "escape" && this.sel) { this.sel = null; this.anchor = null; cx.notify(); }
+    else return;
+    cx.stop_propagation();
   }
 
   setMode(mode, cx) {
@@ -208,13 +239,20 @@ export default class Files extends View {
         .when(Boolean(this.lines), el => el.child(div().id("files-mode").flex_none().px(7).py(1).rounded(5).border_1().border_color(t.border).cursor_pointer()
           .text_size(11).text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => this.setMode(this.mode === "editor" ? "colors" : "editor", cx)).child(this.mode === "editor" ? "Colors" : "Editor")))
+        .when(Boolean(this.lines && this.sel && this.mode !== "editor"), el => el.child(div().id("files-copy").flex_none().px(7).py(1).rounded(5).border_1().border_color(t.border).cursor_pointer()
+          .text_size(11).text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
+          .on_click((_e, cx) => this.copySelection(cx)).child(`Copy ${this.sel[1] - this.sel[0] + 1} line${this.sel[1] === this.sel[0] ? "" : "s"}`)))
         .child(div().flex_1().min_w(0).truncate().text_right().text_size(12).text_color(t.dim).child(this.file ?? this.root?.split(/[\\/]/).pop() ?? "")))
       .when(!this.file, el => el.child(v_flex().id("files-tree").flex_1().min_h(0).overflow_y_scrollbar().p(6).children(this.rows("", 0, [], t))
         .when(Boolean(this.error) || !this.entries.get("")?.length, el => el.child(div().p(8).text_size(12).text_color(t.dim).child(this.error || (this.loading ? "Loading files…" : this.root ? "No files" : "No folder"))))
         .when(this.limited, el => el.child(div().p(8).text_size(11).text_color(t.dim).child("File list limited to 500 entries per folder and 5,000 total")))))
       // ranch: the colored view, else Herdr's editor
       .when(Boolean(this.file), el => el.child(this.lines && this.mode !== "editor"
-        ? div().flex_1().min_h(0).py(6).child(codeView("file-code", this.lines, this.spans, t, settings().font_family).size_full())
+        ? div().id("file-code-box").flex_1().min_h(0).py(6)
+          .track_focus(this.handle).on_key_down((e, cx) => this.codeKey(e, cx))
+          // Shift for the click that follows, and the keys (⌘C, ⌘A, Esc) once pressed.
+          .on_mouse_down("left", (e) => { this.shift = Boolean(e.modifiers?.shift); try { this.handle.focus(); } catch { /* ⌘C waits for the next click */ } })
+          .child(codeView("file-code", this.lines, this.spans, t, settings().font_family, 12, this.selection()).size_full())
         : this.code ? Editor.new(this.code).flex_1().min_h(0) : div().p(12).text_color(t.dim).child(this.fileError || "Loading file…")));
   }
 }

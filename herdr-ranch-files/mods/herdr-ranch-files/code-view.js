@@ -84,10 +84,14 @@ function code(text, spans, t) {
   return h_flex().flex_wrap().items_start().children(parts.map((p) => div().whitespace_nowrap().when(Boolean(p.color), (e) => e.text_color(p.color)).child(text.slice(p.start, p.end))));
 }
 
-// The view: `lines` (tabs expanded), `spans` (per line, or null while they load).
-export function codeView(id, lines, spans, t, font, size = 12) {
-  const w = String(lines.length).length;
-  return list(id, lines.length, (i) => `l${i}`, (i) => h_flex().w_full().items_start().gap(10).px(10).font_family(font).text_size(size).text_color(t.foreground)
-    .child(div().flex_none().text_right().text_color(t.dim).child(String(i + 1).padStart(w)))
+// The view: `lines` (tabs expanded), `spans` (per line, or null while they load). `sel`: the
+// selected lines { range: [first, last] | null, click(i, cx) }. A list row can't hold handlers,
+// so the click is the list's (`on_item_click`); a mod can't select inside a line here.
+export function codeView(id, lines, spans, t, font, size = 12, sel = null) {
+  const w = String(lines.length).length, [a, b] = sel?.range ?? [-1, -1];
+  const view = list(id, lines.length, (i) => `l${i}`, (i) => h_flex().w_full().items_start().gap(10).px(10).font_family(font).text_size(size).text_color(t.foreground)
+    .when(i >= a && i <= b, (e) => e.bg(t.selection))
+    .child(div().flex_none().text_right().text_color(i >= a && i <= b ? t.foreground : t.dim).child(String(i + 1).padStart(w)))
     .child(div().flex_1().min_w(0).child(code(lines[i], spans?.[i], t))));
+  return sel ? view.on_item_click((key, cx) => sel.click(Number(key.slice(1)), cx)) : view;
 }
