@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 // ranch: Claude Code sessions: the chip, the popup, tasks and subagents.
-import { start, statsChip, claudeRows, statsView, withQuiet } from "./extras.js";
+import { start, statsChip, claudeRows, statsView, liveAgents } from "./extras.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -99,6 +99,7 @@ export default class Agents extends View {
     let dirty = false;
     for (const a of list) {
       const s = a.status === "done" ? "idle" : a.status;
+      if (s === "unknown") continue; // ranch: going quiet isn't a change; its age stays
       if (this.changed[a.address]?.s === s) continue;
       this.changed[a.address] = { s, at: now };
       dirty = true;
@@ -223,9 +224,11 @@ export default class Agents extends View {
     if (props()?.stats) return statsView(props(), t); // ranch
     const collapsed = narrow();
     const sort = sortOf();
-    let list = withQuiet(agents()); // ranch: and agents that stopped reporting a status
-    this.listed = new Map(list.map((a) => [a.address, a.status]));
-    const all = terminals();
+    // ranch: agents that stopped reporting a status too; each host list read once.
+    const all = terminals(), allPanes = panes(), allSpaces = spaces();
+    let list = liveAgents(agents(), all, allPanes, allSpaces);
+    // ranch: a quiet agent's sub-agents keep their own words (kidStatus).
+    this.listed = new Map(list.filter((a) => a.status !== "unknown").map((a) => [a.address, a.status]));
     this.migratePins(all);
     const shown = focused()?.agent;
     const now = Date.now();
@@ -283,8 +286,8 @@ export default class Agents extends View {
     // agent's own title, never an automatic tab number unless two rows would
     // otherwise read the same.
     // Read the pane snapshot once: every host read copies the whole list into JS.
-    const leads = leadPanes(panes());
-    const tabs = new Map(spaces().flatMap(s => s.tabs).map(tab => [tab.id, tab]));
+    const leads = leadPanes(allPanes); // ranch: the snapshot read above
+    const tabs = new Map(allSpaces.flatMap(s => s.tabs).map(tab => [tab.id, tab]));
     const labels = new Map(list.map(a => {
       const tab = tabs.get(a.tab);
       const many = tabCounts.get(a.tab) > 1;
@@ -445,8 +448,9 @@ export default class Agents extends View {
             ),
         ),
       )
+      // ranch: the empty text also names agents found by their pane (liveAgents).
       .when(list.length === 0 && !collapsed, (el) =>
-        el.child(div().px(12).text_size(12).text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
+        el.child(div().px(12).text_size(12).text_color(t.dim).child("No agents yet. Agents show up here when they report their status, or run in a pane as a known agent. Older versions and agents inside tmux may not.")),
       )
       .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))
       .when(collapsed, (el) =>
