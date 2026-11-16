@@ -5,7 +5,7 @@
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { openOverlay, closeOverlay, agents, terminals, home, shared } from "herdr";
+import { openOverlay, closeOverlay, agents, terminals, home, shared, panes, spaces } from "herdr";
 import { liveSessions, configDirs, pickSession, projectDir, firstRead, readSince, subagents, apply, totals, windowOf, tokens, taskList } from "./claude.js";
 
 export const MOD = "herdr-ranch-agents";
@@ -14,6 +14,26 @@ const TICK = 4000, SESSIONS_EVERY = 15000, IDLE_EVERY = 20000;
 const TASK_GLYPH = { completed: "☑", in_progress: "◐", pending: "☐" };
 
 // The watcher: every few seconds, for each Claude Code agent here, what was added to its session.
+// Herdr's agents() lists only terminals whose agent is reporting a status right now. An agent that
+// stopped reporting (Claude Code can go quiet mid-session) would drop off the list while it still
+// runs: keep it, from the pane's program, with status "unknown" (no status mark), in the same
+// space, tab and pane order as agents().
+export function withQuiet(list) {
+  const have = new Set(list.map((a) => a.address));
+  const sp = spaces();
+  const tabs = new Map(sp.flatMap((s, si) => s.tabs.map((tb) => [tb.id, { s, si, tb }])));
+  const pinned = new Set(terminals().filter((x) => x.labels?.["herdr.pinned"]).map((x) => x.address));
+  const all = panes(), order = new Map(all.map((p, i) => [p.terminal, i]));
+  const quiet = all.filter((p) => p.terminal && !p.status && (p.program?.agent || p.app) && !have.has(p.terminal) && tabs.has(p.tab)).map((p) => {
+    const { s, tb } = tabs.get(p.tab);
+    return { address: p.terminal, pane: p.pane, space: s.id, space_name: s.name, tab: tb.id, tab_index: tb.index, tab_name: tb.name,
+      status: "unknown", app: p.app, program: p.program, title: p.title, seq: 0, pinned: pinned.has(p.terminal), focused: p.focused };
+  });
+  if (!quiet.length) return list;
+  const spaceAt = new Map(sp.map((s, i) => [s.id, i]));
+  return [...list, ...quiet].sort((x, y) => (spaceAt.get(x.space) ?? 0) - (spaceAt.get(y.space) ?? 0) || x.tab_index - y.tab_index || (order.get(x.address) ?? 0) - (order.get(y.address) ?? 0));
+}
+
 export function start(v, cx) {
   v.claude = new Map(); // agent address -> { id, file, dir, st, offset, subs, read, started }
   v.openTasks = new Set();

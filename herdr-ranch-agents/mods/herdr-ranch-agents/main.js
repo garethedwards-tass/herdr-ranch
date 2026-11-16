@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 // ranch: Claude Code sessions: the chip, the popup, tasks and subagents.
-import { start, statsChip, claudeRows, statsView } from "./extras.js";
+import { start, statsChip, claudeRows, statsView, withQuiet } from "./extras.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -223,7 +223,7 @@ export default class Agents extends View {
     if (props()?.stats) return statsView(props(), t); // ranch
     const collapsed = narrow();
     const sort = sortOf();
-    let list = agents();
+    let list = withQuiet(agents()); // ranch: and agents that stopped reporting a status
     this.listed = new Map(list.map((a) => [a.address, a.status]));
     const all = terminals();
     this.migratePins(all);
