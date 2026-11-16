@@ -60,3 +60,33 @@ test("pickSession, subagentOf, windows, names and paths", () => {
   assert.deepEqual(configDirs("/Users/me", { accounts: [{ claudeDir: "~/.claude-work" }, { ghUser: "x" }, { claudeDir: "/opt/c" }, { claudeDir: "~/.claude" }] }), ["/Users/me/.claude", "/Users/me/.claude-work", "/opt/c"]);
   assert.equal(utf8Length("a·€😀"), 1 + 2 + 3 + 4);
 });
+
+import { keysFor, promptText, runningAgents, stopOffered, modelOf, scriptFor, busyTitle } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
+
+test("revive: typable keys, the prompt, background agents, /stop, busy titles", () => {
+  assert.deepEqual(keysFor("sh /Users/a.b/x-1=2"), ["s", "h", "space", "/", "shift+u", "s", "e", "r", "s", "/", "a", ".", "b", "/", "x", "-", "1", "=", "2"]);
+  assert.equal(keysFor("echo $HOME"), null);
+  assert.equal(keysFor("a_b"), null);
+  const screen = "  some reply\n───\n❯ carry on with both\n───\n  ⏵⏵ auto mode on · ← 1 agent · PR #2";
+  assert.equal(promptText(screen), "carry on with both");
+  assert.equal(promptText("❯ \n"), "");
+  assert.equal(promptText("no prompt"), null);
+  assert.equal(runningAgents(screen), true);
+  assert.equal(runningAgents("❯ x\n  ⏵⏵ auto mode on · PR #2"), false);
+  assert.equal(stopOffered("❯ /stop\n  ❯ /stop      Stop this background session; transcript and worktree are kept"), true);
+  assert.equal(stopOffered("  ❯ /status   Show status"), false);
+  assert.equal(busyTitle("◑ TASS-1 fix"), true);
+  assert.equal(busyTitle("✳ Tassdocker setup"), false);
+  assert.equal(busyTitle("TASS-10497 product impact"), false);
+  assert.equal(busyTitle(""), false);
+});
+
+test("revive: the resume script keeps the account folder and model, never a token", () => {
+  assert.equal(modelOf(["claude", "--model", "opus", "Plan the work"]), "opus");
+  assert.equal(modelOf(["claude"]), null);
+  const s = scriptFor({ configDir: "/Users/x/.claude-personal", ghUser: "octo", model: "opus" });
+  assert.match(s, /export CLAUDE_CONFIG_DIR='\/Users\/x\/\.claude-personal'/);
+  assert.match(s, /GH_TOKEN=\$\(gh auth token --user 'octo' 2>\/dev\/null\) && export GH_TOKEN/);
+  assert.match(s, /exec claude --continue --model 'opus'\n$/);
+  assert.equal(scriptFor().split("\n").filter((l) => !l.startsWith("#")).join("\n"), "exec claude --continue\n");
+});

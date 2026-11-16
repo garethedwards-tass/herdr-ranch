@@ -6,6 +6,7 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { openOverlay, closeOverlay, agents, terminals, home, shared, panes, spaces } from "herdr";
+import { bringBack } from "./revive.js";
 import { liveSessions, configDirs, pickSession, projectDir, firstRead, readSince, subagents, apply, totals, windowOf, tokens, taskList } from "./claude.js";
 
 export const MOD = "herdr-ranch-agents";
@@ -50,6 +51,7 @@ const isClaude = (a) => (a.app === "claude-code" || a.program?.key === "claude")
 export function start(v, cx) {
   v.claude = new Map(); // agent address -> { id, file, dir, st, offset, subs, read, started }
   v.openTasks = new Set();
+  v.reviving = new Set(); // agents being brought back (revive.js)
   v.sessions = []; v.sessionsAt = 0;
   const tick = (cx) => {
     if (v.reading) return;
@@ -124,6 +126,21 @@ export function statsChip(v, a, t) {
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => { cx.stop_propagation(); openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 320, height: 460, props: { stats: snapshot(c) } }); })
     .child(`${p}%`);
+}
+
+// On an agent that stopped reporting its status: a warning that says so and, for Claude Code here,
+// a click that brings it back (revive.js). Herdr's own lists and next/previous agent skip it.
+export function quietMark(v, a, t) {
+  if (!a.quiet) return null;
+  const busy = v.reviving?.has(a.address), can = isClaude(a);
+  return h_flex().id(`quiet-${a.address}`).flex_none().gap(4).items_center().px(5).h(18).rounded(4)
+    .border_1().border_color(t.ansi3 + "66").bg(t.ansi3 + "1a").text_size(12).text_color(t.ansi3)
+    .tooltip(busy ? "Bringing it back…" : `Not reporting its status to Herdr: Herdr's own lists and next/previous agent skip it.${can ? "\nClick to bring it back: stops its background session and resumes the conversation." : ""}`)
+    .when(can && !busy, (el) => el.cursor_pointer().hover((s) => s.bg(t.ansi3 + "33"))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); bringBack(v, a, cx); }))
+    .child(busy ? svg(SPIN).size(11).flex_none().spin(900) : div().flex_none().font_semibold().child("!"))
+    .child(busy ? "Restarting" : can ? "Bring back" : "Quiet");
 }
 
 // Rows under a Claude Code agent: its tasks (a summary that unfolds them) and its running subagents.

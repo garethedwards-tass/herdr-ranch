@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 // ranch: Claude Code sessions: the chip, the popup, tasks and subagents.
-import { start, statsChip, claudeRows, statsView, liveAgents } from "./extras.js";
+import { start, statsChip, claudeRows, statsView, liveAgents, quietMark } from "./extras.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -372,6 +372,7 @@ export default class Agents extends View {
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .child(statsChip(this, a, t) ?? div()) // ranch: context in use; a click opens its stats
+        .child(quietMark(this, a, t) ?? div()) // ranch: not reporting its status; a click brings it back
         .when(this.hovered === a.address, el => el.child(pin))
         .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
         .child(this.status(t, a, byPriority && !isPinned));

@@ -20,17 +20,19 @@ Herdr's agents list with what Claude Code knows about each of its sessions, in t
 
 ## Built from
 
-- `mods/herdr-ranch-agents/main.js`: a copy of Herdr's `mods/agents/main.js` (0.1.15). Its changes, each marked `ranch:`: the imports; `init` (the stats popup is a copy of its own; else `start()`); `withKids` adds `claudeRows()` after Herdr's sub-agents; `row` adds `statsChip()`; `render` returns `statsView()` for the popup, builds its list with `liveAgents()` from one read of `terminals()`, `panes()` and `spaces()` (reused for `leadPanes` and the tab names), and keeps "unknown" out of `this.listed`; `track` skips "unknown" (going quiet keeps an agent's age); the empty-list text. After a Herdr update: copy its `agents/main.js` again and re-apply these.
+- `mods/herdr-ranch-agents/main.js`: a copy of Herdr's `mods/agents/main.js` (0.1.15). Its changes, each marked `ranch:`: the imports; `init` (the stats popup is a copy of its own; else `start()`); `withKids` adds `claudeRows()` after Herdr's sub-agents; `row` adds `statsChip()` and `quietMark()`; `render` returns `statsView()` for the popup, builds its list with `liveAgents()` from one read of `terminals()`, `panes()` and `spaces()` (reused for `leadPanes` and the tab names), and keeps "unknown" out of `this.listed`; `track` skips "unknown" (going quiet keeps an agent's age); the empty-list text. After a Herdr update: copy its `agents/main.js` again and re-apply these.
 - `extras.js`: `liveAgents` (agents() plus agents that stopped reporting a status, found by their pane; the list and the watcher both use it), `start` (the watcher), `snapshot`, `statsChip`, `claudeRows`, `statsView`, `modelName`.
+- `revive.js`: `bringBack`/`revive` (stop a quiet Claude Code session with `/stop`, quit its session list, resume it with `claude --continue` through a script in the mod's data folder, typed with `hc keys`), `keysFor`, `promptText`, `runningAgents`, `stopOffered`, `busyTitle`, `modelOf`, `scriptFor` (tested in `tests/agents.test.mjs`).
 - `claude.js`: `liveSessions`, `configDirs`, `pickSession`, `projectDir`, `firstRead`/`parseFirstRead`, `readSince`, `apply`, `totals`, `windowOf`, `tokens`, `subagents`/`subagentOf`, `taskList` (tested in `tests/agents.test.mjs`).
 - `mod.json`: `place: none`, no button: the mod-buttons layout's `agents` block shows it.
-- herdr: `agents`, `terminals`, `panes`, `spaces`, `home`, `exec`, `openOverlay`, `closeOverlay`, and the copy's own. Programs: `sh`, `grep`, `tail`, `head`, `wc`, `ls`, `tr`, `sort`.
+- herdr: `agents`, `terminals`, `panes`, `spaces`, `home`, `hc`, `appHome`, `readTextFile`, `writeTextFile`, `notify`, `exec`, `openOverlay`, `closeOverlay`, and the copy's own. Programs: `sh`, `ps`, `mkdir`, `hc`, `claude`, `gh`, `grep`, `tail`, `head`, `wc`, `ls`, `tr`, `sort`.
 
 ## Watch out
 
 - Claude Code's files are internals, not an API: a new version can rename a record. Everything reads what fits and leaves the rest out; check the popup after a Claude Code update.
 - Only this computer: agents on other machines get no chip.
 - Herdr's own `agents` mod writes the same pins and order: show only one of the two.
+- Bring back drives Claude Code's screen (its prompt, slash menu, `/stop` and session list): a Claude Code update can change them. Every step reads the screen first and stops at anything unexpected; it refuses while the agent looks busy, has an unsent message, or has a background agent running.
 - An agent that stopped reporting a status shows (`liveAgents`), but Herdr's next/previous agent keys skip it: `setAgentOrder` ignores terminals Herdr doesn't count as agents.
 
 ## Done when
