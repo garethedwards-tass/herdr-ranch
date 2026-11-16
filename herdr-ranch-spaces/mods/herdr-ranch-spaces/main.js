@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, props } from "herdr";
 // ranch: what Herdr Ranch adds, and its git reads.
-import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel, worktreeSpaceRow, newSpaceMenu, programIcon, foldAllButton } from "./extras.js";
+import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel, worktreeSpaceRow, newSpaceMenu, programIcon, foldAllButton, byAccount, accountFilterRow } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
 const LOOSE_EVERY = 60000; // ranch: how often a worktree without a space has its work read again
@@ -300,7 +300,7 @@ export default class Spaces extends View {
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
     // ranch: worktree rows (not on the rail), drawn by extras.js; a row's machine.
-    const rows = this.ordered().filter((r) => !collapsed || r.kind === "space");
+    const rows = byAccount(this, this.ordered()).filter((r) => !collapsed || r.kind === "space"); // ranch: the account filter
     const draw = (r) => (r.kind === "more" ? moreRow(this, r, t) : r.kind === "loose" ? looseRow(this, r, t) : collapsed ? this.compact(r, t) : r.tree ? worktreeSpaceRow(this, r, t) : this.row(r, t));
     // ranch: a space's terminals and worktrees fold under it (worktree spaces fold their own terminals).
     // With both under it, "Terminals" and "Worktrees" labels keep the two groups apart.
@@ -500,6 +500,7 @@ export default class Spaces extends View {
         .when(!collapsed, el => el.child("Spaces").child(div().flex_1()).child(foldAllButton(this, t))) // ranch: collapse / expand all
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => newSpaceMenu(null)).child(svg("mods/workspace-chrome/plus.svg").size(14)))) // ranch: Terminal or an agent
+      .when(!collapsed, el => el.child(accountFilterRow(this, t))) // ranch: spaces by account
       .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
         .children(this.grouped(t, collapsed)));

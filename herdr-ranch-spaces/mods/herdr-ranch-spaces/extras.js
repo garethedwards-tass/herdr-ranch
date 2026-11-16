@@ -12,7 +12,7 @@ import { NewDialog } from "./new.js";
 import { RemoveDialog } from "./remove.js";
 import { GitDialog } from "./git-dialog.js";
 import { AccountDialog } from "./account-dialog.js";
-import { accountOf } from "./accounts.js";
+import { accounts, accountOf } from "./accounts.js";
 import { openNew, openGit, openAccount, ICONS } from "./actions.js";
 import { linkLabel, base, checkoutAt, hasWork } from "./git.js";
 
@@ -37,6 +37,7 @@ export function start(v, cx) {
   v.unfolded = new Set(load("spaces.unfolded", []));
   v.pulling = new Set();
   v.openSpaces = new Set(load("spaces.terminals", []));
+  v.accountFilter = load("spaces.account", null);
   v.handle = cx.focus_handle();
   cx.spawn(async () => {
     try {
@@ -68,8 +69,9 @@ export function gitState(c, g) {
 // (cut short; whole in the tooltip) and the state in short (✓ in sync, n uncommitted (amber), ↓n to
 // pull, ↕ diverged, ↑n to push, … not read yet), tinted by the state's color. A click opens the
 // git popup.
-// Both chips are this wide, whatever they say: long words end in …, and rows never shift.
-const CHIP = 88;
+// The chips are a fixed width, whatever they say: long words end in …, and rows never shift.
+const CHIP = 78; // the git pill (and its no-git stand-in)
+const LINK_CHIP = 68; // the link chip
 // The git chip of a folder outside git (grey, "no repo"), or not read yet ("…").
 function noGitChip(w, known, t) {
   return h_flex().id(`space-git-none-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
@@ -140,7 +142,6 @@ function button(id, path, tip, t, onClick, color = null) {
 export function spaceTail(v, { w, g, tree, at, known }, t, again) {
   const link = linkOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   const label = linkLabel(link);
-  const account = accountOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   // The repository when the name doesn't say it; the branch and state are in the git chip.
   const where = g && !tree && g.name.toLowerCase() !== w.name.toLowerCase() ? g.name : "";
   const id = `space-work-${w.id}`;
@@ -152,19 +153,14 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
           .on_click((_e, cx) => { cx.stop_propagation(); openGit(w.id); }))
         .child(where)))
     )
-    .when(Boolean(account), (el) => el.child(div().id(`space-account-${w.id}`).flex_none().max_w(70).truncate().px(5).rounded(4).text_size(11).text_color(t.ansi5 ?? t.accent).cursor_pointer()
-      .hover((s) => s.bg(t.hover)).tooltip(`Account: ${account.label}${account.claudeDir ? `\nClaude Code: ${account.claudeDir}` : ""}${account.ghUser ? `\nGitHub: ${account.ghUser}` : ""}\nClick to change`)
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click((_e, cx) => { cx.stop_propagation(); openAccount(w.id); })
-      .child(`@${account.label}`)))
-    .when(Boolean(label), (el) => el.child(h_flex().id(`space-link-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
+    .when(Boolean(label), (el) => el.child(h_flex().id(`space-link-${w.id}`).flex_none().w(LINK_CHIP).gap(3).items_center().px(5).rounded(4)
       .border_1().border_color(t.accent + "55").bg(t.accent + "14").text_size(12).text_color(t.accent).cursor_pointer()
       .hover((s) => s.bg(t.accent + "2a"))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
       .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().flex_1().min_w(0).truncate().child(label))))
     // Not linked: the same chip in grey, "Link".
-    .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().w(CHIP).gap(3).items_center().px(5).rounded(4)
+    .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().w(LINK_CHIP).gap(3).items_center().px(5).rounded(4)
       .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(12).text_color(t.dim).cursor_pointer()
       .hover((s) => s.bg(t.dim + "2a").text_color(t.muted))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -236,6 +232,40 @@ export function foldAllButton(v, t) {
       cx.notify();
     })
     .child(svg(`${ICONS}/${any ? "chevrons-down-up" : "chevrons-up-down"}.svg`).size(14));
+}
+
+// The account filter: v.accountFilter is null (every space), "none" (spaces on the default
+// account) or an account's id. A filter on an account since removed shows every space.
+export function accountFilterOf(v) {
+  const f = v.accountFilter;
+  return f === "none" || (f && accounts().some((a) => a.id === f)) ? f : null;
+}
+
+// Keeps the rows on the filtered account: a space by its own account (a worktree space by its
+// repository's, unless it has its own), the worktrees without a space by the space they fold under.
+export function byAccount(v, rows) {
+  const f = accountFilterOf(v);
+  if (!f) return rows;
+  const of = {};
+  return rows.filter((r) => {
+    if (r.kind !== "space") return of[r.parent] === f;
+    of[r.w.id] = accountOf(r.w, r.g ? { main: r.g.main, on: r.w.machine ?? null } : null)?.id ?? "none";
+    return of[r.w.id] === f;
+  });
+}
+
+// Under the header, once there is an account: All, each account, No account.
+export function accountFilterRow(v, t) {
+  const list = accounts();
+  if (!list.length) return div();
+  const cur = accountFilterOf(v);
+  const opts = [[null, "All"], ...list.map((a) => [a.id, a.label]), ["none", "No account"]];
+  return h_flex().id("spaces-account-filter").flex_none().flex_wrap().gap(4).px(16).pb(6).text_size(11)
+    .children(opts.map(([id, label]) => div().id(`spaces-account-${id ?? "all"}`).px(7).py(1).rounded_full().cursor_pointer()
+      .border_1().border_color(cur === id ? t.accent : t.border).text_color(cur === id ? t.accent : t.muted)
+      .when(cur === id, (e) => e.bg(t.accent + "14")).when(cur !== id, (e) => e.hover((s) => s.bg(t.hover).text_color(t.foreground)))
+      .on_click((_e, cx) => { v.accountFilter = id; save("spaces.account", id); cx.notify(); })
+      .child(label)));
 }
 
 export const isOpen = (v, id) => v.openSpaces?.has(id) ?? false;
