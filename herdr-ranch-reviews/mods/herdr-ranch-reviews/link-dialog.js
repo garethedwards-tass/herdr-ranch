@@ -7,6 +7,8 @@
 // working pair to the system's credential store (jira-client.js storeSignIn); the token
 // is never kept in Herdr's settings. docs/connect-jira.md explains every way to connect.
 // Issues: from Jira (the default when a project is linked) or from the GitHub repository.
+// Account: which Claude Code login and GitHub account the space's terminals use (accounts.js),
+// picked here and saved with the links; New account adds one to the list.
 
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
@@ -14,6 +16,7 @@ import { props, closeOverlay, theme, spaces, exec, run } from "herdr";
 import { spaceRepo, linkOf, saveLink, knownSites, detectGithub, openUrl } from "./links.js";
 import { credentials, myself, findProjects, cleanSite, call, TOKEN_PAGE, storeSignIn, removeSignIn, platform, STORE, validSite, trustedSite, trustSite } from "./jira-client.js";
 import { fs } from "./links.js";
+import { accounts, accountOf, setAccount, addAccount, removeAccount, checkAccount, parseGhAccounts, accountColor, accountLetter } from "./accounts.js";
 import { linearKey, viewer as linearViewer, findTeams, connectLinear, disconnectLinear, KEY_PAGE as LINEAR_KEY_PAGE } from "./linear-client.js";
 
 const branchKey = (branch) => /\b([A-Z][A-Z0-9]{1,9})-\d+\b/.exec(branch ?? "")?.[1] ?? "";
@@ -47,6 +50,14 @@ export class LinkDialog extends View {
     this.linTeam.on("change", (_e, cx) => { if (!typed("linTeam", this.linTeam)) return; this.linChosen = null; this.linOpen = true; this.debounce("linTeam", cx); });
     this.linTeam.on("focus", (_e, cx) => { this.linOpen = true; cx.notify(); });
     this.handle = cx.focus_handle();
+    // Account: the choice (an id, null for the default; undefined until read), the New account form.
+    this.acct = undefined; this.acctWas = undefined; this.acctForm = false; this.acctError = ""; this.ghUsers = null; this.ghUser = "";
+    this.acctLabel = InputState.new({ placeholder: "Work, Personal…" });
+    this.acctDir = InputState.new({ placeholder: "~/.claude-<label> (empty: keep the usual login)" });
+    for (const s of [this.acctLabel, this.acctDir]) {
+      s.on("change", (_e, cx) => { if (this.acctError) { this.acctError = ""; cx.notify(); } });
+      s.on("submit", (_e, cx) => this.addAccount(cx));
+    }
 
     // GitHub suggestions: your repositories once, then `gh search repos` as you type.
     this.repos = []; this.found = []; this.ghSignedOut = false; this.ghOpen = false;
@@ -70,6 +81,7 @@ export class LinkDialog extends View {
     cx.spawn(async (cx) => {
       this.repo = await spaceRepo(this.space).catch(() => null);
       const link = linkOf(this.space, this.repo) ?? {};
+      this.acct = this.acctWas = accountOf(this.space, this.repo)?.id ?? null;
       const github = link.github || (this.repo ? await detectGithub(this.repo).catch(() => null) : null);
       this.set("github", this.github, github ?? "");
       this.guess = link.jira?.key ?? branchKey(this.space?.branch);
@@ -242,6 +254,27 @@ export class LinkDialog extends View {
     cx.notify();
   }
 
+  // New account: add it to the list and choose it (saved with the rest).
+  addAccount(cx) {
+    const label = this.acctLabel.value().trim();
+    const a = { label, claudeDir: this.acctDir.value().trim() || (label ? `~/.claude-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : ""), ghUser: this.ghUser };
+    const err = checkAccount(a);
+    if (err) { this.acctError = err; cx.notify(); return; }
+    this.acct = addAccount(a).id;
+    this.acctLabel.set_value(""); this.acctDir.set_value(""); this.ghUser = ""; this.acctForm = false;
+    cx.notify();
+  }
+
+  openAccountForm(cx) {
+    this.acctForm = !this.acctForm; this.acctError = "";
+    if (this.acctForm && this.ghUsers === null) cx.spawn(async (cx) => {
+      const r = await exec("gh", ["auth", "status"]).catch(() => null);
+      this.ghUsers = parseGhAccounts(`${r?.stdout ?? ""}\n${r?.stderr ?? ""}`);
+      cx.notify();
+    });
+    cx.notify();
+  }
+
   save(cx) {
     const github = this.github.value().trim().replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/\/+$/, "");
     // With issues from GitHub the Jira fields are hidden: a Jira link is kept only when both are filled.
@@ -263,6 +296,8 @@ export class LinkDialog extends View {
         ...(fromLinear ? { issues: "linear", linear: { teamId: this.linChosen.id, key: this.linChosen.key, name: this.linChosen.name, ...(this.linFilter ? { filter: this.linFilter } : {}) } } : {}),
         ...(ghFilter ? { issuesFilter: ghFilter } : {}),
       });
+      // Only a change is written: a space left on its repository's account keeps following it.
+      if (this.acct !== undefined && this.acct !== this.acctWas) setAccount(this.space, this.repo, accounts().find((a) => a.id === this.acct) ?? null);
       this.close();
     };
     const checkJira = filter && site && key && !fromGithub, checkGithub = ghFilter && fromGithub;
@@ -373,6 +408,34 @@ export class LinkDialog extends View {
           .when(L.state === "in", (e) => e.child(button("lin-disconnect", "Remove key", null, (cx) => cx.spawn(async (cx) => { await disconnectLinear(); this.linForm = true; this.checkLinear(cx); }))))
           .child(button("lin-connect", this.connecting ? "Testing…" : "Connect", "blue", (cx) => this.connectLinear(cx))))));
 
+    // Account: Default or one of the list, its details, and the New account form.
+    const accts = accounts(), cur = accts.find((x) => x.id === this.acct) ?? null;
+    const letter = (x) => div().size(14).flex_none().flex().items_center().justify_center().rounded(3).bg(accountColor(x, t)).text_color(t.background).text_size(9).font_semibold().child(accountLetter(x));
+    const acctChip = (x) => h_flex().id(`acct-${x?.id ?? "default"}`).gap(5).items_center().pl(x ? 4 : 9).pr(9).py(1).rounded_full().text_size(fs.tiny).cursor_pointer()
+      .border_1().border_color(this.acct === (x?.id ?? null) ? t.accent : t.border).text_color(this.acct === (x?.id ?? null) ? t.accent : t.muted)
+      .when(this.acct === (x?.id ?? null), (e) => e.bg(t.accent + "14")).hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => { this.acct = x?.id ?? null; cx.notify(); })
+      .when(Boolean(x), (e) => e.child(letter(x))).child(x?.label ?? "Default");
+    const accountBody = v_flex().gap(8)
+      .child(h_flex().gap(6).flex_wrap().items_center()
+        .child(acctChip(null)).children(accts.map(acctChip))
+        .child(chip("acct-new", this.acctForm ? "Cancel new account" : "New account…", this.acctForm, (cx) => this.openAccountForm(cx))))
+      .child(h_flex().gap(8).items_center()
+        .child(div().flex_1().min_w(0).child(hint(cur ? [cur.claudeDir && `Claude Code: ${cur.claudeDir}`, cur.ghUser && `GitHub: ${cur.ghUser}`].filter(Boolean).join(" · ") : "Your usual Claude Code login and gh account.")))
+        .when(Boolean(cur), (e) => e.child(button("acct-remove", "Remove from list", "link", (cx) => { removeAccount(cur.id); if (this.acctWas === cur.id) this.acctWas = null; this.acct = null; cx.notify(); }))))
+      .when(this.acctForm, (e) => e.child(v_flex().gap(8).p(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
+        .child(v_flex().gap(4).child(label("Label")).child(box(this.acctLabel, false)))
+        .child(v_flex().gap(4).child(label("Claude Code config folder")).child(box(this.acctDir, false)))
+        .child(h_flex().gap(6).flex_wrap().items_center().child(label("GitHub"))
+          .children((this.ghUsers ?? []).map((u) => chip(`acct-gh-${u}`, u, this.ghUser === u, (cx) => { this.ghUser = this.ghUser === u ? "" : u; cx.notify(); })))
+          .when(this.ghUsers !== null && this.ghUsers.length === 0, (e) => e.child(hint("none signed in to gh")))
+          .when(this.ghUsers === null, (e) => e.child(hint("Reading gh's accounts…"))))
+        .when(Boolean(this.acctError), (e) => e.child(hint(this.acctError, t.ansi1)))
+        .child(h_flex().gap(8).items_center()
+          .child(div().flex_1().min_w(0).child(hint("Log in once: open a Claude Code terminal as the account, then /login.")))
+          .child(button("acct-add", "Add", "blue", (cx) => this.addAccount(cx))))))
+      .child(hint("Terminals the Spaces list opens here use the account's Claude Code login and GitHub account."));
+
     return v_flex().id("space-link").size_full().text_size(fs.body).text_color(t.foreground).bg(t.background).track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key === "escape") { if (this.ghOpen || this.jiraOpen || this.linOpen) { this.ghOpen = false; this.jiraOpen = false; this.linOpen = false; cx.notify(); } else this.close(); cx.stop_propagation(); }
@@ -382,7 +445,7 @@ export class LinkDialog extends View {
         .child(div().font_semibold().text_size(fs.title + 1).child("Link space"))
         .child(h_flex().gap(4).text_size(fs.meta).text_color(t.muted).min_w(0)
           .child(div().font_semibold().text_color(t.foreground).child(this.space?.name ?? "?"))
-          .child(div().min_w(0).truncate().child("and its worktrees: where its pull requests and issues come from."))))
+          .child(div().min_w(0).truncate().child("and its worktrees: where its pull requests and issues come from, and its account."))))
       .child(v_flex().id("space-link-body").flex_1().min_h(0).overflow_y_scrollbar().px(16).py(12).gap(12)
         .child(section(1, "GitHub repository", null, v_flex().gap(4)
           .child(box(this.github, this.ghOpen))
@@ -422,6 +485,7 @@ export class LinkDialog extends View {
               .child(chip("f-custom", "Custom JQL…", preset === "custom", (cx) => { this.custom = true; cx.notify(); })))
             .when(preset === "custom", (e) => e.child(box(this.filter, false)).child(hint("JQL that narrows the project's open issues, e.g. labels = backend")))
             .when(Boolean(this.filterError), (e) => e.child(hint(this.filterError, t.ansi1)))), !site)))
+        .child(section(this.issues === "github" ? 3 : 4, "Account", null, accountBody))
         .when(Boolean(this.error), (e) => e.child(div().text_size(fs.meta).text_color(t.ansi1).child(this.error))))
       .child(h_flex().flex_none().px(16).py(10).gap(8).items_center().border_t_1().border_color(t.border).bg(t.surface)
         .child(button("guide", "How to connect ↗", "link", () => openUrl(this.issues === "linear" ? "https://github.com/jslowack/herdr-ranch#connect-linear" : this.issues === "github" ? "https://github.com/jslowack/herdr-ranch#link-a-space" : GUIDE)))

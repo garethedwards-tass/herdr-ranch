@@ -43,9 +43,6 @@ export function openRemove(p) {
   openOverlay({ mod: MOD, kind: "dialog", width: 460, height: 240, props: { dialog: "remove", path: p.path, main: p.main, on: p.on ?? null, branch: p.branch ?? null } });
 }
 // A space's checkout, or `at` ({ folder, on }): a worktree no space shows.
-export function openAccount(space) {
-  openOverlay({ mod: MOD, kind: "dialog", width: 520, height: 560, props: { dialog: "account", space } });
-}
 
 // `action` "fetch" or "pull": run it as soon as the dialog has read the checkout.
 export function openGit(space, tab = "status", at = null, action = null) {

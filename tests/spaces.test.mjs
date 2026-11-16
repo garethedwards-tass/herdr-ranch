@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
 import { place, probe, parseWorktrees, arrange, tail, linkLabel, countStatus, workIn, checkoutAt, hasWork, workText, issueBranch, parseRefs, addArgs, worktreePath, parseStatus, switchArgs, diverged, switchRisk, stashMessage } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js";
 import { source, looksLikeKey } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/issues.js";
-import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/accounts.js";
+import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts } from "../shared/accounts.js";
 
 test("place: the first terminal's live folder, else the space's folder", () => {
   const s = { folder: "/made", tabs: [{ id: "t1" }] };

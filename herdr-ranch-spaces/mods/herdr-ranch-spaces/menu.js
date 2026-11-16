@@ -1,8 +1,8 @@
 // Right-click menus and the git button's popup. The list opens itself as a popup at the pointer with
 //   { menu: "git", space, on, info }                    the git button: its state, Git status, Switch branch,
 //                                                        Fetch, Pull, the worktree actions
-//   { menu: <space id>, git: "main" | "linked" | null }  a space: Link space and Account (not on a worktree,
-//                                                        which uses its repository's), the worktree actions, Rename, Close
+//   { menu: <space id>, git: "main" | "linked" | null }  a space: Link space (its links and account; not on a
+//                                                        worktree, which uses its repository's), the worktree actions, Rename, Close
 //   { menu: "checkout", path, main, on, branch }        a worktree without a space: Create space, Delete, Copy path
 // ↑/↓ move, Enter runs, Esc closes.
 
@@ -10,7 +10,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { props, closeOverlay, run, theme, spaces, knownAgents } from "herdr";
 import { openLinkDialog } from "./links.js";
-import { openWorktree, openNew, openRemove, openGit, openAccount, ICONS } from "./actions.js";
+import { openWorktree, openNew, openRemove, openGit, ICONS } from "./actions.js";
 import { accounts, argvAs, runAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
@@ -56,8 +56,7 @@ export function menuItems(p, agents = []) {
   return [
     // A worktree uses its repository space's link and account (linkOf, accountOf): set them there.
     ...(p.git === "linked" ? [] : [
-      ["Link space…", `${ICONS}/link.svg`, () => openLinkDialog(MOD, spaces().find((s) => s.id === id))],
-      [acct ? `Account: ${acct.label}…` : "Account…", CHROME("settings"), () => openAccount(id)],
+      [acct ? `Link space and account (${acct.label})…` : "Link space and account…", `${ICONS}/link.svg`, () => openLinkDialog(MOD, spaces().find((s) => s.id === id))],
     ]),
     ...newTabs(id, acct),
     ...(p.git ? [

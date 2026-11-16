@@ -5,16 +5,15 @@
 import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { openOverlay, spaces, panes, run, nextCommand } from "herdr";
-import { linkOf, openLinkDialog } from "./links.js";
+import { openLinkDialog } from "./links.js";
 import { LinkDialog } from "./link-dialog.js";
 import { SpaceMenu } from "./menu.js";
 import { NewDialog } from "./new.js";
 import { RemoveDialog } from "./remove.js";
 import { GitDialog } from "./git-dialog.js";
-import { AccountDialog } from "./account-dialog.js";
-import { accounts, accountOf } from "./accounts.js";
-import { openNew, openGit, openAccount, ICONS } from "./actions.js";
-import { linkLabel, base, checkoutAt, hasWork } from "./git.js";
+import { accounts, accountOf, accountColor, accountLetter } from "./accounts.js";
+import { openNew, openGit, ICONS } from "./actions.js";
+import { base, checkoutAt, hasWork } from "./git.js";
 
 export const MOD = "herdr-ranch-spaces";
 const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
@@ -26,7 +25,7 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 
 // The list opened as one of its own dialogs or popups: that view, else null.
 export function dialogFor(p, cx) {
-  const kind = p?.dialog === "link" ? LinkDialog : p?.dialog === "new" ? NewDialog : p?.dialog === "remove" ? RemoveDialog : p?.dialog === "git" ? GitDialog : p?.dialog === "account" ? AccountDialog : p?.menu ? SpaceMenu : null;
+  const kind = p?.dialog === "link" ? LinkDialog : p?.dialog === "new" ? NewDialog : p?.dialog === "remove" ? RemoveDialog : p?.dialog === "git" ? GitDialog : p?.menu ? SpaceMenu : null;
   return kind ? cx.new(kind, p) : null;
 }
 
@@ -71,7 +70,6 @@ export function gitState(c, g) {
 // git popup.
 // The chips are a fixed width, whatever they say: long words end in …, and rows never shift.
 const CHIP = 78; // the git pill (and its no-git stand-in)
-const LINK_CHIP = 48; // the link chip
 // The git chip of a folder outside git (grey, "no repo"), or not read yet ("…").
 function noGitChip(w, known, t) {
   return h_flex().id(`space-git-none-${w.id}`).flex_none().w(CHIP).gap(3).px(5).items_center().rounded(4)
@@ -137,26 +135,27 @@ function button(id, path, tip, t, onClick, color = null) {
     .child(svg(path).size(13));
 }
 
-// A space's account as a colored letter before its link chip (a click changes it). Spaces on the
-// default account keep the slot empty, once there is an account, so the chips still line up.
-const ACCOUNT_COLORS = ["ansi5", "ansi4", "ansi6", "ansi3", "ansi2", "ansi1"];
+// A space's account as a colored letter before its git chip; on the default account a faint
+// outlined square in its place. Either click opens Link space (links and account).
 function accountBadge(w, a, t) {
-  const list = accounts();
-  if (!a) return div().when(list.length > 0, (el) => el.w(16).flex_none());
-  const color = t[ACCOUNT_COLORS[Math.max(0, list.findIndex((x) => x.id === a.id)) % ACCOUNT_COLORS.length]] ?? t.accent;
+  if (!a) return div().id(`space-account-${w.id}`).size(16).flex_none().flex().items_center().justify_center().rounded(4)
+    .border_1().border_color(t.dim + "55").text_color(t.dim).cursor_pointer().hover((s) => s.border_color(t.muted).text_color(t.muted))
+    .tooltip("Default account\nClick to link the space or pick an account")
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
+    .child(svg(`${ICONS}/link.svg`).size(9));
+  const color = accountColor(a, t);
   return div().id(`space-account-${w.id}`).size(16).flex_none().flex().items_center().justify_center().rounded(4)
     .bg(color).text_color(t.background).text_size(10).font_semibold().cursor_pointer().hover((s) => s.opacity(0.85))
     .tooltip(`Account: ${a.label}${a.claudeDir ? `\nClaude Code: ${a.claudeDir}` : ""}${a.ghUser ? `\nGitHub: ${a.ghUser}` : ""}\nClick to change`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-    .on_click((_e, cx) => { cx.stop_propagation(); openAccount(w.id); })
-    .child(a.label.trim().charAt(0).toUpperCase() || "?");
+    .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
+    .child(accountLetter(a));
 }
 
 // What follows a space's name, in place of Herdr's gitTail: the repository and branch (a click
-// opens Git), its work, its link chip (or Link space when it has none), and New worktree.
+// opens Git), its account's letter (a click opens Link space), and its git chip.
 export function spaceTail(v, { w, g, tree, at, known }, t, again) {
-  const link = linkOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
-  const label = linkLabel(link);
   const account = accountOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
   // The repository when the name doesn't say it; the branch and state are in the git chip.
   const where = g && !tree && g.name.toLowerCase() !== w.name.toLowerCase() ? g.name : "";
@@ -170,19 +169,6 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
         .child(where)))
     )
     .child(accountBadge(w, account, t))
-    .when(Boolean(label), (el) => el.child(h_flex().id(`space-link-${w.id}`).flex_none().w(LINK_CHIP).gap(3).items_center().px(5).rounded(4)
-      .border_1().border_color(t.accent + "55").bg(t.accent + "14").text_size(12).text_color(t.accent).cursor_pointer()
-      .hover((s) => s.bg(t.accent + "2a"))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
-      .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child(div().flex_1().min_w(0).truncate().child(label))))
-    // Not linked: the same chip in grey, "Link".
-    .when(!label, (el) => el.child(h_flex().id(`space-link-new-${w.id}`).flex_none().w(LINK_CHIP).gap(3).items_center().px(5).rounded(4)
-      .border_1().border_color(t.dim + "55").bg(t.dim + "14").text_size(12).text_color(t.dim).cursor_pointer()
-      .hover((s) => s.bg(t.dim + "2a").text_color(t.muted))
-      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-      .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
-      .child(svg(`${ICONS}/link.svg`).size(10).flex_none()).child("Link")))
     .child(g ? gitChip(v, w, g, at, t) : noGitChip(w, known, t));
 }
 

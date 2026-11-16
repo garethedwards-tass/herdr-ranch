@@ -1,4 +1,4 @@
-// Accounts per space: which Claude Code login (its config folder, CLAUDE_CONFIG_DIR) and which
+// Accounts per space (shared: the spaces list starts terminals as one; every Link space dialog sets it): which Claude Code login (its config folder, CLAUDE_CONFIG_DIR) and which
 // GitHub account (GH_TOKEN from `gh auth token --user`) a space's terminals use.
 // Stored in shared("ranch-accounts"):
 //   { accounts: [{ id, label, claudeDir?: "~/.claude-work", ghUser?: "octocat" }],
@@ -14,6 +14,14 @@ const KEY = "ranch-accounts";
 const read = () => shared(KEY) ?? { accounts: [], spaces: {} };
 
 export const accounts = () => read().accounts ?? [];
+
+// An account's color (a theme key's value), by its place in the list, and its letter.
+const COLORS = ["ansi5", "ansi4", "ansi6", "ansi3", "ansi2", "ansi1"];
+export function accountColor(a, t) {
+  const i = Math.max(0, accounts().findIndex((x) => x.id === a?.id));
+  return t[COLORS[i % COLORS.length]] ?? t.accent;
+}
+export const accountLetter = (a) => a?.label?.trim().charAt(0).toUpperCase() || "?";
 
 export function accountOf(space, repo) {
   const all = read(), list = all.accounts ?? [];
