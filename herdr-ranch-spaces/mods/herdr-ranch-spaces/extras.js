@@ -31,7 +31,7 @@ const CHEVRON1 = LEVEL1;
 // so its name starts where a worktree's does.
 // The chevron glyph has room around it, so the drawn caret and folder center 2px right of the box's.
 const wide = (el) => div().w(CARET + 13).pl(4).flex_none().flex().items_center().justify_center().child(el);
-const ROW = 31, TEXT = 14; // a child row's height and text (agents, terminals, worktrees)
+const ROW = 31, TEXT = 13; // a child row's height and text (agents, terminals, worktrees): text no larger than a space's name (13)
 const ICON = 17; // a row's icon without a caret (agents, terminals, New, worktrees without a space)
 // A label ("Agents", "Worktrees") starts where a caret's glyph does, not its box.
 const GLYPH = 4;
@@ -225,7 +225,7 @@ export function looseRow(v, r, t) {
     .on_mouse_down("right", () => checkoutMenu(r))
     .child(wide(svg(CHROME("folder")).size(ICON - 2).flex_none().text_color(t.dim))) // like the agent rows beside it
     .child(div().flex_1().min_w(0).truncate().child(base(r.c.path)))
-    .when(r.c.locked, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child("locked")))
+    .when(r.c.locked, (el) => el.child(div().flex_none().text_size(12).text_color(t.dim).child("locked")))
     .child(gitPill(`loose-git-${r.c.path}`, r.c.branch, r.c, { ahead: 0, behind: 0 }, t, null));
 }
 
@@ -281,7 +281,7 @@ export function accountFilterRow(v, t) {
   if (!list.length) return div();
   const cur = accountFilterOf(v);
   const opts = [[null, "All"], ...list.map((a) => [a.id, a.label]), ["none", "No account"]];
-  return h_flex().id("spaces-account-filter").flex_none().flex_wrap().gap(4).px(16).pb(6).text_size(11)
+  return h_flex().id("spaces-account-filter").flex_none().flex_wrap().gap(4).px(16).pb(6).text_size(12)
     .children(opts.map(([id, label]) => div().id(`spaces-account-${id ?? "all"}`).px(7).py(1).rounded_full().cursor_pointer()
       .border_1().border_color(cur === id ? t.accent : t.border).text_color(cur === id ? t.accent : t.muted)
       .when(cur === id, (e) => e.bg(t.accent + "14")).when(cur !== id, (e) => e.hover((s) => s.bg(t.hover).text_color(t.foreground)))
