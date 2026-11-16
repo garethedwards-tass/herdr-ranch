@@ -85,7 +85,7 @@ async function refresh(v) {
     if (!c || c.id !== s.sessionId) {
       const dir = `${projectDir(s.configDir, s.cwd)}/${s.sessionId}`, file = `${dir}.jsonl`;
       const { st, size } = await firstRead(file);
-      c = { id: s.sessionId, file, dir, st, offset: size, subs: [], read: now, started: s.startedAt ?? null };
+      c = { id: s.sessionId, file, dir, st, offset: size, subs: [], read: now, started: s.startedAt ?? null, configDir: s.configDir, cwd: s.cwd ?? null };
       c.subs = await subagents(dir, file);
       v.claude.set(a.address, c);
       changed = true;

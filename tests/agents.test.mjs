@@ -61,7 +61,7 @@ test("pickSession, subagentOf, windows, names and paths", () => {
   assert.equal(utf8Length("a·€😀"), 1 + 2 + 3 + 4);
 });
 
-import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimInsert, resumeArgs, envOf, setupFor, scriptFor } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
+import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimInsert, resumeArgs, helpArity, envVar, setupFor, scriptFor } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
 
 test("revive: typable keys, the prompt, background agents, /stop, busy, vim", () => {
   assert.deepEqual(keysFor("sh /Users/a.b/x-1=2"), ["s", "h", "space", "/", "shift+u", "s", "e", "r", "s", "/", "a", ".", "b", "/", "x", "-", "1", "=", "2"]);
@@ -97,25 +97,46 @@ test("revive: Claude Code's options again, with --resume, and nothing it can't r
   assert.deepEqual(R(["--add-dir", "../api", "../web", "--allowedTools", "Bash", "Edit"]), ["--add-dir", "../api", "../web", "--allowedTools", "Bash", "Edit", "--resume", "ID"]);
   assert.deepEqual(R(["-n", "auth work", "--model=us.anthropic.claude:1"]), ["-n", "auth work", "--model=us.anthropic.claude:1", "--resume", "ID"]);
   assert.deepEqual(R(["--append-system-prompt", "line one\nline two"]), ["--append-system-prompt", "line one\nline two", "--resume", "ID"]);
-  // An option it doesn't know: refuse, rather than read its value as a prompt.
+  // An option it doesn't know: refuse, rather than read its value as a prompt; and options whose
+  // session can't be resumed. A worktree is a session's folder: the script goes there instead.
   assert.throws(() => R(["--brand-new-flag", "value"]), /--brand-new-flag/);
-  assert.throws(() => R(["-p", "hi"]), /-p/);
+  assert.throws(() => R(["-p", "hi"]), /--print/);
+  assert.throws(() => R(["--no-session-persistence"]), /isn't saved/);
+  assert.deepEqual(R(["-w", "feature", "--model", "opus"]), ["--model", "opus", "--resume", "ID"]);
 });
 
-test("revive: the account comes from the shell, or from the account Claude Code names", () => {
-  const list = [{ id: "personal-1", claudeDir: "~/.claude-personal", ghUser: "octo" }];
-  const shell = "-zsh TERM=x HOME=/Users/a PATH=/bin";
-  // Same as its shell (nothing set for it, or a GH_TOKEN from the profile): inherit.
-  assert.equal(setupFor("claude TERM=x PATH=/bin", shell, list), "");
-  assert.equal(setupFor("claude GH_TOKEN=abc", "-zsh GH_TOKEN=abc", list), "");
-  // Set only for Claude Code, by an account it names: that account's setup.
-  assert.equal(setupFor("claude HERDR_RANCH_ACCOUNT=personal-1 CLAUDE_CONFIG_DIR=/Users/a/.claude-personal GH_TOKEN=t", shell, list),
-    `export HERDR_RANCH_ACCOUNT=personal-1; export CLAUDE_CONFIG_DIR="$HOME"'/.claude-personal'; GH_TOKEN=$(gh auth token --user 'octo' 2>/dev/null) && export GH_TOKEN || echo 'herdr-ranch: no gh token for octo (gh auth login)' >&2`);
-  // Set only for it, by nothing it names (or an account since removed): refuse.
-  assert.equal(setupFor("claude CLAUDE_CONFIG_DIR=/x", shell, list), null);
-  assert.equal(setupFor("claude HERDR_RANCH_ACCOUNT=gone CLAUDE_CONFIG_DIR=/x", shell, list), null);
-  assert.equal(envOf("a B=1 C=2", "C"), "2");
+test("revive: the option table from claude --help (wrapped description lines don't count)", () => {
+  const t = helpArity(`Options:
+  --add-dir <directories...>            Additional directories
+  --bg, --background                    Start in the background and with
+                                        --resume <session-id>, continues that
+  --plugin-dir <path>                   Load a plugin (repeat:
+                                        --plugin-dir A --plugin-dir B.zip)
+  -r, --resume [value]                  Resume a conversation
+  -n, --name <name>                     Set a display name
+  --verbose                             Override verbose mode`);
+  assert.deepEqual(t, { "--add-dir": "*", "--bg": 0, "--background": 0, "--plugin-dir": 1, "-r": "?", "--resume": "?", "-n": 1, "--name": 1, "--verbose": 0 });
+  assert.deepEqual(resumeArgs(["--plugin-dir", "x", "--verbose", "hi"], "ID", t), ["--plugin-dir", "x", "--verbose", "--resume", "ID"]);
+});
 
-  const s = scriptFor("export X=1", ["--model", "opus", "--resume", "abc-1"]);
-  assert.ok(s.endsWith("export X=1\nexec claude '--model' 'opus' '--resume' 'abc-1'\n"));
+test("revive: the account from the session's config folder; HERDR_RANCH_ACCOUNT only when it agrees", () => {
+  const home = "/Users/a";
+  const list = [{ id: "personal-1", claudeDir: "~/.claude-personal", ghUser: "octo" }, { id: "gh-2", ghUser: "work" }];
+  // The usual folder: unset whatever the shell has; a GitHub-only account named by Claude Code adds its login.
+  assert.equal(setupFor({ configDir: `${home}/.claude`, home, list }), "unset CLAUDE_CONFIG_DIR");
+  assert.equal(setupFor({ configDir: `${home}/.claude`, home, named: "gh-2", list }),
+    `export HERDR_RANCH_ACCOUNT=gh-2; GH_TOKEN=$(gh auth token --user 'work' 2>/dev/null) && export GH_TOKEN || echo 'herdr-ranch: no gh token for work (gh auth login)' >&2; unset CLAUDE_CONFIG_DIR`);
+  // An account's folder: that account, whatever Claude Code names (a stale inherited name can't win).
+  assert.match(setupFor({ configDir: `${home}/.claude-personal`, home, named: "gh-2", list }), /^export HERDR_RANCH_ACCOUNT=personal-1; export CLAUDE_CONFIG_DIR="\$HOME"'\/\.claude-personal'; GH_TOKEN/);
+  // A folder no account has (spaces included): just that folder.
+  assert.equal(setupFor({ configDir: "/opt/claude cfg", home, list }), "export CLAUDE_CONFIG_DIR='/opt/claude cfg'");
+
+  // Environment only after the arguments, so argument text can't pass for it.
+  const argv = ["claude", "why is HERDR_RANCH_ACCOUNT=x empty"];
+  assert.equal(envVar("claude why is HERDR_RANCH_ACCOUNT=x empty TERM=y HERDR_RANCH_ACCOUNT=real-1\n", argv, "HERDR_RANCH_ACCOUNT"), "real-1");
+  assert.equal(envVar("claude why is HERDR_RANCH_ACCOUNT=x empty TERM=y", argv, "HERDR_RANCH_ACCOUNT"), undefined);
+  assert.equal(envVar("something else", argv, "TERM"), undefined);
+
+  const s = scriptFor("/w/my repo", "unset CLAUDE_CONFIG_DIR", ["--model", "opus", "--resume", "abc-1"]);
+  assert.ok(s.endsWith("cd '/w/my repo' || exit 1\nunset CLAUDE_CONFIG_DIR\nexec claude '--model' 'opus' '--resume' 'abc-1'\n"));
 });

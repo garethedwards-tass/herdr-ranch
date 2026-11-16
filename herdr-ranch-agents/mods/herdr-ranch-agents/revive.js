@@ -5,11 +5,11 @@
 // script starts Claude Code again with the running one's own options and `--resume <session id>`,
 // so it reopens this conversation and no other.
 //
-// The account: the script runs in the shell Claude Code was started from, so it inherits that
-// shell's environment. When Claude Code's CLAUDE_CONFIG_DIR or GH_TOKEN differ from the shell's
-// (a Spaces account set only for it), the script sets them again from the account it names
-// (HERDR_RANCH_ACCOUNT, from shared/accounts.js envScript), with the same envScript. Anything it
-// can't account for, it refuses rather than guess.
+// The account: the panel already knows which Claude Code config folder holds the session (the
+// watcher found it there) and the folder it runs in. The script goes to that folder and points
+// CLAUDE_CONFIG_DIR at that config folder (or unsets it for the usual one), so `--resume` finds the
+// conversation whatever the shell has. A Spaces account for that folder (or the one Claude Code
+// names in HERDR_RANCH_ACCOUNT, when it agrees) also sets its GitHub login, with envScript.
 //
 // It's driven with `hc keys`, which types only unshifted keys and shift+letter (no $ ~ ( ) _), so
 // the shell is given `sh <script>`, a path made of typable characters. `hc send` would wrap the
@@ -17,7 +17,7 @@
 // every step reads the screen and stops at anything unexpected.
 
 import { hc, appHome, home, writeTextFile, readTextFile, exec, notify } from "herdr";
-import { accounts, envScript } from "./accounts.js";
+import { accounts, envScript, expand } from "./accounts.js";
 
 // Keys that type `text`, or null when a character can't be typed.
 export function keysFor(text) {
@@ -57,101 +57,191 @@ export const vimInsert = (screen) => /-- INSERT --/.test(bottom(screen, 8));
 // Whether the slash menu's highlighted entry is Claude Code's /stop for a background session.
 export const stopOffered = (screen) => /^\s*❯ \/stop\s+Stop this background session/m.test(screen ?? "");
 
-// Claude Code 2.1's options (`claude --help`) by what follows them: nothing, one value, an
-// optional value, or several values. SESSION ones choose a conversation and are replaced.
-const NONE = "--allow-dangerously-skip-permissions --ax-screen-reader --bg --background --bare --brief --chrome --dangerously-skip-permissions --disable-slash-commands --exclude-dynamic-system-prompt-sections --forward-subagent-text --ide --include-hook-events --include-partial-messages --no-chrome --no-session-persistence --replay-user-messages --restricted --safe-mode --strict-mcp-config --verbose --tmux";
-const ONE = "--agent --agents --append-system-prompt --append-system-prompt-file --system-prompt-file --autocompact --debug-file --effort --environment --fallback-model --input-format --json-schema --max-budget-usd --model -n --name --output-format --permission-mode --permission-prompts --plugin-dir --plugin-url --remote-control-session-name-prefix --setting-sources --settings --system-prompt --system-prompt-snapshot";
-const OPTIONAL = "-d --debug --prompt-suggestions --remote-control";
-const MANY = "--add-dir --allowedTools --allowed-tools --betas --disallowedTools --disallowed-tools --file --mcp-config --tools";
-const SESSION = { "-c": 0, "--continue": 0, "--fork-session": 0, "--desktop": 0, "--session-id": 1, "-r": "?", "--resume": "?", "--from-pr": "?", "--teleport": "?", "--cloud": "?", "-w": "?", "--worktree": "?" };
-const ARITY = Object.fromEntries([...NONE.split(" ").map((o) => [o, 0]), ...ONE.split(" ").map((o) => [o, 1]),
-  ...OPTIONAL.split(" ").map((o) => [o, "?"]), ...MANY.split(" ").map((o) => [o, "*"])]);
+// Claude Code's options by what follows them: nothing (0), one value (1), an optional value ("?"),
+// or several ("*"). Read from the installed `claude --help` (helpArity); STATIC is 2.1.325's, for
+// when that can't be read. SESSION ones choose a conversation (or folder) and are replaced; REFUSE
+// ones make a session that can't be resumed this way.
+export function helpArity(text) {
+  const out = {};
+  // Option lines start near the margin; a description's wrapped lines (which can mention other
+  // options) are indented deeper.
+  for (const line of (text ?? "").split("\n")) {
+    const m = /^ {1,6}((?:-[\w-]+(?:, )?)+)(?: (<[^>]+>|\[[^\]]+\]))?(?:\s|$)/.exec(line);
+    if (!m) continue;
+    const arg = m[2] ?? "", arity = !arg ? 0 : arg.endsWith("...>") || arg.endsWith("...]") ? "*" : arg.startsWith("[") ? "?" : 1;
+    for (const name of m[1].split(", ").map((x) => x.trim()).filter(Boolean)) out[name] = arity;
+  }
+  return out;
+}
+const STATIC = helpArity(`
+  --add-dir <directories...>
+  --agent <agent>
+  --agents <json-or-file>
+  --allow-dangerously-skip-permissions
+  --allowedTools, --allowed-tools <tools...>
+  --append-system-prompt <prompt>
+  --append-system-prompt-file <file>
+  --system-prompt-file <file>
+  --autocompact <auto|tokens>
+  --ax-screen-reader
+  --bg, --background
+  --bare
+  --betas <betas...>
+  --brief
+  --chrome
+  --cloud [description|session_id|url]
+  -c, --continue
+  --dangerously-skip-permissions
+  -d, --debug [filter]
+  --debug-file <path>
+  --desktop
+  --disable-slash-commands
+  --disallowedTools, --disallowed-tools <tools...>
+  --effort <level>
+  --environment <environment_id>
+  --exclude-dynamic-system-prompt-sections
+  --fallback-model <model>
+  --file <specs...>
+  --fork-session
+  --forward-subagent-text
+  --from-pr [value]
+  --ide
+  --include-hook-events
+  --include-partial-messages
+  --input-format <format>
+  --json-schema <schema>
+  --max-budget-usd <amount>
+  --mcp-config <configs...>
+  --model <model>
+  -n, --name <name>
+  --no-chrome
+  --no-session-persistence
+  --output-format <format>
+  --permission-mode <mode>
+  --permission-prompts <target>
+  --plugin-dir <path>
+  --plugin-url <url>
+  -p, --print
+  --prompt-suggestions [value]
+  --remote-control [name]
+  --remote-control-session-name-prefix <prefix>
+  --replay-user-messages
+  --restricted
+  -r, --resume [value]
+  --safe-mode
+  --session-id <uuid>
+  --setting-sources <sources>
+  --settings <file-or-json>
+  --strict-mcp-config
+  --system-prompt <prompt>
+  --system-prompt-snapshot <on|off>
+  --teleport [session]
+  --tmux
+  --tools <tools...>
+  --verbose
+  -w, --worktree [name]
+`);
+const SESSION = new Set(["-c", "--continue", "--fork-session", "--desktop", "--session-id", "-r", "--resume", "--from-pr", "--teleport", "--cloud", "-w", "--worktree"]);
+const REFUSE = { "-p": "--print", "--print": "--print", "--no-session-persistence": "--no-session-persistence (its conversation isn't saved)", "-h": "--help", "--help": "--help", "-v": "--version", "--version": "--version" };
 
 // Claude Code's arguments to start it again: its options as given, without its first prompt or any
 // session choice, then `--resume <id>`. Throws on an option it doesn't know (or `--print`), as
 // Claude Code would read the next argument differently.
-export function resumeArgs(args, id) {
+export function resumeArgs(args, id, arity = STATIC) {
   const out = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     if (a === "--") break; // prompts only from here
     if (!a.startsWith("-") || a === "-") continue; // a prompt
     const [name, inline] = a.includes("=") ? [a.slice(0, a.indexOf("=")), true] : [a, false];
-    const session = name in SESSION, arity = session ? SESSION[name] : ARITY[name];
-    if (arity === undefined) throw new Error(`it was started with ${name}, which this doesn't know how to repeat`);
+    if (name in REFUSE) throw new Error(`it was started with ${REFUSE[name]}`);
+    const n = arity[name];
+    if (n === undefined) throw new Error(`it was started with ${name}, which this doesn't know how to repeat`);
     const take = [a];
     if (!inline) {
-      if (arity === 1 && i + 1 < args.length) take.push(args[++i]);
-      if (arity === "?" && i + 1 < args.length && !args[i + 1].startsWith("-")) take.push(args[++i]);
-      if (arity === "*") while (i + 1 < args.length && !args[i + 1].startsWith("-")) take.push(args[++i]);
+      if (n === 1 && i + 1 < args.length) take.push(args[++i]);
+      if (n === "?" && i + 1 < args.length && !args[i + 1].startsWith("-")) take.push(args[++i]);
+      if (n === "*") while (i + 1 < args.length && !args[i + 1].startsWith("-")) take.push(args[++i]);
     }
-    if (!session) out.push(...take);
+    if (!SESSION.has(name)) out.push(...take);
   }
   return [...out, "--resume", id];
 }
 
-// A variable's value in `ps eww` output (the first space ends it, the same for both sides).
-export const envOf = (ps, k) => new RegExp(`(?:^|\\s)${k}=(\\S*)`).exec(ps ?? "")?.[1];
+// A variable from a process's environment in `ps eww -o command=` output, which is its arguments
+// then its environment: the arguments are cut off first so their text can't be read as one.
+export function envVar(psOut, argv, k) {
+  const head = (argv ?? []).join(" ");
+  const text = (psOut ?? "").replace(/\n$/, "");
+  if (!text.startsWith(head)) return undefined;
+  return new RegExp(`(?:^|\\s)${k}=(\\S*)`).exec(text.slice(head.length))?.[1];
+}
 
-// The account setup the script needs, from Claude Code's and its shell's environments: "" when
-// the shell already has Claude Code's account, envScript(account) when Claude Code's names one,
-// else null (refuse). `list`: the accounts (shared/accounts.js).
-export function setupFor(claudePs, shellPs, list) {
-  const same = ["CLAUDE_CONFIG_DIR", "GH_TOKEN"].every((k) => envOf(claudePs, k) === envOf(shellPs, k));
-  if (same) return "";
-  const id = envOf(claudePs, "HERDR_RANCH_ACCOUNT");
-  const a = id && list.find((x) => x.id === id);
-  return a ? envScript(a) : null;
+// The script's account lines: the session's config folder (unset for the usual one) and, for a
+// Spaces account on that folder, its GitHub login. `named`: the account id Claude Code carries,
+// used only when that account's folder is this one.
+export function setupFor({ configDir, home, named = null, list = [] }) {
+  const usual = configDir === `${home}/.claude`;
+  const on = (a) => (a.claudeDir ? expand(a.claudeDir, home) === configDir : usual);
+  const account = list.find((a) => a.id === named && on(a)) ?? (usual ? null : list.find((a) => a.claudeDir && on(a))) ?? null;
+  if (account) return [envScript(account), ...(account.claudeDir ? [] : ["unset CLAUDE_CONFIG_DIR"])].join("; ");
+  return usual ? "unset CLAUDE_CONFIG_DIR" : `export CLAUDE_CONFIG_DIR=${q(configDir)}`;
 }
 
 const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 
-export function scriptFor(setup, args) {
+export function scriptFor(cwd, setup, args) {
   return [
     "# herdr-ranch: resume a Claude Code session that stopped reporting its status (written by the Agents list)",
-    ...(setup ? [setup] : []),
+    `cd ${q(cwd)} || exit 1`,
+    setup,
     `exec claude ${args.map(q).join(" ")}`,
     "",
   ].join("\n");
 }
 
-// Whether Claude Code's prompt uses vim keys (its config's editorMode).
+// Whether Claude Code's prompt uses vim keys: its global config's editorMode (~/.claude.json for the
+// usual folder, else <folder>/.claude.json). null when that can't be read: then it isn't guessed.
 async function vimMode(configDir) {
-  const dirs = configDir ? [configDir.replace(/^~(?=\/)/, home())] : [home(), `${home()}/.claude`];
-  for (const d of dirs) {
-    const text = await readTextFile(`${d}/.claude.json`).catch(() => null);
-    if (text) { try { return JSON.parse(text).editorMode === "vim"; } catch { return false; } }
-  }
-  return false;
+  const h = home(), file = configDir === `${h}/.claude` ? `${h}/.claude.json` : `${configDir}/.claude.json`;
+  const text = await readTextFile(file).catch(() => null);
+  if (text == null) return null;
+  try { return JSON.parse(text).editorMode === "vim"; } catch { return null; }
 }
+
+// The installed Claude Code's options, read once.
+let helpRead = null;
+const optionTable = () => (helpRead ??= exec("sh", ["-lc", "claude --help"], { timeout: 15000 })
+  .then((r) => { const t = helpArity(r?.stdout ?? ""); return Object.keys(t).length > 20 ? t : STATIC; })
+  .catch(() => STATIC));
 
 const get = async (t) => { const r = await hc(["get", t, "--json"]).catch(() => null); try { return r?.code === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
 const read = async (t) => (await hc(["read", t]).catch(() => null))?.stdout ?? "";
 const keys = (t, ks) => hc(["keys", t, ...ks]);
-const ps = async (args) => (await exec("ps", args).catch(() => null))?.stdout ?? "";
 const isClaude = (g) => /(^|\/)claude$/.test(g?.foreground?.argv?.[0] ?? "");
 
 // Brings back terminal `t` (an address on this computer) to session `id`. Resolves to null when
 // done, else why not.
-export async function revive(t, id, cx) {
+export async function revive(t, session, cx) {
   let g = await get(t);
   if (!g || !isClaude(g)) return "Claude Code isn't in front in that terminal.";
   if (g.status) return null; // reporting again already
-  if (!id || !/^[\w-]+$/.test(id)) return "Couldn't tell which conversation it is: restart it by hand.";
-  const pid = String(g.foreground.pid);
+  const { id, configDir, cwd } = session ?? {};
+  if (!id || !/^[\w-]+$/.test(id) || !configDir || !cwd) return "Couldn't tell which conversation it is: restart it by hand.";
+  // /stop must leave a shell behind to type into: Claude Code can't be the terminal's own program.
+  if (String(g.pid) === String(g.foreground.pid)) return "Claude Code is the terminal's own program, with no shell behind it: restart it by hand.";
   let args;
-  try { args = resumeArgs(g.foreground.argv.slice(1), id); } catch (e) { return `${e.message}: restart it by hand.`; }
-  const claudePs = await ps(["eww", "-o", "command=", "-p", pid]);
-  const shell = (await ps(["-o", "ppid=", "-p", pid])).trim();
-  if (!claudePs || !/^\d+$/.test(shell)) return "Couldn't read how it runs: restart it by hand.";
-  const setup = setupFor(claudePs, await ps(["eww", "-o", "command=", "-p", shell]), accounts());
-  if (setup === null) return "Its account settings differ from its shell's and name no account here: restart it by hand.";
-  const vim = await vimMode(envOf(claudePs, "CLAUDE_CONFIG_DIR"));
+  try { args = resumeArgs(g.foreground.argv.slice(1), id, await optionTable()); } catch (e) { return `${e.message}: restart it by hand.`; }
+  const env = await exec("ps", ["eww", "-o", "command=", "-p", String(g.foreground.pid)]).catch(() => null);
+  const named = envVar(env?.stdout, g.foreground.argv, "HERDR_RANCH_ACCOUNT") ?? null;
+  const setup = setupFor({ configDir, home: home(), named, list: accounts() });
+  const vim = await vimMode(configDir);
+  if (vim === null) return "Couldn't read its Claude Code settings (vim mode): restart it by hand.";
   const dir = `${appHome()}/data/herdr-ranch-agents`, path = `${dir}/revive-${t}.sh`;
   const line = keysFor(`sh ${path}`);
   if (!line) return "The script's path can't be typed into the terminal.";
   await exec("mkdir", ["-p", dir]);
-  await writeTextFile(path, scriptFor(setup, args), await readTextFile(path).catch(() => null));
+  await writeTextFile(path, scriptFor(cwd, setup, args), await readTextFile(path).catch(() => null));
 
   // From here on the terminal is touched: look before each key.
   const screen = await read(t);
@@ -194,12 +284,12 @@ export async function revive(t, id, cx) {
 // (and its spinner) while the pane is a shell between the two Claude Codes.
 export function bringBack(v, a, cx) {
   if (v.reviving.has(a.address)) return;
-  const id = v.claude?.get(a.address)?.id ?? null;
+  const session = v.claude?.get(a.address) ?? null;
   v.reviving.add(a.address);
   cx.notify();
   cx.spawn(async (cx) => {
     let why;
-    try { why = await revive(a.address, id, cx); } catch (e) { why = String(e?.message ?? e); }
+    try { why = await revive(a.address, session, cx); } catch (e) { why = String(e?.message ?? e); }
     v.reviving.delete(a.address);
     notify(why ? { title: `Couldn't bring back ${a.space_name}`, body: why, level: "warning" } : { title: `${a.space_name} is reporting again`, level: "success", timeout: 3000 });
     cx.notify();
