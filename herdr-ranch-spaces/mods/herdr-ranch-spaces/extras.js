@@ -33,8 +33,6 @@ const CHEVRON1 = LEVEL1;
 const wide = (el) => div().w(CARET + 13).pl(4).flex_none().flex().items_center().justify_center().child(el);
 const ROW = 31, TEXT = 13; // a child row's height and text (agents, terminals, worktrees): text no larger than a space's name (13)
 const ICON = 17; // a row's icon without a caret (agents, terminals, New, worktrees without a space)
-// A label ("Agents", "Worktrees") starts where a caret's glyph does, not its box.
-const GLYPH = 4;
 const slot = (el) => div().w(20).flex_none().flex().items_center().child(el);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k) ?? "null") ?? d; } catch { return d; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* this session only */ } };
@@ -237,7 +235,6 @@ function terminalsOf(w) {
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}~/]+/u, "").trim();
 
 // A small label over a group under an unfolded space ("Terminals", "Worktrees").
-export const sectionLabel = (id, text, t) => div().id(id).h(26).flex_none().pl(LEVEL1 + GLYPH).flex().items_end().text_size(12).text_color(t.dim).child(text.toUpperCase()); // small caps, as a sidebar section
 
 // The header's fold button: Collapse all when anything is open (every space and worktree space,
 // and the "worktrees without a space" lists), else Expand all (every space and worktree space).

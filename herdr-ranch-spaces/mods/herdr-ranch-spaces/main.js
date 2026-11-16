@@ -10,7 +10,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, layout, props } from "herdr";
 // ranch: what Herdr Ranch adds, and its git reads.
-import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel, worktreeSpaceRow, newSpaceMenu, programIcon, foldAllButton, byAccount, accountFilterRow } from "./extras.js";
+import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, worktreeSpaceRow, newSpaceMenu, programIcon, foldAllButton, byAccount, accountFilterRow } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
 const GROUP_GAP = 8; // ranch: room after an open space's rows
@@ -304,22 +304,17 @@ export default class Spaces extends View {
     const rows = byAccount(this, this.ordered()).filter((r) => !collapsed || r.kind === "space"); // ranch: the account filter
     const draw = (r) => (r.kind === "more" ? moreRow(this, r, t) : r.kind === "loose" ? looseRow(this, r, t) : collapsed ? this.compact(r, t) : r.tree ? worktreeSpaceRow(this, r, t) : this.row(r, t));
     // ranch: a space's terminals and worktrees fold under it (worktree spaces fold their own terminals).
-    // With both under it, "Terminals" and "Worktrees" labels keep the two groups apart.
     // An open space's rows end with a gap (GROUP_GAP) before the next space.
     const drawAll = (list) => {
-      const labelled = new Set();
       let gapDue = null;
       const gap = () => { const id = gapDue; gapDue = null; return id ? [div().id(`group-gap-${id}`).h(GROUP_GAP).flex_none()] : []; };
       const out = list.flatMap((r) => {
         if (r.parent && !isOpen(this, r.parent)) return [];
-        const head = r.parent && labelled.has(r.parent) ? (labelled.delete(r.parent), [sectionLabel(`wt-label-${r.parent}`, "Worktrees", t)]) : [];
-        if (r.kind !== "space" || collapsed) return [...head, draw(r)];
+        if (r.kind !== "space" || collapsed) return [draw(r)];
         const before = r.parent ? [] : gap();
         const terms = terminalRows(this, r.w, t, r.tree ? 2 : 1);
-        const both = terms.length > 0 && r.children > 0;
-        if (both) labelled.add(r.w.id);
         if (!r.parent && isOpen(this, r.w.id)) gapDue = r.w.id;
-        return [...before, ...head, draw(r), ...(both ? [sectionLabel(`term-label-${r.w.id}`, "Agents", t)] : []), ...terms];
+        return [...before, draw(r), ...terms];
       });
       return [...out, ...gap()];
     };
