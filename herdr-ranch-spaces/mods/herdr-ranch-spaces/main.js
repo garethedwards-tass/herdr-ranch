@@ -13,6 +13,7 @@ import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, set
 import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, sectionLabel, worktreeSpaceRow, newSpaceMenu, programIcon, foldAllButton, byAccount, accountFilterRow } from "./extras.js";
 import { writeIcons } from "./actions.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
+const GROUP_GAP = 8; // ranch: room after an open space's rows
 const LOOSE_EVERY = 60000; // ranch: how often a worktree without a space has its work read again
 
 function find(node, id) {
@@ -304,17 +305,23 @@ export default class Spaces extends View {
     const draw = (r) => (r.kind === "more" ? moreRow(this, r, t) : r.kind === "loose" ? looseRow(this, r, t) : collapsed ? this.compact(r, t) : r.tree ? worktreeSpaceRow(this, r, t) : this.row(r, t));
     // ranch: a space's terminals and worktrees fold under it (worktree spaces fold their own terminals).
     // With both under it, "Terminals" and "Worktrees" labels keep the two groups apart.
+    // An open space's rows end with a gap (GROUP_GAP) before the next space.
     const drawAll = (list) => {
       const labelled = new Set();
-      return list.flatMap((r) => {
+      let gapDue = null;
+      const gap = () => { const id = gapDue; gapDue = null; return id ? [div().id(`group-gap-${id}`).h(GROUP_GAP).flex_none()] : []; };
+      const out = list.flatMap((r) => {
         if (r.parent && !isOpen(this, r.parent)) return [];
         const head = r.parent && labelled.has(r.parent) ? (labelled.delete(r.parent), [sectionLabel(`wt-label-${r.parent}`, "Worktrees", t)]) : [];
         if (r.kind !== "space" || collapsed) return [...head, draw(r)];
+        const before = r.parent ? [] : gap();
         const terms = terminalRows(this, r.w, t, r.tree ? 2 : 1);
         const both = terms.length > 0 && r.children > 0;
         if (both) labelled.add(r.w.id);
-        return [...head, draw(r), ...(both ? [sectionLabel(`term-label-${r.w.id}`, "Agents", t)] : []), ...terms];
+        if (!r.parent && isOpen(this, r.w.id)) gapDue = r.w.id;
+        return [...before, ...head, draw(r), ...(both ? [sectionLabel(`term-label-${r.w.id}`, "Agents", t)] : []), ...terms];
       });
+      return [...out, ...gap()];
     };
     const machineOf = (r) => (r.w ? r.w.machine ?? null : r.on ?? JSON.parse(r.repo)[0]);
     const remote = [...new Set([...rows.map(r => r.w?.machine).filter(Boolean), ...this.machines.map(m => m.name), ...Object.keys(this.reconnecting)])].sort();
