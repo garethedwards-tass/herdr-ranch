@@ -61,9 +61,9 @@ test("pickSession, subagentOf, windows, names and paths", () => {
   assert.equal(utf8Length("a·€😀"), 1 + 2 + 3 + 4);
 });
 
-import { keysFor, promptText, runningAgents, stopOffered, modelOf, scriptFor, busyTitle } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
+import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimNormal, resumeArgs, launchOf, scriptFor } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
 
-test("revive: typable keys, the prompt, background agents, /stop, busy titles", () => {
+test("revive: typable keys, the prompt, background agents, /stop, busy", () => {
   assert.deepEqual(keysFor("sh /Users/a.b/x-1=2"), ["s", "h", "space", "/", "shift+u", "s", "e", "r", "s", "/", "a", ".", "b", "/", "x", "-", "1", "=", "2"]);
   assert.equal(keysFor("echo $HOME"), null);
   assert.equal(keysFor("a_b"), null);
@@ -79,14 +79,30 @@ test("revive: typable keys, the prompt, background agents, /stop, busy titles", 
   assert.equal(busyTitle("✳ Tassdocker setup"), false);
   assert.equal(busyTitle("TASS-10497 product impact"), false);
   assert.equal(busyTitle(""), false);
+  assert.equal(busyScreen("✻ Working… (12s · esc to interrupt)\n❯ \n"), true);
+  assert.equal(busyScreen("✻ Worked for 9m\n❯ \n"), false);
+  assert.equal(vimNormal("❯ draft\n  -- NORMAL --"), true);
 });
 
-test("revive: the resume script keeps the account folder and model, never a token", () => {
-  assert.equal(modelOf(["claude", "--model", "opus", "Plan the work"]), "opus");
-  assert.equal(modelOf(["claude"]), null);
-  const s = scriptFor({ configDir: "/Users/x/.claude-personal", ghUser: "octo", model: "opus" });
-  assert.match(s, /export CLAUDE_CONFIG_DIR='\/Users\/x\/\.claude-personal'/);
-  assert.match(s, /GH_TOKEN=\$\(gh auth token --user 'octo' 2>\/dev\/null\) && export GH_TOKEN/);
-  assert.match(s, /exec claude --continue --model 'opus'\n$/);
-  assert.equal(scriptFor().split("\n").filter((l) => !l.startsWith("#")).join("\n"), "exec claude --continue\n");
+test("revive: start again as the terminal did, on this conversation", () => {
+  // The flags stay (values too, = forms too); the first prompt and any session choice go.
+  assert.deepEqual(resumeArgs(["--model", "opus", "--effort", "high", "--permission-mode=acceptEdits", "--dangerously-skip-permissions", "Plan the work"], "abc-1"),
+    ["--model", "opus", "--effort", "high", "--permission-mode=acceptEdits", "--dangerously-skip-permissions", "--resume", "abc-1"]);
+  assert.deepEqual(resumeArgs(["--continue", "-r", "old", "--session-id", "x"], "new"), ["--resume", "new"]);
+  assert.deepEqual(resumeArgs(["--model", "us.anthropic.claude-opus:1"], "s"), ["--model", "us.anthropic.claude-opus:1", "--resume", "s"]);
+
+  // A Spaces account launch: its setup is kept as written (a folder with a space, a GitHub-only account).
+  const setup = `export CLAUDE_CONFIG_DIR="$HOME"'/.claude work'; GH_TOKEN=$(gh auth token --user 'octo' 2>/dev/null) && export GH_TOKEN || echo 'herdr-ranch: no gh token for octo (gh auth login)' >&2`;
+  const acct = launchOf(["/bin/zsh", "-lic", '"$@"; exec "$0" -li', "/bin/zsh", "sh", "-c", `${setup}; exec "$@"`, "sh", "claude", "--model", "opus"]);
+  assert.deepEqual(acct, { setup, args: ["--model", "opus"] });
+  const ghOnly = `GH_TOKEN=$(gh auth token --user 'octo' 2>/dev/null) && export GH_TOKEN || echo 'x' >&2`;
+  assert.equal(launchOf(["sh", "-c", `${ghOnly}; exec "$@"`, "sh", "claude"]).setup, ghOnly);
+  // Plain, and refused: anything else before claude.
+  assert.deepEqual(launchOf(["/bin/zsh", "-lic", '"$@"; exec "$0" -li', "/bin/zsh", "claude", "Plan it"]), { setup: "", args: ["Plan it"] });
+  assert.equal(launchOf(["sh", "-c", 'rm -rf x; exec "$@"', "sh", "claude"]), null);
+  assert.equal(launchOf(["/bin/zsh", "-li"]), null);
+
+  const s = scriptFor(setup, ["--model", "opus", "--resume", "abc-1"]);
+  assert.ok(s.includes(`${setup}\nexec claude '--model' 'opus' '--resume' 'abc-1'\n`));
+  assert.ok(!/gh[op]_[A-Za-z0-9]{10}/.test(s)); // a token is fetched at launch, never written
 });

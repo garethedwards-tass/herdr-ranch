@@ -23,14 +23,15 @@ const TASK_GLYPH = { completed: "☑", in_progress: "◐", pending: "☐" };
 // already read (each host read copies a whole list).
 const WORD = { error: "blocked" };
 const STATUSES = new Set(["blocked", "done", "working", "idle"]);
-export function liveAgents(list, all = terminals(), ps = panes(), sp = spaces()) {
+export function liveAgents(list, all = terminals(), ps = panes(), sp = spaces(), keep = null) {
   const have = new Set(list.map((a) => a.address));
   const tabs = new Map(sp.flatMap((s) => s.tabs.map((tb) => [tb.id, { s, tb }])));
   const spaceAt = new Map(sp.map((s, i) => [s.id, i]));
   const term = new Map(all.map((x) => [x.address, x]));
   const out = [...list];
   for (const p of ps) {
-    if (!p.terminal || p.status || have.has(p.terminal) || !tabs.has(p.tab) || !(p.program?.agent || p.app)) continue;
+    // `keep`: terminals being brought back keep their row while the pane is a shell between two runs.
+    if (!p.terminal || p.status || have.has(p.terminal) || !tabs.has(p.tab) || !(p.program?.agent || p.app || keep?.has(p.terminal))) continue;
     have.add(p.terminal); // a terminal in two panes: one row
     const { s, tb } = tabs.get(p.tab), x = term.get(p.terminal);
     const word = WORD[x?.status] ?? x?.status;

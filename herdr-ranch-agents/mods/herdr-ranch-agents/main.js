@@ -226,7 +226,7 @@ export default class Agents extends View {
     const sort = sortOf();
     // ranch: agents that stopped reporting a status too; each host list read once.
     const all = terminals(), allPanes = panes(), allSpaces = spaces();
-    let list = liveAgents(agents(), all, allPanes, allSpaces);
+    let list = liveAgents(agents(), all, allPanes, allSpaces, this.reviving);
     // ranch: a quiet agent's sub-agents keep their own words (kidStatus).
     this.listed = new Map(list.filter((a) => a.status !== "unknown").map((a) => [a.address, a.status]));
     this.migratePins(all);
