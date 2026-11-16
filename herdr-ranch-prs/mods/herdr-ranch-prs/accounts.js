@@ -66,8 +66,11 @@ const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 const dir = (p) => (p.startsWith("~") ? `"$HOME"${q(p.slice(1))}` : q(p));
 
 // The exports for an account, as sh.
+// HERDR_RANCH_ACCOUNT names the account (no secret): the Agents list reads it from a running
+// Claude Code to start it again as the same account (revive.js).
 export function envScript(a) {
   return [
+    a.id && /^[\w-]+$/.test(a.id) ? `export HERDR_RANCH_ACCOUNT=${a.id}` : "",
     a.claudeDir ? `export CLAUDE_CONFIG_DIR=${dir(a.claudeDir)}` : "",
     a.ghUser ? `GH_TOKEN=$(gh auth token --user ${q(a.ghUser)} 2>/dev/null) && export GH_TOKEN || echo ${q(`herdr-ranch: no gh token for ${a.ghUser} (gh auth login)`)} >&2` : "",
   ].filter(Boolean).join("; ");

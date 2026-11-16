@@ -61,9 +61,9 @@ test("pickSession, subagentOf, windows, names and paths", () => {
   assert.equal(utf8Length("a·€😀"), 1 + 2 + 3 + 4);
 });
 
-import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimNormal, resumeArgs, launchOf, scriptFor } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
+import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimInsert, resumeArgs, envOf, setupFor, scriptFor } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
 
-test("revive: typable keys, the prompt, background agents, /stop, busy", () => {
+test("revive: typable keys, the prompt, background agents, /stop, busy, vim", () => {
   assert.deepEqual(keysFor("sh /Users/a.b/x-1=2"), ["s", "h", "space", "/", "shift+u", "s", "e", "r", "s", "/", "a", ".", "b", "/", "x", "-", "1", "=", "2"]);
   assert.equal(keysFor("echo $HOME"), null);
   assert.equal(keysFor("a_b"), null);
@@ -81,28 +81,41 @@ test("revive: typable keys, the prompt, background agents, /stop, busy", () => {
   assert.equal(busyTitle(""), false);
   assert.equal(busyScreen("✻ Working… (12s · esc to interrupt)\n❯ \n"), true);
   assert.equal(busyScreen("✻ Worked for 9m\n❯ \n"), false);
-  assert.equal(vimNormal("❯ draft\n  -- NORMAL --"), true);
+  assert.equal(vimInsert("❯ draft\n  -- INSERT -- ⏵⏵ auto mode on"), true);
+  assert.equal(vimInsert("❯ draft\n  ⏵⏵ auto mode on"), false);
 });
 
-test("revive: start again as the terminal did, on this conversation", () => {
-  // The flags stay (values too, = forms too); the first prompt and any session choice go.
-  assert.deepEqual(resumeArgs(["--model", "opus", "--effort", "high", "--permission-mode=acceptEdits", "--dangerously-skip-permissions", "Plan the work"], "abc-1"),
-    ["--model", "opus", "--effort", "high", "--permission-mode=acceptEdits", "--dangerously-skip-permissions", "--resume", "abc-1"]);
-  assert.deepEqual(resumeArgs(["--continue", "-r", "old", "--session-id", "x"], "new"), ["--resume", "new"]);
-  assert.deepEqual(resumeArgs(["--model", "us.anthropic.claude-opus:1"], "s"), ["--model", "us.anthropic.claude-opus:1", "--resume", "s"]);
+test("revive: Claude Code's options again, with --resume, and nothing it can't read the same way", () => {
+  const R = (args) => resumeArgs(args, "ID");
+  assert.deepEqual(R(["--model", "opus", "--effort", "high", "--permission-mode=acceptEdits", "--dangerously-skip-permissions", "Plan the work"]),
+    ["--model", "opus", "--effort", "high", "--permission-mode=acceptEdits", "--dangerously-skip-permissions", "--resume", "ID"]);
+  // Session choices go, an optional -r value too (and only when it is one).
+  assert.deepEqual(R(["--continue", "--fork-session", "-r", "old", "--session-id", "x"]), ["--resume", "ID"]);
+  assert.deepEqual(R(["-r", "--dangerously-skip-permissions"]), ["--dangerously-skip-permissions", "--resume", "ID"]);
+  assert.deepEqual(R(["--resume", "--model", "opus"]), ["--model", "opus", "--resume", "ID"]);
+  // Several values, all kept; short names; = forms.
+  assert.deepEqual(R(["--add-dir", "../api", "../web", "--allowedTools", "Bash", "Edit"]), ["--add-dir", "../api", "../web", "--allowedTools", "Bash", "Edit", "--resume", "ID"]);
+  assert.deepEqual(R(["-n", "auth work", "--model=us.anthropic.claude:1"]), ["-n", "auth work", "--model=us.anthropic.claude:1", "--resume", "ID"]);
+  assert.deepEqual(R(["--append-system-prompt", "line one\nline two"]), ["--append-system-prompt", "line one\nline two", "--resume", "ID"]);
+  // An option it doesn't know: refuse, rather than read its value as a prompt.
+  assert.throws(() => R(["--brand-new-flag", "value"]), /--brand-new-flag/);
+  assert.throws(() => R(["-p", "hi"]), /-p/);
+});
 
-  // A Spaces account launch: its setup is kept as written (a folder with a space, a GitHub-only account).
-  const setup = `export CLAUDE_CONFIG_DIR="$HOME"'/.claude work'; GH_TOKEN=$(gh auth token --user 'octo' 2>/dev/null) && export GH_TOKEN || echo 'herdr-ranch: no gh token for octo (gh auth login)' >&2`;
-  const acct = launchOf(["/bin/zsh", "-lic", '"$@"; exec "$0" -li', "/bin/zsh", "sh", "-c", `${setup}; exec "$@"`, "sh", "claude", "--model", "opus"]);
-  assert.deepEqual(acct, { setup, args: ["--model", "opus"] });
-  const ghOnly = `GH_TOKEN=$(gh auth token --user 'octo' 2>/dev/null) && export GH_TOKEN || echo 'x' >&2`;
-  assert.equal(launchOf(["sh", "-c", `${ghOnly}; exec "$@"`, "sh", "claude"]).setup, ghOnly);
-  // Plain, and refused: anything else before claude.
-  assert.deepEqual(launchOf(["/bin/zsh", "-lic", '"$@"; exec "$0" -li', "/bin/zsh", "claude", "Plan it"]), { setup: "", args: ["Plan it"] });
-  assert.equal(launchOf(["sh", "-c", 'rm -rf x; exec "$@"', "sh", "claude"]), null);
-  assert.equal(launchOf(["/bin/zsh", "-li"]), null);
+test("revive: the account comes from the shell, or from the account Claude Code names", () => {
+  const list = [{ id: "personal-1", claudeDir: "~/.claude-personal", ghUser: "octo" }];
+  const shell = "-zsh TERM=x HOME=/Users/a PATH=/bin";
+  // Same as its shell (nothing set for it, or a GH_TOKEN from the profile): inherit.
+  assert.equal(setupFor("claude TERM=x PATH=/bin", shell, list), "");
+  assert.equal(setupFor("claude GH_TOKEN=abc", "-zsh GH_TOKEN=abc", list), "");
+  // Set only for Claude Code, by an account it names: that account's setup.
+  assert.equal(setupFor("claude HERDR_RANCH_ACCOUNT=personal-1 CLAUDE_CONFIG_DIR=/Users/a/.claude-personal GH_TOKEN=t", shell, list),
+    `export HERDR_RANCH_ACCOUNT=personal-1; export CLAUDE_CONFIG_DIR="$HOME"'/.claude-personal'; GH_TOKEN=$(gh auth token --user 'octo' 2>/dev/null) && export GH_TOKEN || echo 'herdr-ranch: no gh token for octo (gh auth login)' >&2`);
+  // Set only for it, by nothing it names (or an account since removed): refuse.
+  assert.equal(setupFor("claude CLAUDE_CONFIG_DIR=/x", shell, list), null);
+  assert.equal(setupFor("claude HERDR_RANCH_ACCOUNT=gone CLAUDE_CONFIG_DIR=/x", shell, list), null);
+  assert.equal(envOf("a B=1 C=2", "C"), "2");
 
-  const s = scriptFor(setup, ["--model", "opus", "--resume", "abc-1"]);
-  assert.ok(s.includes(`${setup}\nexec claude '--model' 'opus' '--resume' 'abc-1'\n`));
-  assert.ok(!/gh[op]_[A-Za-z0-9]{10}/.test(s)); // a token is fetched at launch, never written
+  const s = scriptFor("export X=1", ["--model", "opus", "--resume", "abc-1"]);
+  assert.ok(s.endsWith("export X=1\nexec claude '--model' 'opus' '--resume' 'abc-1'\n"));
 });

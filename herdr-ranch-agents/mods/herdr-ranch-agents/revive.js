@@ -2,17 +2,22 @@
 // still runs, but Herdr's own lists and next/previous agent skip it. A fresh start reports again.
 // Claude Code runs sessions in the background (`/exit` only detaches), so: `/stop` (ends the
 // session, keeps the conversation), quit the session list back to the pane's shell, then a small
-// script starts Claude Code again the way the terminal first did (the same account setup and
-// flags) with `--resume <its session id>`, so it reopens this conversation and no other.
+// script starts Claude Code again with the running one's own options and `--resume <session id>`,
+// so it reopens this conversation and no other.
+//
+// The account: the script runs in the shell Claude Code was started from, so it inherits that
+// shell's environment. When Claude Code's CLAUDE_CONFIG_DIR or GH_TOKEN differ from the shell's
+// (a Spaces account set only for it), the script sets them again from the account it names
+// (HERDR_RANCH_ACCOUNT, from shared/accounts.js envScript), with the same envScript. Anything it
+// can't account for, it refuses rather than guess.
 //
 // It's driven with `hc keys`, which types only unshifted keys and shift+letter (no $ ~ ( ) _), so
 // the shell is given `sh <script>`, a path made of typable characters. `hc send` would wrap the
-// text in <hc> tags. Everything that can fail without touching the terminal (reading how it was
-// started, writing the script) happens first; then every step reads the screen and stops at
-// anything unexpected: busy, an unsent message, a running background agent, a menu that isn't
-// Claude Code's /stop.
+// text in <hc> tags. Everything that can fail without touching the terminal happens first; then
+// every step reads the screen and stops at anything unexpected.
 
-import { hc, appHome, writeTextFile, readTextFile, exec, notify } from "herdr";
+import { hc, appHome, home, writeTextFile, readTextFile, exec, notify } from "herdr";
+import { accounts, envScript } from "./accounts.js";
 
 // Keys that type `text`, or null when a character can't be typed.
 export function keysFor(text) {
@@ -46,50 +51,57 @@ export const runningAgents = (screen) => /← \d+ agents?\b/.test(bottom(screen)
 export const busyTitle = (title) => { const c = [...(title ?? "").trim()][0]; return Boolean(c) && !/[\p{L}\p{N}✳]/u.test(c); };
 export const busyScreen = (screen) => /esc to interrupt/i.test(bottom(screen, 8));
 
-// Vim mode's normal mode: a typed key would edit the draft instead of adding to it.
-export const vimNormal = (screen) => /-- NORMAL --/.test(bottom(screen, 8));
+// Vim mode shows "-- INSERT --" while typing adds text; anywhere else a key would edit the draft.
+export const vimInsert = (screen) => /-- INSERT --/.test(bottom(screen, 8));
 
 // Whether the slash menu's highlighted entry is Claude Code's /stop for a background session.
 export const stopOffered = (screen) => /^\s*❯ \/stop\s+Stop this background session/m.test(screen ?? "");
 
-// Claude Code's options that take a value (`--model opus`); the others stand alone.
-const VALUED = new Set(["--model", "--effort", "--permission-mode", "--add-dir", "--settings", "--mcp-config", "--agent", "--agents",
-  "--append-system-prompt", "--system-prompt", "--fallback-model", "--allowedTools", "--allowed-tools", "--disallowedTools",
-  "--disallowed-tools", "--name", "--output-format", "--input-format", "--plugin-dir", "--betas", "--setting-sources", "--session-id", "--resume", "-r"]);
-const SESSION = new Set(["--continue", "-c", "--resume", "-r", "--session-id"]);
+// Claude Code 2.1's options (`claude --help`) by what follows them: nothing, one value, an
+// optional value, or several values. SESSION ones choose a conversation and are replaced.
+const NONE = "--allow-dangerously-skip-permissions --ax-screen-reader --bg --background --bare --brief --chrome --dangerously-skip-permissions --disable-slash-commands --exclude-dynamic-system-prompt-sections --forward-subagent-text --ide --include-hook-events --include-partial-messages --no-chrome --no-session-persistence --replay-user-messages --restricted --safe-mode --strict-mcp-config --verbose --tmux";
+const ONE = "--agent --agents --append-system-prompt --append-system-prompt-file --system-prompt-file --autocompact --debug-file --effort --environment --fallback-model --input-format --json-schema --max-budget-usd --model -n --name --output-format --permission-mode --permission-prompts --plugin-dir --plugin-url --remote-control-session-name-prefix --setting-sources --settings --system-prompt --system-prompt-snapshot";
+const OPTIONAL = "-d --debug --prompt-suggestions --remote-control";
+const MANY = "--add-dir --allowedTools --allowed-tools --betas --disallowedTools --disallowed-tools --file --mcp-config --tools";
+const SESSION = { "-c": 0, "--continue": 0, "--fork-session": 0, "--desktop": 0, "--session-id": 1, "-r": "?", "--resume": "?", "--from-pr": "?", "--teleport": "?", "--cloud": "?", "-w": "?", "--worktree": "?" };
+const ARITY = Object.fromEntries([...NONE.split(" ").map((o) => [o, 0]), ...ONE.split(" ").map((o) => [o, 1]),
+  ...OPTIONAL.split(" ").map((o) => [o, "?"]), ...MANY.split(" ").map((o) => [o, "*"])]);
 
-// Claude Code's arguments to start it again: its options as given (`--model=x` included), without
-// its first prompt or any session choice; then `--resume <id>`.
+// Claude Code's arguments to start it again: its options as given, without its first prompt or any
+// session choice, then `--resume <id>`. Throws on an option it doesn't know (or `--print`), as
+// Claude Code would read the next argument differently.
 export function resumeArgs(args, id) {
   const out = [];
   for (let i = 0; i < args.length; i++) {
-    const a = args[i], name = a.split("=")[0];
-    if (!a.startsWith("-")) continue; // a prompt (options' values are taken with their option)
-    const valued = VALUED.has(name) && !a.includes("=") && i + 1 < args.length;
-    if (SESSION.has(name)) { if (valued) i++; continue; }
-    out.push(a);
-    if (valued) out.push(args[++i]);
+    const a = args[i];
+    if (a === "--") break; // prompts only from here
+    if (!a.startsWith("-") || a === "-") continue; // a prompt
+    const [name, inline] = a.includes("=") ? [a.slice(0, a.indexOf("=")), true] : [a, false];
+    const session = name in SESSION, arity = session ? SESSION[name] : ARITY[name];
+    if (arity === undefined) throw new Error(`it was started with ${name}, which this doesn't know how to repeat`);
+    const take = [a];
+    if (!inline) {
+      if (arity === 1 && i + 1 < args.length) take.push(args[++i]);
+      if (arity === "?" && i + 1 < args.length && !args[i + 1].startsWith("-")) take.push(args[++i]);
+      if (arity === "*") while (i + 1 < args.length && !args[i + 1].startsWith("-")) take.push(args[++i]);
+    }
+    if (!session) out.push(...take);
   }
   return [...out, "--resume", id];
 }
 
-// How the terminal started Claude Code: the account setup Herdr Ranch put before it (`export
-// CLAUDE_CONFIG_DIR=…; GH_TOKEN=$(gh auth token …) …`, from shared/accounts.js), and Claude Code's own
-// arguments. null when its command isn't one of those shapes: then it's restarted by hand.
-const SETUP = /^(export CLAUDE_CONFIG_DIR=('[^']*'|"\$HOME"'[^']*')|GH_TOKEN=\$\(gh auth token --user '[A-Za-z0-9-]+' 2>\/dev\/null\) && export GH_TOKEN \|\| echo '[^']*' >&2)$/;
-export function launchOf(argv) {
-  const at = argv.findIndex((x) => x === "claude" || /\/claude$/.test(x));
-  if (at < 0) return null;
-  let setup = "";
-  const c = argv.lastIndexOf("-c", at);
-  if (c > 0 && argv[c - 1] === "sh" && c + 1 < at) {
-    // runAs: sh -c '<setup>; exec "$@"' sh claude …
-    const m = /^(.*); exec "\$@"$/.exec(argv[c + 1]);
-    if (!m) return null;
-    setup = m[1];
-  }
-  if (setup && !setup.split("; ").every((part) => SETUP.test(part))) return null;
-  return { setup, args: argv.slice(at + 1) };
+// A variable's value in `ps eww` output (the first space ends it, the same for both sides).
+export const envOf = (ps, k) => new RegExp(`(?:^|\\s)${k}=(\\S*)`).exec(ps ?? "")?.[1];
+
+// The account setup the script needs, from Claude Code's and its shell's environments: "" when
+// the shell already has Claude Code's account, envScript(account) when Claude Code's names one,
+// else null (refuse). `list`: the accounts (shared/accounts.js).
+export function setupFor(claudePs, shellPs, list) {
+  const same = ["CLAUDE_CONFIG_DIR", "GH_TOKEN"].every((k) => envOf(claudePs, k) === envOf(shellPs, k));
+  if (same) return "";
+  const id = envOf(claudePs, "HERDR_RANCH_ACCOUNT");
+  const a = id && list.find((x) => x.id === id);
+  return a ? envScript(a) : null;
 }
 
 const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
@@ -103,9 +115,20 @@ export function scriptFor(setup, args) {
   ].join("\n");
 }
 
+// Whether Claude Code's prompt uses vim keys (its config's editorMode).
+async function vimMode(configDir) {
+  const dirs = configDir ? [configDir.replace(/^~(?=\/)/, home())] : [home(), `${home()}/.claude`];
+  for (const d of dirs) {
+    const text = await readTextFile(`${d}/.claude.json`).catch(() => null);
+    if (text) { try { return JSON.parse(text).editorMode === "vim"; } catch { return false; } }
+  }
+  return false;
+}
+
 const get = async (t) => { const r = await hc(["get", t, "--json"]).catch(() => null); try { return r?.code === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
 const read = async (t) => (await hc(["read", t]).catch(() => null))?.stdout ?? "";
 const keys = (t, ks) => hc(["keys", t, ...ks]);
+const ps = async (args) => (await exec("ps", args).catch(() => null))?.stdout ?? "";
 const isClaude = (g) => /(^|\/)claude$/.test(g?.foreground?.argv?.[0] ?? "");
 
 // Brings back terminal `t` (an address on this computer) to session `id`. Resolves to null when
@@ -115,27 +138,26 @@ export async function revive(t, id, cx) {
   if (!g || !isClaude(g)) return "Claude Code isn't in front in that terminal.";
   if (g.status) return null; // reporting again already
   if (!id || !/^[\w-]+$/.test(id)) return "Couldn't tell which conversation it is: restart it by hand.";
-  // The terminal's own command, else (Claude Code typed into its shell) the program's.
-  const launch = launchOf(g.argv ?? []) ?? launchOf(g.foreground.argv ?? []);
-  if (!launch) return "It wasn't started in a way this can repeat: restart it by hand.";
-  // An account setting its launch doesn't make came from elsewhere: don't guess the account.
-  const env = (await exec("ps", ["eww", "-o", "command=", "-p", String(g.foreground.pid)]).catch(() => null))?.stdout ?? "";
-  for (const k of ["CLAUDE_CONFIG_DIR", "GH_TOKEN"]) {
-    if (new RegExp(`(^|\\s)${k}=`).test(env) && !launch.setup.includes(k)) return `It runs with its own ${k}: restart it by hand.`;
-  }
+  const pid = String(g.foreground.pid);
+  let args;
+  try { args = resumeArgs(g.foreground.argv.slice(1), id); } catch (e) { return `${e.message}: restart it by hand.`; }
+  const claudePs = await ps(["eww", "-o", "command=", "-p", pid]);
+  const shell = (await ps(["-o", "ppid=", "-p", pid])).trim();
+  if (!claudePs || !/^\d+$/.test(shell)) return "Couldn't read how it runs: restart it by hand.";
+  const setup = setupFor(claudePs, await ps(["eww", "-o", "command=", "-p", shell]), accounts());
+  if (setup === null) return "Its account settings differ from its shell's and name no account here: restart it by hand.";
+  const vim = await vimMode(envOf(claudePs, "CLAUDE_CONFIG_DIR"));
   const dir = `${appHome()}/data/herdr-ranch-agents`, path = `${dir}/revive-${t}.sh`;
   const line = keysFor(`sh ${path}`);
   if (!line) return "The script's path can't be typed into the terminal.";
-  const args = resumeArgs(launch.args, id);
-  if (!args.every((a) => !/[\n\r]/.test(a))) return "Its arguments can't go in a script line: restart it by hand.";
   await exec("mkdir", ["-p", dir]);
-  await writeTextFile(path, scriptFor(launch.setup, args), await readTextFile(path).catch(() => null));
+  await writeTextFile(path, scriptFor(setup, args), await readTextFile(path).catch(() => null));
 
   // From here on the terminal is touched: look before each key.
-  let screen = await read(t);
+  const screen = await read(t);
   if (busyTitle(g.title) || busyScreen(screen)) return "It looks busy: try again when it's done.";
   if (runningAgents(screen)) return "A background agent of that session is still running: try again when it's done.";
-  if (vimNormal(screen)) return "Its prompt is in vim normal mode: press i there, then try again.";
+  if (vim && !vimInsert(screen)) return "Its prompt uses vim keys and isn't in insert mode: press i there, then try again.";
   // A typed draft stays when a key is added; Claude Code's suggested reply is replaced.
   await keys(t, ["x"]);
   let typed = null;

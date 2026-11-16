@@ -175,6 +175,7 @@ test("accounts: checks, the sh that sets the variables (no token on the command 
   assert.match(checkAccount({ label: "Work" }), /Claude Code folder, a GitHub user/);
   assert.match(checkAccount({ label: "x", claudeDir: "~/a'b" }), /folder/);
   assert.match(checkAccount({ label: "x", ghUser: "a b" }), /GitHub/);
+  assert.equal(envScript({ id: "work-1", claudeDir: "~/.claude-work" }), `export HERDR_RANCH_ACCOUNT=work-1; export CLAUDE_CONFIG_DIR="$HOME"'/.claude-work'`);
   const sh = envScript({ claudeDir: "~/.claude-work", ghUser: "octo" });
   assert.equal(sh, `export CLAUDE_CONFIG_DIR="$HOME"'/.claude-work'; GH_TOKEN=$(gh auth token --user 'octo' 2>/dev/null) && export GH_TOKEN || echo 'herdr-ranch: no gh token for octo (gh auth login)' >&2`);
   const argv = argvAs({ claudeDir: "/opt/c" }, "claude");
