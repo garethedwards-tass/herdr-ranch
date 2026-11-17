@@ -19,12 +19,12 @@ How to install, link and use the Herdr Ranch mods. Facts, paths and flags are in
 **One mod at a time,** tell your agent in Herdr:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then add the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-reviews (with its ranch-review CLI and skills), and the layout mod-buttons, from github.com/garethedwards-tass/herdr-workspace
+Read ~/.config/herdr-app/AGENTS.md, then clone github.com/garethedwards-tass/herdr-workspace and install from it with its install.sh --layout: the mods herdr-ranch-spaces, herdr-ranch-agents, herdr-ranch-files, herdr-ranch-changes, herdr-ranch-history, herdr-ranch-issues, herdr-ranch-prs, herdr-ranch-reviews (with its ranch-review CLI and skills) and herdr-ranch-usage, and the layout mod-buttons
 ```
 
 Leave out the ones you don't want.
 
-**By hand:** clone this repository and run `./install.sh --layout` in it. It links the three mods into `~/.config/herdr-app/mods`, so a `git pull` updates them, and copies the mod-buttons layout (leave out `--layout` to skip it; a layout file you changed is kept as `<name>.json.bak`). `install.sh` only runs from a clone: piped into `sh`, it stops and says so. Every flag is in [the reference](reference.md#installsh-flags).
+**By hand:** clone this repository and run `./install.sh --layout` in it. It links every mod into `~/.config/herdr-app/mods`, so a `git pull` updates them, and copies the mod-buttons layout (leave out `--layout` to skip it; a layout file you changed is kept as `<name>.json.bak`). `install.sh` only runs from a clone: piped into `sh`, it stops and says so. Every flag is in [the reference](reference.md#installsh-flags).
 
 Then:
 

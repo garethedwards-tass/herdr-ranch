@@ -82,7 +82,7 @@ export function updateState() {
 }
 
 // The line for an agent when the mods were copied rather than cloned.
-export const AGENT_LINE = `Update the Herdr Ranch mods (herdr-ranch-issues, herdr-ranch-prs, herdr-ranch-reviews and the mod-buttons layout) from github.com/${REPO} to the latest release.`;
+export const AGENT_LINE = `Update the mods from github.com/${REPO} (herdr-ranch-spaces, herdr-ranch-agents, herdr-ranch-files, herdr-ranch-changes, herdr-ranch-history, herdr-ranch-issues, herdr-ranch-prs, herdr-ranch-reviews, herdr-ranch-usage and the mod-buttons layout) to the latest version, with its install.sh --update.`;
 
 // Update a git install: fetch the tags, fast-forward to the latest release tag (the one the cog
 // announced, not whatever main is at), copy the layout again when it's installed, reload the
