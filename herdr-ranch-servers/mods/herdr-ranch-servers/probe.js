@@ -17,7 +17,7 @@ elif command -v vm_stat >/dev/null 2>&1; then echo "mem=$(sysctl -n hw.memsize) 
 df -Pk / | awk 'NR==2{print "disk="$2" "$3" "$4}'
 if [ -r /proc/uptime ]; then echo "uptime=$(cut -d' ' -f1 /proc/uptime)"; else echo "uptime=$(( $(date +%s) - $(sysctl -n kern.boottime | awk -F'[ ,]+' '{print $4}') ))"; fi
 if [ -n "$D" ]; then
-  if out=$("$D" ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Status}}\\t{{.Image}}\\t{{.Label "com.docker.compose.project"}}\\t{{.Label "com.docker.compose.project.working_dir"}}\\t{{.Label "com.docker.compose.service"}}\\t{{.Label "lane"}}\\t{{.Label "lane.url"}}\\t{{.Label "lane.database"}}\\t{{.Label "lane.owner"}}\\t{{.Label "lane.branch"}}\\t{{.Label "lane.serves"}}' 2>&1); then
+  if out=$("$D" ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Status}}\\t{{.Image}}\\t{{.Label "com.docker.compose.project"}}\\t{{.Label "com.docker.compose.project.working_dir"}}\\t{{.Label "com.docker.compose.service"}}\\t{{.Label "lane"}}\\t{{.Label "lane.url"}}\\t{{.Label "lane.database"}}\\t{{.Label "lane.owner"}}\\t{{.Label "lane.branch"}}\\t{{.Label "lane.serves"}}\\t{{.CreatedAt}}' 2>&1); then
     printf '%s\\n' "$out" | sed '/^$/d; s/^/c=/'
     "$D" stats --no-stream --format '{{.Name}}\\t{{.MemUsage}}\\t{{.MemPerc}}\\t{{.CPUPerc}}' 2>/dev/null | sed '/^$/d; s/^/s=/'
   else echo "docker_err=$(printf '%s' "$out" | head -1)"; fi
@@ -27,10 +27,10 @@ else echo "docker_err=not installed"; fi
 const number = (text) => Number(String(text).trim().replace(",", "."));
 
 function parseContainer(line) {
-  const [id, name, state, status, image, project, dir, service, lane, url, database, owner, branch, serves] = line.split("\t");
+  const [id, name, state, status, image, project, dir, service, lane, url, database, owner, branch, serves, created] = line.split("\t");
   // herdr-ranch: the compose folder and service, and the lane.* labels (lanes.js).
   const labels = { lane: lane || "", url: url || "", database: database || "", owner: owner || "", branch: branch || "", serves: serves || "" };
-  return { id, name, state, status, image, project: project || "", dir: dir || "", service: service || "", labels };
+  return { id, name, state, status, image, project: project || "", dir: dir || "", service: service || "", labels, created: created || "" };
 }
 
 // { load: [1m, 5m, 15m], cpus, mem: { total, available } | null, disk: { total, used, free } (bytes),

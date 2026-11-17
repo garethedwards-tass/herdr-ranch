@@ -9,6 +9,8 @@
 //   lane.branch    the branch it serves for that owner
 //   lane.serves    what it serves: "repo=path" pairs joined by ";"
 // Containers of the same compose project without a lane label are the stack's shared ones.
+// Labels change only when a container is recreated, and a change may recreate only some of a lane's
+// containers: who holds it (lane.owner, lane.branch, lane.serves) comes from its newest container.
 // Pure; tested in tests/servers.test.mjs.
 
 const laneOf = (c) => (/^\d+$/.test(c.labels?.lane ?? "") ? Number(c.labels.lane) : null);
@@ -25,17 +27,21 @@ export function stacksOf(containers) {
     if (n == null) continue;
     const lanes = byDir.get(c.dir) ?? new Map();
     byDir.set(c.dir, lanes);
-    const l = lanes.get(n) ?? { n, containers: [], running: 0, url: "", database: "", owner: "", branch: "", served: [] };
+    const l = lanes.get(n) ?? { n, containers: [], running: 0, url: "", database: "", owner: "", branch: "", served: [], newest: null };
     lanes.set(n, l);
     l.containers.push(c.name);
     if (c.state === "running") l.running++;
     const lb = c.labels;
-    l.url ||= lb.url; l.database ||= lb.database; l.owner ||= lb.owner; l.branch ||= lb.branch;
-    if (!l.served.length) l.served = parseServes(lb.serves);
+    l.url ||= lb.url; l.database ||= lb.database;
+    // docker's CreatedAt ("2026-11-17 02:49:34 +1000 AEST") sorts as text on one machine.
+    if (l.newest == null || (c.created ?? "") > l.newest) {
+      l.newest = c.created ?? "";
+      l.owner = lb.owner; l.branch = lb.branch; l.served = parseServes(lb.serves);
+    }
   }
   return [...byDir].map(([dir, lanes]) => ({
     dir,
-    lanes: [...lanes.values()].sort((a, b) => a.n - b.n).map(({ running, ...l }) => ({
+    lanes: [...lanes.values()].sort((a, b) => a.n - b.n).map(({ running, newest, ...l }) => ({
       ...l, state: running === 0 ? "stopped" : running < l.containers.length ? "partly running" : "running",
     })),
   }));

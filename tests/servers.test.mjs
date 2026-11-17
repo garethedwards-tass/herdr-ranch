@@ -67,3 +67,10 @@ test("lanes: from the containers' lane labels, grouped by lane, then shared, the
 test("lanes: no lane labels, no lanes", () => {
   assert.deepEqual(stacksOf([ct("a", "/stack", "app"), ct("b", "/stack", "db")]), []);
 });
+
+test("lanes: who holds a lane comes from its newest container (labels change only on recreate)", () => {
+  const old = ct("p_api", "/stack", "api", { lane: "2", owner: "PROJ-1", branch: "PROJ-1" }), fresh = ct("p_app", "/stack", "app", { lane: "2", owner: "", branch: "" });
+  old.created = "2026-11-17 01:00:00 +1000 AEST"; fresh.created = "2026-11-17 03:00:00 +1000 AEST";
+  assert.equal(laneState(stacksOf([old, fresh])[0].lanes[0]).text, "free");
+  assert.equal(laneState(stacksOf([{ ...old, created: "2026-11-17 04:00:00 +1000 AEST" }, fresh])[0].lanes[0]).text, "PROJ-1");
+});
