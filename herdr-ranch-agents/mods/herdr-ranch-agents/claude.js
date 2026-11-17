@@ -33,9 +33,12 @@ export function parseJsonLines(text) {
   return out;
 }
 
-// The session a Herdr agent runs: same folder; several there, the one whose title is the agent's.
-export function pickSession(candidates, title) {
+// The session a Herdr agent runs: same folder; several there (a background session beside it), the
+// one whose process is the terminal's (`pid`, its foreground process), else whose title is the agent's.
+export function pickSession(candidates, title, pid = null) {
   if (candidates.length <= 1) return candidates[0] ?? null;
+  const mine = pid != null ? candidates.find((c) => String(c.pid) === String(pid)) : null;
+  if (mine) return mine;
   const t = (title ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
   return candidates.find((c) => c.title && c.title === t) ?? candidates.find((c) => c.name === t) ?? null;
 }
@@ -47,6 +50,7 @@ export const emptyState = () => ({
   tasks: new Map(), // task number -> { id, subject, status }
   agents: new Map(), // Agent call id -> { id, description, type, background, done }
   cost: null, // the last cost-state record: { usd, linesAdded, linesRemoved }
+  apiError: null, // Claude Code's own error reply since the last real one (e.g. a usage limit): { text, at }
 });
 
 const usageOf = (u) => u && { input: u.input_tokens ?? 0, cacheRead: u.cache_read_input_tokens ?? 0, cacheWrite: u.cache_creation_input_tokens ?? 0, output: u.output_tokens ?? 0 };
@@ -62,11 +66,18 @@ export function apply(st, records) {
     if (d?.timestamp) st.lastAt = d.timestamp;
     const m = d?.message;
     if (t === "assistant" && m && !d.isSidechain) {
-      if (m.model && m.model !== "<synthetic>") st.model = m.model;
-      if (d.requestedModel) st.requested = d.requestedModel;
-      if (d.effort) st.effort = d.effort;
-      const u = usageOf(m.usage);
-      if (u && m.id) { st.usage.set(m.id, u); st.context = u.input + u.cacheRead + u.cacheWrite; }
+      // A reply Claude Code wrote itself (a usage limit, an API error) has no model and zero usage:
+      // it says what went wrong and leaves the model and context as they were.
+      if (m.model === "<synthetic>") {
+        if (d.isApiErrorMessage) st.apiError = { text: (Array.isArray(m.content) ? m.content.map((c) => c?.text ?? "").join(" ") : String(m.content ?? "")).trim() || "API error", at: d.timestamp ?? null };
+      } else {
+        if (m.model) st.model = m.model;
+        if (d.requestedModel) st.requested = d.requestedModel;
+        if (d.effort) st.effort = d.effort;
+        const u = usageOf(m.usage);
+        if (u && m.id) { st.usage.set(m.id, u); st.context = u.input + u.cacheRead + u.cacheWrite; }
+        st.apiError = null;
+      }
     }
     if (!Array.isArray(m?.content)) continue;
     for (const c of m.content) {
@@ -110,7 +121,8 @@ export const windowOf = (st) => (/\[1m\]/i.test(`${st.requested ?? ""} ${st.mode
 export const tokens = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1000 ? `${(n / 1000).toFixed(n >= 1e5 ? 0 : 1)}k` : String(n));
 
 // Reads a conversation the first time: only the lines that matter (titles, mode, cost, task and
-// subagent calls and their results), every reply's usage, and the newest reply; then where the
+// subagent calls and their results), every reply's usage, the newest real reply and the newest
+// reply of any kind (a limit Claude Code wrote after it); then where the
 // file ends, so the next read takes only what was added.
 export async function firstRead(file) {
   const f = q(file);
@@ -120,6 +132,7 @@ export async function firstRead(file) {
     echo 'LINES'
     grep -E '"type":"(ai-title|custom-title|mode|cost-state)"|"name":"(TaskCreate|TaskUpdate|Agent|Task)"|Task #[0-9]+ created' ${f}
     echo 'LAST'
+    tail -c 2000000 ${f} | grep '"type":"assistant"' | grep -v '"model":"<synthetic>"' | tail -n 1
     tail -c 2000000 ${f} | grep '"type":"assistant"' | tail -n 1
     echo 'USAGE'
     grep -o -E '"id":"msg_[A-Za-z0-9]+"|"usage":\\{"input_tokens":[0-9]+,"cache_creation_input_tokens":[0-9]+,"cache_read_input_tokens":[0-9]+,"output_tokens":[0-9]+' ${f}

@@ -140,3 +140,20 @@ test("revive: the account from the session's config folder; HERDR_RANCH_ACCOUNT 
   const s = scriptFor("/w/my repo", "unset CLAUDE_CONFIG_DIR", ["--model", "opus", "--resume", "abc-1"]);
   assert.ok(s.endsWith("cd '/w/my repo' || exit 1\nunset CLAUDE_CONFIG_DIR\nexec claude '--model' 'opus' '--resume' 'abc-1'\n"));
 });
+
+test("apply: a reply Claude Code wrote itself (a usage limit) keeps the model and context, and says what stopped it", () => {
+  const limit = { type: "assistant", isApiErrorMessage: true, timestamp: "2026-11-17T02:00:00Z", message: { id: "x-1", model: "<synthetic>", usage: u(0, 0, 0, 0), content: [{ type: "text", text: "You've hit your 5-hour limit · resets 3:30pm" }] } };
+  const st = apply(emptyState(), [reply("msg_1", u(2, 100, 1000, 5)), limit]);
+  assert.deepEqual([st.model, st.context, st.apiError?.text], ["claude-opus-5-5", 1102, "You've hit your 5-hour limit · resets 3:30pm"]);
+  apply(st, [reply("msg_2", u(1, 10, 2000, 5))]);
+  assert.equal(st.apiError, null);
+  const first = parseFirstRead(["SIZE\t10", "LINES", "LAST", JSON.stringify(reply("msg_1", u(2, 100, 1000, 5))), JSON.stringify(limit), "USAGE"].join("\n")).st;
+  assert.deepEqual([first.context, Boolean(first.apiError)], [1102, true]);
+});
+
+test("pickSession: several sessions in one folder, the terminal's own process wins", () => {
+  const list = [{ pid: 65177, sessionId: "bg", title: "Old" }, { pid: 30972, sessionId: "mine", title: "Other" }];
+  assert.equal(pickSession(list, "Nothing alike", 30972).sessionId, "mine");
+  assert.equal(pickSession(list, "Nothing alike"), null);
+  assert.equal(pickSession(list, "Old", 1).sessionId, "bg");
+});

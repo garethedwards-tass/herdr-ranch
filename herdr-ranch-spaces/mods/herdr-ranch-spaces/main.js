@@ -256,9 +256,9 @@ export default class Spaces extends View {
     });
   }
 
-  menu(w, g) {
-    // ranch: our menu (Link space, Git, worktrees, Rename, Close) in place of Herdr's.
-    spaceMenu(w, g);
+  menu(w, g, at) {
+    // ranch: our menu (git, worktrees, Link space, Rename, Close) in place of Herdr's: the git pill's too.
+    spaceMenu(this, w, g, at);
   }
 
   orderingDue(now) {
@@ -450,7 +450,7 @@ export default class Spaces extends View {
         } else if (from === w.id) run("space.select", { id: w.id });
         cx.notify();
       })
-      .on_mouse_down("right", () => this.menu(w, g))
+      .on_mouse_down("right", () => this.menu(w, g, at))
       .child(
         h_flex()
           .gap(9)

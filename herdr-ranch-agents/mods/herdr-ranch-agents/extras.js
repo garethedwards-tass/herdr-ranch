@@ -5,7 +5,7 @@
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { openOverlay, closeOverlay, agents, terminals, home, shared, panes, spaces } from "herdr";
+import { openOverlay, closeOverlay, agents, terminals, home, shared, panes, spaces, run, notify, hc } from "herdr";
 import { bringBack } from "./revive.js";
 import { liveSessions, configDirs, pickSession, projectDir, firstRead, readSince, subagents, apply, totals, windowOf, tokens, taskList } from "./claude.js";
 
@@ -66,6 +66,18 @@ export function start(v, cx) {
   cx.timer.every(TICK, tick);
 }
 
+// A terminal's foreground process (hc get), kept while it's one of the candidates' processes.
+async function foregroundPid(v, address, candidates) {
+  v.pids ??= new Map();
+  const known = v.pids.get(address);
+  if (known != null && candidates.some((c) => String(c.pid) === String(known))) return known;
+  const r = await hc(["get", address, "--json"]).catch(() => null);
+  let pid = null;
+  try { pid = r?.code === 0 ? JSON.parse(r.stdout)?.foreground?.pid ?? null : null; } catch { /* not JSON */ }
+  if (pid != null) v.pids.set(address, pid);
+  return pid;
+}
+
 async function refresh(v) {
   const now = Date.now();
   const all = terminals();
@@ -79,7 +91,9 @@ async function refresh(v) {
     seen.add(a.address);
     const at = cwd.get(a.address);
     const candidates = v.sessions.filter((s) => s.cwd === at).map((s) => ({ ...s, title: [...v.claude.values()].find((c) => c.id === s.sessionId)?.st.title }));
-    const s = pickSession(candidates, a.title);
+    // Several sessions in its folder: the terminal's foreground process tells which is its own.
+    const pid = candidates.length > 1 ? await foregroundPid(v, a.address, candidates) : null;
+    const s = pickSession(candidates, a.title, pid);
     let c = v.claude.get(a.address);
     if (!s) { if (c) { v.claude.delete(a.address); changed = true; } continue; }
     if (!c || c.id !== s.sessionId) {
@@ -111,22 +125,94 @@ export function snapshot(c) {
     replies: tot.replies, output: tot.output, input: tot.input + tot.cacheWrite, cacheRead: tot.cacheRead, cost: st.cost, started: c.started,
     tasks: tl.list.map((t) => [t.status, t.subject]), tasksDone: tl.done,
     subs: c.subs.map((s) => [s.type, s.description, s.done]), session: c.id,
+    apiError: st.apiError?.text ?? null,
   };
 }
 
 const pct = (c) => Math.round((100 * c.st.context) / Math.max(windowOf(c.st), c.st.context > 200_000 ? 1_000_000 : 0));
 const tone = (t, p) => (p >= 85 ? t.ansi1 : p >= 60 ? t.ansi3 : t.dim);
 
-// The chip on a Claude Code row: context in use, a click opens the stats popup.
-export function statsChip(v, a, t) {
-  const c = v.claude?.get(a.address);
-  if (!c?.st.context) return null;
-  const p = pct(c);
-  return div().id(`stats-${a.address}`).flex_none().px(4).rounded(4).text_size(10.5).text_color(tone(t, p)).cursor_pointer()
-    .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(`${tokens(c.st.context)} in context (${p}%). Click for usage, model and tasks`)
+// The pill at the far right of every agent row, in the style of the Spaces git pill: fixed
+// width, tinted by how full the context is (ansi2, ansi3 from 60%, ansi1 from 85%; red when the
+// agent needs you), with the agent's status first (`status`: main.js's spinner, dot, ring or !),
+// then the model (cut short) and the context in use. An agent without Claude Code's
+// records (another agent, another machine, not read yet) gets a grey pill with its program.
+// A click opens the agent's menu (statsMenu).
+const PILL_W = 84, PILL_H = 20;
+const FAMILY = /^claude-([a-z]+)/;
+const STATUS_SAY = { working: "Working", blocked: "Needs you", idle: "Idle", done: "Done", unknown: "Not reporting" };
+const shortModel = (id) => { const m = FAMILY.exec(id ?? ""); return m ? m[1].charAt(0).toUpperCase() + m[1].slice(1) : id ?? "Claude"; };
+const level = (t, p) => (p >= 85 ? t.ansi1 : p >= 60 ? t.ansi3 : t.ansi2);
+// The agent's menu, from its pill or a right-click on its row.
+export function openAgentMenu(v, a) {
+  const c = v.claude?.get(a.address), s = c?.st.context ? snapshot(c) : null;
+  const name = s ? shortModel(c.st.model) : c ? "Claude" : a.program?.name ?? "Agent";
+  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 280, height: menuHeight(s), props: { stats: s, menu: true, pane: a.pane, name, terminal: a.address, pinned: Boolean(a.pinned) } });
+}
+
+export function statsChip(v, a, t, status = null) {
+  const c = v.claude?.get(a.address), known = Boolean(c?.st.context);
+  const p = known ? pct(c) : null;
+  // Stopped by Claude Code itself (a usage limit, an API error): red, "limit" or "error".
+  const err = c?.st.apiError?.text ?? null, limit = err && /limit/i.test(err);
+  const color = a.status === "blocked" || err ? t.blocked : known ? level(t, p) ?? t.dim : t.dim;
+  const left = known ? shortModel(c.st.model) : c ? "Claude" : a.program?.name ?? "Agent";
+  const right = err ? (limit ? "limit" : "error") : known ? `${p}%` : c ? "…" : "—";
+  return h_flex().id(`stats-${a.address}`).flex_none().w(PILL_W).h(PILL_H).gap(4).px(6).items_center().rounded(4)
+    .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer()
+    .hover((x) => x.bg(color + "2a"))
+    .tooltip(`${STATUS_SAY[a.status] ?? "Agent"}${known ? ` · ${modelName(c.st.model)} · ${tokens(c.st.context)} in context (${p}%)` : ""}${err ? `\n${err}` : ""}\nClick for usage and more`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-    .on_click((_e, cx) => { cx.stop_propagation(); openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 320, height: 460, props: { stats: snapshot(c) } }); })
-    .child(`${p}%`);
+    .on_click((_e, cx) => { cx.stop_propagation(); openAgentMenu(v, a); })
+    // The status icons carry their own margins: a fixed box centres each the same way.
+    .when(Boolean(status), (el) => el.child(h_flex().w(14).ml(-2).flex_none().items_center().justify_center().child(status)))
+    .child(div().flex_1().min_w(0).truncate().child(left))
+    .child(div().flex_none().font_semibold().child(right));
+}
+
+// The agent's menu: a summary at the top, then what you can do with it. A new entry goes in
+// menuItems() (and menuHeight() counts it). stats is null for an agent without Claude Code's records.
+function menuItems(p) {
+  const s = p.stats;
+  return [
+    s ? { id: "details", label: "Usage details", hint: "›", go: () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 320, height: 460, props: { stats: s } }) } : null,
+    p.pane ? { id: "focus", label: "Go to terminal", go: () => run("pane.focus", { pane: p.pane }) } : null,
+    p.terminal ? { id: "pin", label: p.pinned ? "Unpin" : "Pin to the top", go: () => run("terminal.pin", { terminal: p.terminal, pinned: !p.pinned }) } : null,
+    s?.session ? { id: "copy-id", label: "Copy session ID", go: (cx) => { cx.write_to_clipboard(s.session); notify({ title: "Copied the session ID", body: s.session, level: "success", timeout: 2500 }); } } : null,
+  ].filter(Boolean);
+}
+const ITEM_H = 30;
+export function menuHeight(s) {
+  const summary = s ? 22 + 20 + 26 + (s.tasks.length || s.subs.some((x) => !x[2]) ? 20 : 0) + (s.apiError ? 28 : 0) : 22;
+  return 12 + summary + 9 + ITEM_H * menuItems({ stats: s, pane: true, terminal: true }).length + 10;
+}
+export function statsMenu(p, t) {
+  const s = p.stats;
+  if (!s) return v_flex().id("agent-menu").w_full().p(6).gap(1).bg(t.popover).text_size(12.5)
+    .child(div().px(8).pt(4).pb(8).font_semibold().truncate().text_color(t.foreground).child(p.name ?? "Agent"))
+    .child(div().h(1).mx(4).mb(4).bg(t.border))
+    .children(menuRows(p, t));
+  const used = Math.min(1, s.context / s.window), running = s.subs.filter((x) => !x[2]).length;
+  const extra = [s.tasks.length ? `${s.tasksDone}/${s.tasks.length} tasks` : "", running ? `${running} subagent${running === 1 ? "" : "s"} running` : ""].filter(Boolean).join(" · ");
+  return v_flex().id("agent-menu").w_full().p(6).gap(1).bg(t.popover).text_size(12.5)
+    .child(v_flex().px(8).pt(4).pb(8).gap(3)
+      .child(div().font_semibold().truncate().text_color(t.foreground).child(s.title ?? "Claude Code"))
+      .child(div().truncate().text_size(12).text_color(t.muted).child(`${modelName(s.model)}${s.effort ? ` · ${s.effort}` : ""}`))
+      .child(h_flex().gap(8).items_center().pt(2)
+        .child(div().flex_1().h(5).rounded(3).bg(t.hover).child(div().h(5).rounded(3).w(Math.max(4, Math.round(150 * used))).bg(used >= 0.85 ? t.ansi1 : used >= 0.6 ? t.ansi3 : t.accent)))
+        .child(div().flex_none().text_size(12).text_color(tone(t, used * 100)).child(`${Math.round(used * 100)}% · ${tokens(s.context)}`)))
+      .when(Boolean(extra), (el) => el.child(div().truncate().text_size(12).text_color(t.dim).child(extra)))
+      // What stopped it, in Claude Code's words (e.g. "You've hit your 5-hour limit · resets 3:30pm").
+      .when(Boolean(s.apiError), (el) => el.child(div().mt(2).px(6).py(3).rounded(5).bg(t.blocked + "1a").text_size(12).text_color(t.blocked).truncate().child(s.apiError))))
+    .child(div().h(1).mx(4).mb(4).bg(t.border))
+    .children(menuRows(p, t));
+}
+function menuRows(p, t) {
+  return menuItems(p).map((m) => h_flex().id(`menu-${m.id}`).h(ITEM_H).px(8).gap(8).rounded(7).items_center().cursor_pointer()
+      .text_color(t.foreground).hover((x) => x.bg(t.hover))
+      .on_click((_e, cx) => { closeOverlay(p.overlay); m.go(cx); })
+      .child(div().flex_1().min_w(0).truncate().child(m.label))
+      .when(Boolean(m.hint), (el) => el.child(div().flex_none().text_color(t.dim).child(m.hint))));
 }
 
 // On an agent that stopped reporting its status: a warning that says so and, for Claude Code here,

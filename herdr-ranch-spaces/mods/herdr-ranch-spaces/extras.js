@@ -95,7 +95,7 @@ function noGitChip(w, known, t) {
 
 const SHORT = { sync: () => "✓", dirty: (c) => String(c.changes), behind: (_c, g) => `↓${g.behind}`, diverged: () => "↕", ahead: (c, g) => `↑${Math.max(g.ahead ?? 0, c.unpushed ?? 0)}`, unknown: () => "…" };
 function gitChip(v, w, g, at, t) {
-  return gitPill(`space-git-menu-${w.id}`, g.branch, checkoutAt(v.trees[g.repo], at), g, t, () => gitMenu(v, w, g, at));
+  return gitPill(`space-git-menu-${w.id}`, g.branch, checkoutAt(v.trees[g.repo], at), g, t, () => spaceMenu(v, w, g, at));
 }
 
 // The pill itself: branch and state in the state's color, fixed width. `onClick` null: not a button.
@@ -123,23 +123,22 @@ export function worktreeSpaceRow(v, r, t) {
   return h_flex().id(`space-${w.id}`).h(ROW).flex_none().px(8).pl(CHEVRON1).gap(7).items_center().rounded(6).cursor_pointer().text_size(TEXT)
     .text_color(t.foreground).when(w.active, (el) => el.bg(t.selected)).when(!w.active, (el) => el.hover((s) => s.bg(t.hover)))
     .on_click(() => run("space.select", { id: w.id }))
-    .on_mouse_down("right", () => spaceMenu(w, g))
+    .on_mouse_down("right", () => spaceMenu(v, w, g, at))
     // The caret and folder fold together; the name sits close to its folder.
     .child(foldChevron(v, w, 0, t, svg(CHROME("folder")).size(13).flex_none().text_color(t.muted)))
     .child(div().flex_1().min_w(0).truncate().child(folder || w.name))
-    .child(g ? gitPill(`wt-git-${w.id}`, branch, c, g, t, () => gitMenu(v, w, g, at)) : div());
+    .child(g ? gitPill(`wt-git-${w.id}`, branch, c, g, t, () => spaceMenu(v, w, g, at)) : div());
 }
 
-// The git button's popup: what the list knows about the checkout, and the git and worktree actions.
-function gitMenu(v, w, g, at) {
-  const c = checkoutAt(v.trees[g.repo], at);
-  const info = { name: g.name, branch: g.branch, ahead: g.ahead, behind: g.behind, changes: c?.changes ?? null, unpushed: c?.unpushed ?? null, top: g.top, linked: g.linked, worktrees: (v.trees[g.repo] ?? []).length };
-  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 300, height: 440, props: { menu: "git", space: w.id, on: w.machine ?? null, info } });
-}
-
-export function spaceMenu(w, g) {
+// A space's one menu, from a right-click on it or a click on its git pill: its git state at the top,
+// then git, worktrees, Link space and account, new tabs, Rename, Close (menu.js).
+export function spaceMenu(v, w, g, at) {
   const account = accountOf(w, g ? { main: g.main, on: w.machine ?? null } : null);
-  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 260, height: 420, props: { menu: w.id, git: g ? (g.linked ? "linked" : "main") : null, account: account?.id ?? null } });
+  const c = g ? checkoutAt(v.trees[g.repo], at) : null;
+  const info = g ? { name: g.name, branch: g.branch, ahead: g.ahead, behind: g.behind, changes: c?.changes ?? null, unpushed: c?.unpushed ?? null, top: g.top, linked: g.linked, worktrees: (v.trees[g.repo] ?? []).length } : null;
+  // As high as its rows, with room for three agents under New terminal.
+  const rows = 3 + 4 + (g ? 2 + 4 + (g.linked ? 1 : 0) : 0) + (g?.linked ? 0 : 1);
+  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 300, height: Math.min(700, 10 + (info ? 56 : 32) + rows * 28 + (g ? 3 : 1) * 9), props: { menu: w.id, git: g ? (g.linked ? "linked" : "main") : null, account: account?.id ?? null, info, machine: w.machine ?? null } });
 }
 
 function button(id, path, tip, t, onClick, color = null) {

@@ -7,7 +7,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 // ranch: Claude Code sessions: the chip, the popup, tasks and subagents.
-import { start, statsChip, claudeRows, statsView, liveAgents, quietMark } from "./extras.js";
+import { start, statsChip, claudeRows, statsView, statsMenu, liveAgents, quietMark, openAgentMenu } from "./extras.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -221,7 +221,7 @@ export default class Agents extends View {
   render(cx) {
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
-    if (props()?.stats) return statsView(props(), t); // ranch
+    if (props()?.stats) return props().menu ? statsMenu(props(), t) : statsView(props(), t); // ranch: the pill's menu, or Usage details
     const collapsed = narrow();
     const sort = sortOf();
     // ranch: agents that stopped reporting a status too; each host list read once.
@@ -322,23 +322,7 @@ export default class Agents extends View {
       const when = this.since(a);
       const idle = a.status === "idle" && !a.focused;
       const isPinned = a.pinned;
-      const pin = div()
-        .id(`pin-${a.address}`)
-        .flex_none()
-        .p(2)
-        .rounded(4)
-        .text_color(t.dim)
-        .cursor_pointer()
-        .hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .tooltip(isPinned ? "Unpin" : "Pin to the top")
-        .on_click((_e, cx) => {
-          cx.stop_propagation();
-          run("terminal.pin", { terminal: a.address, pinned: !isPinned });
-          // The row moves away from under the pointer, and no hover-out comes.
-          this.hovered = null;
-          cx.notify();
-        })
-        .child(svg(`mods/workspace-chrome/${isPinned ? "pin-off" : "pin"}.svg`).size(13));
+      // ranch: the pin button moved to the pill's menu (extras.js menuItems).
       // Under a space header the space goes without saying; an automatic tab number says nothing.
       // Without a space header above (priority, pinned) the row names its space.
       const full = byPriority || isPinned;
@@ -360,6 +344,7 @@ export default class Agents extends View {
           cx.notify();
         })
         .on_click(() => run("pane.focus", { pane: a.pane }))
+        .on_mouse_down("right", () => openAgentMenu(this, a)) // ranch: the pill's menu on a right-click too
         .when(Boolean(pic), el => el.child(div().id(`agent-fold-${a.address}`)
           .when(subs.length > 0, el => el.on_click((_e, cx) => {
             cx.stop_propagation();
@@ -371,11 +356,10 @@ export default class Agents extends View {
           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
-        .child(statsChip(this, a, t) ?? div()) // ranch: context in use; a click opens its stats
         .child(quietMark(this, a, t) ?? div()) // ranch: not reporting its status; a click brings it back
-        .when(this.hovered === a.address, el => el.child(pin))
-        .when(this.hovered !== a.address && Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
-        .child(this.status(t, a, byPriority && !isPinned));
+        // ranch: Pin is in the pill's menu, so the time always shows.
+        .when(Boolean(when), el => el.child(div().flex_none().text_size(11).text_color(t.dim).child(duration(now - when))))
+        .child(statsChip(this, a, t, this.status(t, a, true))); // ranch: status, model and context in one pill, on the far right; a click opens the agent's menu
     };
 
     // Groups in list order: spaces (grouped) or priority sections. Agents of a
