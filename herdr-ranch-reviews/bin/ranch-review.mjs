@@ -13,12 +13,14 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MOD, MAX_TEXT, MAX_BYTES, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText, docKey, splitBlocks, carryDraft, abandon, orphaned } from "../mods/herdr-ranch-reviews/reviews.js";
+import { MOD, MAX_TEXT, MAX_BYTES, KEEP_DAYS, newId, outcomeText, lastClaudeText, lastCodexText, docKey, splitBlocks, carryDraft, abandon, orphaned, reblock } from "../mods/herdr-ranch-reviews/reviews.js";
 
 const HOME = os.homedir();
 const APP = process.env.HERDR_APP_HOME || path.join(HOME, ".config", "herdr-app");
 const DIR = path.join(APP, "data", MOD);
 const POLL = 400;
+// How often a waiting review checks that its agent still shows under Needs you.
+const RECHECK = 2000;
 
 const fail = (msg) => { process.stderr.write(`ranch-review: ${msg}\n`); process.exit(2); };
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024, ...opts });
@@ -84,6 +86,11 @@ function reportStatus(tty, app, state, msg = null) {
   if (state === "blocked") parts.push("kind=question");
   if (msg) parts.push(`msg=${Buffer.from(msg).toString("base64")}`);
   try { fs.writeFileSync(tty, `\x1b]7501;${parts.join(":")}\x07`); } catch { /* not ours to write */ }
+}
+
+// The agent's state as Herdr's terminal core has it ("working", "blocked", "done", "idle"), or null.
+function agentState(terminal) {
+  try { return JSON.parse(run("hc", ["get", terminal])).status?.state ?? null; } catch { return null; }
 }
 
 function agentPane() {
@@ -277,7 +284,9 @@ async function main() {
       ? { ...x, status: "dismissed", supersededBy: { id, terminal: agent.terminal ?? null }, draft: null, finishedAt: new Date().toISOString(), result: { decision: "dismissed", comments: [] } }
       : null));
   }
-  reportStatus(tty, agent.app, "blocked", `Review ${title} in Herdr`);
+  const asking = `Review ${title} in Herdr`;
+  reportStatus(tty, agent.app, "blocked", asking);
+  let checked = Date.now();
 
   // The mod's watcher (an invisible copy in the mod-buttons layout) sees the new file and shows
   // the toast. Without a live watcher (its heartbeat is older than a minute), a launcher pane
@@ -303,7 +312,14 @@ async function main() {
     // Unreadable while the mod writes it: read again. Gone: removed from the list (discarded).
     if (!r && fs.existsSync(where)) continue;
     if (!r) { process.stdout.write(json ? `${JSON.stringify({ decision: "dismissed" })}\n` : ""); reportStatus(tty, agent.app, "working"); return 0; }
-    if (r.status === "open") continue;
+    if (r.status === "open") {
+      // The agent's own report (its turn ended) replaced "blocked": put it back under Needs you.
+      if (agent.terminal && Date.now() - checked >= RECHECK) {
+        checked = Date.now();
+        if (reblock(agentState(agent.terminal))) reportStatus(tty, agent.app, "blocked", asking);
+      }
+      continue;
+    }
     // Replaced by a newer review of the same document: this one ends with no answer. Its agent's
     // status stays as the newer review set it when that review is for the same agent.
     if (r.supersededBy) {

@@ -2,6 +2,10 @@
 
 Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods and the mod-buttons layout share one version. The cog in Issues and Pull requests shows the installed version and offers **Update** when a newer release exists.
 
+## Unreleased
+
+- **Reviews:** an agent that asked for a review keeps showing under **Needs you** until you answer. Before, its own status report at the end of its turn (Claude Code's "done", when it runs `ranch-review` in the background) replaced it, so the agent looked finished or running while the review waited.
+
 ## v0.5.0
 
 - **Reviews:** Mermaid and draw.io diagrams show as pictures: a ` ```mermaid ` block, a ` ```drawio ` block (or ` ```xml ` holding draw.io XML), and an image line pointing at a `.drawio`, `.drawio.svg` or `.dio` file. They render with the tools you have installed (`mmdc` from mermaid-cli, the draw.io app), once per diagram; without them, or when a diagram has an error, the block shows its code with the reason above it. **Source** still shows the text.

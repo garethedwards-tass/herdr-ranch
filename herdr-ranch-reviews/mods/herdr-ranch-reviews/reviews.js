@@ -333,6 +333,13 @@ export function markHits(markdown, query) {
     : hitsIn(part, q).map(([text, hit]) => (hit ? `<mark>${text}</mark>` : text)).join(""))).join("");
 }
 
+// Whether a waiting review should put its agent back under Needs you. The agent's own status
+// reports replace the CLI's "blocked": Claude Code reports "done" when its turn ends, and an
+// agent that started `ranch-review` in the background ends its turn right after. A working
+// agent is left alone (it is busy with something else); one that stopped is blocked again,
+// since the review still waits on you. `state`: the agent's state from `hc get`, or null.
+export const reblock = (state) => Boolean(state) && state !== "working" && state !== "blocked";
+
 // --- Nobody waiting -------------------------------------------------------------------------
 
 // A review whose `ranch-review` stopped (a signal, or the agent's session ended): closed as
