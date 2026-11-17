@@ -1,5 +1,5 @@
 // Updates for the whole Herdr Ranch suite. The Issues list checks once a day whether a newer
-// release of jslowack/herdr-ranch exists and keeps the answer in shared("ranch-update"); every
+// release of garethedwards-tass/herdr-workspace exists and keeps the answer in shared("ranch-update"); every
 // cog shows it, with Update for a git install (the mods are linked into a clone: a fast-forward to the release tag,
 // the layout copied again, panels reloaded) and the line for your agent for a copied install.
 // Source: the repository's shared/, copied into each mod.
@@ -7,7 +7,7 @@
 import { exec, appHome, shared, setShared, run, notify, window as appWindow } from "herdr";
 
 export const VERSION = "0.5.0";
-export const REPO = "jslowack/herdr-ranch";
+export const REPO = "garethedwards-tass/herdr-workspace";
 const KEY = "ranch-update", DAY = 24 * 3600 * 1000;
 const platform = () => { try { return appWindow().platform; } catch { return "macos"; } };
 

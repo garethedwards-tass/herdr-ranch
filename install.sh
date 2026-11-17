@@ -10,7 +10,7 @@ home="${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 dest="$home/mods"
 
 if [ ! -d "$repo/shared" ] || [ ! -f "$repo/install.sh" ]; then
-  echo "Run install.sh from a clone of github.com/jslowack/herdr-ranch: ./install.sh" >&2
+  echo "Run install.sh from a clone of github.com/garethedwards-tass/herdr-workspace: ./install.sh" >&2
   exit 1
 fi
 

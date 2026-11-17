@@ -11,13 +11,13 @@ Three mods for the [Herdr](https://herdr.dev) desktop app. They show the work of
 Tell your agent, in Herdr:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then install everything from github.com/jslowack/herdr-ranch: the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-reviews (with its ranch-review CLI and skills), the mod-buttons layout, and their keys.json entries; then switch to the mod-buttons layout.
+Read ~/.config/herdr-app/AGENTS.md, then install everything from github.com/garethedwards-tass/herdr-workspace: the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-reviews (with its ranch-review CLI and skills), the mod-buttons layout, and their keys.json entries; then switch to the mod-buttons layout.
 ```
 
 Or in a terminal:
 
 ```sh
-git clone https://github.com/jslowack/herdr-ranch && cd herdr-ranch && ./install.sh --layout
+git clone https://github.com/garethedwards-tass/herdr-workspace && cd herdr-workspace && ./install.sh --layout
 herdr-app do layout.switch '{"name":"mod-buttons"}'
 ```
 

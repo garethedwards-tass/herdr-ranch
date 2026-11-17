@@ -19,7 +19,7 @@ How to install, link and use the Herdr Ranch mods. Facts, paths and flags are in
 **One mod at a time,** tell your agent in Herdr:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then add the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-reviews (with its ranch-review CLI and skills), and the layout mod-buttons, from github.com/jslowack/herdr-ranch
+Read ~/.config/herdr-app/AGENTS.md, then add the mods herdr-ranch-issues, herdr-ranch-prs and herdr-ranch-reviews (with its ranch-review CLI and skills), and the layout mod-buttons, from github.com/garethedwards-tass/herdr-workspace
 ```
 
 Leave out the ones you don't want.

@@ -24,7 +24,7 @@ Facts and paths for the Herdr Ranch mods. How to use them is in the [guide](guid
   - Linear: `https://api.linear.app/graphql` with your API key;
   - GitHub's API only through `gh`;
   - Pull requests: each person's avatar from `https://github.com/<login>.png?size=64` with `curl`, without a token, at most 4 at a time, once per session (a failure is not tried again), only for pull requests on github.com;
-  - the update check, once a day: `gh api repos/jslowack/herdr-ranch/releases/latest`, else `git ls-remote --tags https://github.com/jslowack/herdr-ranch`.
+  - the update check, once a day: `gh api repos/garethedwards-tass/herdr-workspace/releases/latest`, else `git ls-remote --tags https://github.com/garethedwards-tass/herdr-workspace`.
 - **Stored:**
   - in the system's credential store, only after you press Connect: the Jira sign-in (item `herdr-jira:<site>`) and the Linear key (item `herdr-linear:linear.app`);
   - in Herdr's shared state: the space links, the lists' settings, your prompts and the last update check;

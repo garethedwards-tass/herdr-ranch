@@ -22,7 +22,7 @@ import { linearKey, viewer as linearViewer, findTeams, connectLinear, disconnect
 const branchKey = (branch) => /\b([A-Z][A-Z0-9]{1,9})-\d+\b/.exec(branch ?? "")?.[1] ?? "";
 const WAIT = 350; // ms of no typing before a search runs
 const DEFAULT_FILTER = "sprint in openSprints()";
-const GUIDE = "https://github.com/jslowack/herdr-ranch/blob/main/docs/connect-jira.md";
+const GUIDE = "https://github.com/garethedwards-tass/herdr-workspace/blob/main/docs/connect-jira.md";
 // The filter presets; anything else is custom JQL.
 const norm = (jql) => (jql ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 // Linear's presets: the active cycle, every open issue, mine.
@@ -488,7 +488,7 @@ export class LinkDialog extends View {
         .child(section(this.issues === "github" ? 3 : 4, "Account", null, accountBody))
         .when(Boolean(this.error), (e) => e.child(div().text_size(fs.meta).text_color(t.ansi1).child(this.error))))
       .child(h_flex().flex_none().px(16).py(10).gap(8).items_center().border_t_1().border_color(t.border).bg(t.surface)
-        .child(button("guide", "How to connect ↗", "link", () => openUrl(this.issues === "linear" ? "https://github.com/jslowack/herdr-ranch#connect-linear" : this.issues === "github" ? "https://github.com/jslowack/herdr-ranch#link-a-space" : GUIDE)))
+        .child(button("guide", "How to connect ↗", "link", () => openUrl(this.issues === "linear" ? "https://github.com/garethedwards-tass/herdr-workspace#connect-linear" : this.issues === "github" ? "https://github.com/garethedwards-tass/herdr-workspace#link-a-space" : GUIDE)))
         .child(div().flex_1())
         .child(button("cancel", "Cancel", null, () => this.close()))
         .child(button("save", this.saving ? "Checking the filter…" : "Save  ⌘↵", "primary", (cx) => this.save(cx))));
