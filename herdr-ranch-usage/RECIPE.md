@@ -6,6 +6,8 @@ from the CLIs themselves; the mod never reads a token or credential file.
 
 ## Accounts (herdr-ranch)
 
+- **Bar** (herdr-ranch): only a gauge icon and `Usage`, `muted`, amber from 70% and red from 90% on any shown window (the closest limit), with `!` when a reading failed; hovering opens the panel with every number. No refresh button on the bar (the panel has one). In the mod-buttons layout the block is 96px wide beside `workspace-status`.
+
 - The accounts are the Spaces list's (`shared("ranch-accounts")`, `accounts.js`, a copy of
   `shared/accounts.js`). Each account with a Claude Code folder gets its own reading, id
   `claude:<account id>`, named `Claude · <label>` and marked with the account's coloured letter (as on
@@ -20,8 +22,7 @@ from the CLIs themselves; the mod never reads a token or credential file.
   folder and adds `dir=N`; the session block shows that account's letter.
 - Shared keys are `ranch-usage.state`, `ranch-usage.prefs`, `ranch-usage.refresh`, so it can sit
   beside the original mod.
-- In the mod-buttons layout it shares the status row with `workspace-status` (`status-row`, weights
-  2 : 3, min 320px, `align: right`).
+- In the mod-buttons layout it shares the status row with `workspace-status` (`status-row`, `workspace-status` weight 1, this block 96px, `align: right`).
 
 ## What you see
 

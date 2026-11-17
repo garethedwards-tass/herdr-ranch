@@ -198,33 +198,26 @@ export default class UsageLimits extends View {
     const prefs = this.prefs();
     const list = providers();
     const model = barModel(st, prefs, now(), list);
-    const numbers = sessionOnBar(this.session?.data, prefs);
-    const numbersWidth = numbers.reduce((w, n) => w + 7 * n.text.length + 14, numbers.length ? 14 : 0);
-    const density = chooseDensity(model, this.width ? this.width - 24 - numbersWidth : Infinity, prefs.showBars);
     const left = props()?.align === "left";
     const root = h_flex().id("root").size_full().px(12).gap(10).items_center().overflow_hidden()
       .when(left, (e) => e.justify_start()).when(!left, (e) => e.justify_end())
       .bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
       .on_size_change((size, cx) => { this.width = size.width; cx.notify(); });
-    // Only the limits themselves open the panel, not the empty rest of the block.
-    const content = h_flex().id("ul-content").gap(18).items_center().flex_none().on_hover((on, cx) => this.hover(on, cx))
-      .child(div().flex_none().text_color(t.dim).child(prefs.showRemaining ? "Remaining" : "Used"));
-    const showBars = prefs.showBars && this.compactWidth(model, numbersWidth, true) <= this.width - 70;
-    if (numbers.length) {
-      content.child(h_flex().gap(10).items_center().flex_none()
-        .children(numbers.map((n) => div().whitespace_nowrap().text_color(textColor(n.level, n.text, t)).child(n.text))));
-      if (!model.empty) content.child(div().w(1).h(14).bg(t.border).flex_none());
-    }
-    if (model.empty) content.child(div().id("ul-empty").child(svg(`mods/${MOD}/icons/gauge.svg`).size(14)));
-    model.groups.forEach((g) => content.child(this.compactGroup(g, showBars, t)));
+    // herdr-ranch: the bar is just a gauge and "Usage", in the colour of the closest limit (amber from
+    // 70%, red from 90%; "!" when a reading failed). The numbers are in the hover panel.
+    const worst = model.groups.flatMap((g) => g.segments).reduce((w, seg) => (seg.level === "hot" || (seg.level === "warn" && w !== "hot") ? seg.level : w), "ok");
+    const failed = model.groups.some((g) => g.mark === "!");
+    const tone = worst === "ok" ? t.muted : levelColor(worst, t);
+    const content = h_flex().id("ul-content").gap(6).items_center().flex_none().cursor_pointer().on_hover((on, cx) => this.hover(on, cx))
+      .child(svg(`mods/${MOD}/icons/gauge.svg`).size(14).flex_none().text_color(tone))
+      .child(div().flex_none().text_color(tone).child("Usage"))
+      .when(failed, (e) => e.child(div().flex_none().text_color(t.dim).child("!")));
     const panel = cardModel(st, now(), list, prefs.showRemaining);
     // With no CLI installed there are no limits to show, so settings are all there is.
     const body = this.panel === "settings" || panel.empty ? this.settings(!panel.empty, t) : this.limits(panel, t);
-    const cooling = this.cooling();
     return root.child(HoverCard.new("ul-panel").anchor(left ? "bottom_left" : "bottom_right").open_delay(PANEL_OPEN_DELAY).close_delay(PANEL_CLOSE_DELAY)
       .trigger(content)
-      .content(body))
-      .child(this.iconButton("ul-bar-refresh", "refresh", cooling ? "Refreshing…" : "Refresh now", !cooling, (cx) => this.refresh(cx), t));
+      .content(body));
   }
 
   // Rough width of the compact bar, to drop the bars first when it doesn't fit.

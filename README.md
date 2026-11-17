@@ -5,7 +5,7 @@
 Mods for the [Herdr](https://herdr.dev) desktop app that show the work of the space you're in next to its terminals and agents, plus a layout that puts them all in one window:
 
 - **Sidebar:** [Spaces](#spaces) (git, links and accounts per space) and [Agents](#agents) (Claude Code's context, tasks and subagents).
-- **Tab bar buttons:** [Files](#files), [Changes](#changes), [History](#history), [Issues](#issues), [Pull requests](#pull-requests) and [Reviews](#reviews).
+- **Tab bar buttons:** [Files](#files), [Changes](#changes), [History](#history), [Issues](#issues), [Pull requests](#pull-requests), [Reviews](#reviews) and [Servers](#servers).
 - **Status bar:** [Usage](#usage) (Claude Code and Codex limits, per account).
 
 This is a fork of [jslowack/herdr-ranch](https://github.com/jslowack/herdr-ranch): it adds Usage, accounts per space, a warning for agents that stopped reporting with a button to bring them back, and other changes. The mods keep their `herdr-ranch-*` names, so settings carry over from the original.
@@ -17,7 +17,7 @@ This is a fork of [jslowack/herdr-ranch](https://github.com/jslowack/herdr-ranch
 Tell your agent, in Herdr:
 
 ```text
-Read ~/.config/herdr-app/AGENTS.md, then clone github.com/garethedwards-tass/herdr-workspace and install everything from it with its install.sh --layout: the mods herdr-ranch-spaces, herdr-ranch-agents, herdr-ranch-files, herdr-ranch-changes, herdr-ranch-history, herdr-ranch-issues, herdr-ranch-prs, herdr-ranch-reviews (with its ranch-review CLI and skills) and herdr-ranch-usage, the mod-buttons layout, and their keys.json entries; then switch to the mod-buttons layout.
+Read ~/.config/herdr-app/AGENTS.md, then clone github.com/garethedwards-tass/herdr-workspace and install everything from it with its install.sh --layout: the mods herdr-ranch-spaces, herdr-ranch-agents, herdr-ranch-files, herdr-ranch-changes, herdr-ranch-history, herdr-ranch-issues, herdr-ranch-prs, herdr-ranch-reviews (with its ranch-review CLI and skills), herdr-ranch-usage and herdr-ranch-servers, the mod-buttons layout, and their keys.json entries; then switch to the mod-buttons layout.
 ```
 
 Or in a terminal:
@@ -27,11 +27,11 @@ git clone https://github.com/garethedwards-tass/herdr-workspace && cd herdr-work
 herdr-app do layout.switch '{"name":"mod-buttons"}'
 ```
 
-`install.sh` links each mod from your clone into `~/.config/herdr-app/mods`, so a `git pull` updates them in place. You get Spaces and Agents in the sidebar, **Files**, **Changes**, **History**, **Issues**, **PRs** and **Reviews** buttons in the tab bar, and Usage in the status bar.
+`install.sh` links each mod from your clone into `~/.config/herdr-app/mods`, so a `git pull` updates them in place. You get Spaces and Agents in the sidebar, **Files**, **Changes**, **History**, **Issues**, **PRs**, **Reviews** and **Servers** buttons in the tab bar, and Usage in the status bar.
 
 Already using jslowack/herdr-ranch? Run this clone's `install.sh` instead: it replaces the links with the same names, and your space links, accounts and settings stay.
 
-**Needs:** [`gh`](https://cli.github.com) signed in, and `git`. `curl` for the avatars in Pull requests. Jira and Linear only for what you use; Node.js for Reviews; [Claude Code](https://claude.com/claude-code) for Agents' details and Usage (Codex too, if you use it). Rust to build `ranch-highlight` (optional). Tested on macOS; Linux and Windows follow their documented commands.
+**Needs:** [`gh`](https://cli.github.com) signed in, and `git`. `curl` for the avatars in Pull requests. Jira and Linear only for what you use; Node.js for Reviews; [Claude Code](https://claude.com/claude-code) for Agents' details and Usage (Codex too, if you use it); Docker (or Rancher Desktop, OrbStack) for Servers' containers. Rust to build `ranch-highlight` (optional). Tested on macOS; Linux and Windows follow their documented commands.
 
 One mod at a time, keyboard shortcuts and updating: see [Install and update](docs/guide.md#install-and-update).
 
@@ -85,6 +85,12 @@ Herdr's agents list with Claude Code's own records, in the sidebar of the mod-bu
 
 Claude Code and Codex usage limits (the 5-hour session, weekly and per-model windows) in the status bar of the mod-buttons layout, with one Claude Code reading per account the Spaces list keeps, each marked with the account's coloured letter. Hovering shows every window, time to reset and the focused session's context. Adapted from [VladTemp27's usage-limits](https://github.com/VladTemp27/herdr-mods/tree/main/usage-limits) (Apache-2.0). See its [RECIPE.md](herdr-ranch-usage/RECIPE.md).
 
+## Servers
+
+![Servers: machine cards with meters and containers](herdr-ranch-servers/preview.png)
+
+Every machine Herdr is connected to, plus this computer, behind the tab bar's **Servers** button (or ⌘⇧M as a popup): CPU, memory and disk meters, uptime, and each machine's Docker containers. Unhealthy, restarting or crashed containers are always listed, the rest on **Show all**; each has **Logs** and **Restart** (asks first), and a notification comes when one goes down or comes back. It finds `docker` on the PATH or in the usual install folders (Rancher Desktop, OrbStack, Docker Desktop, Homebrew). From [obrunogonzaga's servers-panel](https://github.com/obrunogonzaga/herdr-mods/tree/main/servers-panel) (MIT). See its [RECIPE.md](herdr-ranch-servers/RECIPE.md).
+
 ## Highlighting
 
 The diffs in Pull requests and History are syntax highlighted by `ranch-highlight`, a small tree-sitter helper in Rust (`ranch-highlight/`): CFML (with cfscript, `<cfquery>` SQL and embedded HTML, CSS and JS) and 19 other common languages. `install.sh` builds it when Rust is installed ([rustup.rs](https://rustup.rs)); without it the diffs stay plain.
@@ -115,10 +121,10 @@ Mods by others that go well with these. Install them the way their own README sa
 - [Guide](docs/guide.md): install options, linking a space, Start agent, your own prompts.
 - [Reference](docs/reference.md): what runs and what is stored, install flags, keys.
 - [CHANGELOG.md](CHANGELOG.md): what changed per version.
-- Each mod's `RECIPE.md`: the brief an agent builds it from ([Spaces](herdr-ranch-spaces/RECIPE.md), [Agents](herdr-ranch-agents/RECIPE.md), [Files](herdr-ranch-files/RECIPE.md), [Changes](herdr-ranch-changes/RECIPE.md), [History](herdr-ranch-history/RECIPE.md), [Issues](herdr-ranch-issues/RECIPE.md), [Pull requests](herdr-ranch-prs/RECIPE.md), [Reviews](herdr-ranch-reviews/RECIPE.md), [Usage](herdr-ranch-usage/RECIPE.md), [mod-buttons](mod-buttons/RECIPE.md)).
+- Each mod's `RECIPE.md`: the brief an agent builds it from ([Spaces](herdr-ranch-spaces/RECIPE.md), [Agents](herdr-ranch-agents/RECIPE.md), [Files](herdr-ranch-files/RECIPE.md), [Changes](herdr-ranch-changes/RECIPE.md), [History](herdr-ranch-history/RECIPE.md), [Issues](herdr-ranch-issues/RECIPE.md), [Pull requests](herdr-ranch-prs/RECIPE.md), [Reviews](herdr-ranch-reviews/RECIPE.md), [Usage](herdr-ranch-usage/RECIPE.md), [Servers](herdr-ranch-servers/RECIPE.md), [mod-buttons](mod-buttons/RECIPE.md)).
 - The original: [jslowack/herdr-ranch](https://github.com/jslowack/herdr-ranch).
 - [CONTRIBUTING.md](CONTRIBUTING.md): tests, shared code, how the repository is laid out.
 
 ## License
 
-[MIT](LICENSE), from jslowack/herdr-ranch. Usage (`herdr-ranch-usage/`) is Apache-2.0: see its [LICENSE](herdr-ranch-usage/LICENSE) and [NOTICE](herdr-ranch-usage/NOTICE).
+[MIT](LICENSE), from jslowack/herdr-ranch. Usage (`herdr-ranch-usage/`) is Apache-2.0: see its [LICENSE](herdr-ranch-usage/LICENSE) and [NOTICE](herdr-ranch-usage/NOTICE). Servers (`herdr-ranch-servers/`) is MIT from Bruno Gonzaga: see its [LICENSE](herdr-ranch-servers/LICENSE) and [NOTICE](herdr-ranch-servers/NOTICE).

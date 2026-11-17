@@ -1,0 +1,12 @@
+herdr-ranch-servers
+Copyright 2026 Jelle Slowack and contributors
+
+This mod is servers-panel from obrunogonzaga/herdr-mods
+(https://github.com/obrunogonzaga/herdr-mods/tree/main/servers-panel), Copyright (c) 2026
+Bruno Gonzaga, under the MIT License (see LICENSE in this folder). Changed here: renamed
+herdr-ranch-servers (its overlay and key), a tab-bar button in mod.json, Herdr's
+server icon copied in for that button, and docker looked for in the usual install folders
+when it isn't on Herdr's PATH (probe.js FIND_DOCKER), and the panel restyled like the
+Spaces and Agents lists: machine and container rows with status pills and menus (panel.js,
+menu.js, probe.js shortStatus and machineState), memory per container, and containers grouped
+by lane from their `lane` labels (lanes.js).

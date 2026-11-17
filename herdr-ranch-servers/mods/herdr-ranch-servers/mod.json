@@ -1,0 +1,1 @@
+{ "version": "0.1.0", "place": "none", "title": "Servers · Herdr Ranch", "overlay": { "width": 440, "height": 640 }, "button": { "label": "Servers", "icon": "server.svg", "opens": "panel", "order": 40 } }

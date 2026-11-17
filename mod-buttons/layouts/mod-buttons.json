@@ -167,7 +167,7 @@
               "id": "status",
               "type": "block",
               "size": {
-                "weight": 2
+                "weight": 1
               },
               "content": {
                 "mod": "workspace-status"
@@ -177,9 +177,8 @@
               "id": "herdr-ranch-usage",
               "type": "block",
               "size": {
-                "weight": 3
+                "px": 96
               },
-              "min": 320,
               "content": {
                 "mod": "herdr-ranch-usage",
                 "props": {

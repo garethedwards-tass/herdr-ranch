@@ -140,7 +140,6 @@ const tone = (t, p) => (p >= 85 ? t.ansi1 : p >= 60 ? t.ansi3 : t.dim);
 // A click opens the agent's menu (statsMenu).
 const PILL_W = 84, PILL_H = 20;
 const FAMILY = /^claude-([a-z]+)/;
-const STATUS_SAY = { working: "Working", blocked: "Needs you", idle: "Idle", done: "Done", unknown: "Not reporting" };
 const shortModel = (id) => { const m = FAMILY.exec(id ?? ""); return m ? m[1].charAt(0).toUpperCase() + m[1].slice(1) : id ?? "Claude"; };
 const level = (t, p) => (p >= 85 ? t.ansi1 : p >= 60 ? t.ansi3 : t.ansi2);
 // The agent's menu, from its pill or a right-click on its row.
@@ -161,7 +160,6 @@ export function statsChip(v, a, t, status = null) {
   return h_flex().id(`stats-${a.address}`).flex_none().w(PILL_W).h(PILL_H).gap(4).px(6).items_center().rounded(4)
     .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer()
     .hover((x) => x.bg(color + "2a"))
-    .tooltip(`${STATUS_SAY[a.status] ?? "Agent"}${known ? ` · ${modelName(c.st.model)} · ${tokens(c.st.context)} in context (${p}%)` : ""}${err ? `\n${err}` : ""}\nClick for usage and more`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => { cx.stop_propagation(); openAgentMenu(v, a); })
     // The status icons carry their own margins: a fixed box centres each the same way.
