@@ -71,6 +71,10 @@ Herdr's spaces list with git and links, in the sidebar of the mod-buttons layout
 
 Herdr's agents list with Claude Code's own records, in the sidebar of the mod-buttons layout: the context each Claude Code agent uses, a popup with its model, usage, tasks and subagents, and its task list and running subagents under its row. See its [RECIPE.md](herdr-ranch-agents/RECIPE.md).
 
+## Usage
+
+Claude Code and Codex usage limits (the 5-hour session, weekly and per-model windows) in the status bar of the mod-buttons layout, with one Claude Code reading per account the Spaces list keeps, each marked with the account's coloured letter. Hovering shows every window, time to reset and the focused session's context. Adapted from [VladTemp27's usage-limits](https://github.com/VladTemp27/herdr-mods/tree/main/usage-limits) (Apache-2.0). See its [RECIPE.md](herdr-ranch-usage/RECIPE.md).
+
 ## Highlighting
 
 The diffs in Pull requests and History are syntax highlighted by `ranch-highlight`, a small tree-sitter helper in Rust (`ranch-highlight/`): CFML (with cfscript, `<cfquery>` SQL and embedded HTML, CSS and JS) and 19 other common languages. `install.sh` builds it when Rust is installed ([rustup.rs](https://rustup.rs)); without it the diffs stay plain.

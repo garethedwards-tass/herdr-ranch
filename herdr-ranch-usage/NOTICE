@@ -1,0 +1,25 @@
+herdr-ranch-usage
+Copyright 2026 Jelle Slowack and contributors
+
+This mod is usage-limits from VladTemp27/herdr-mods
+(https://github.com/VladTemp27/herdr-mods/tree/main/usage-limits), licensed under the
+Apache License, Version 2.0 (see LICENSE in this folder), and modified here: one Claude Code
+reading per account (the accounts the Spaces list keeps), the session block finds a session in
+any account's config folder, and its shared keys and files are renamed. Its NOTICE follows.
+
+----
+Herdr mods
+Copyright 2026 VladTemp27
+
+Parts of these mods adapt code and icons from Herdr Desktop's shipped mods
+(https://github.com/herdrdev/herdr-app), licensed under the Apache License, Version 2.0.
+
+t3-actions is t3-actions from JinJieBeWater/herdr-t3
+(https://github.com/JinJieBeWater/herdr-t3), licensed under the Apache License,
+Version 2.0, and modified here (see t3-actions/mods/t3-actions/CHANGES.md).
+
+usage-limits asks the claude and codex CLIs for usage the way Joseph Malicki's
+jmalicki/herdr-mod-ai-usage (https://github.com/jmalicki/herdr-mod-ai-usage, MIT) does;
+no code is copied from it.
+
+Icons are Lucide (ISC), as in Herdr's own mods.

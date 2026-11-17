@@ -157,14 +157,37 @@
           "gap": 8
         },
         {
-          "id": "status",
-          "type": "block",
-          "content": {
-            "mod": "workspace-status"
-          },
+          "id": "status-row",
+          "type": "row",
           "size": {
             "px": 28
-          }
+          },
+          "children": [
+            {
+              "id": "status",
+              "type": "block",
+              "size": {
+                "weight": 2
+              },
+              "content": {
+                "mod": "workspace-status"
+              }
+            },
+            {
+              "id": "herdr-ranch-usage",
+              "type": "block",
+              "size": {
+                "weight": 3
+              },
+              "min": 320,
+              "content": {
+                "mod": "herdr-ranch-usage",
+                "props": {
+                  "align": "right"
+                }
+              }
+            }
+          ]
         }
       ],
       "resizable": false
