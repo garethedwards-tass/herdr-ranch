@@ -40,6 +40,8 @@ const KEPT = ["where", "login", "prs", "data", "hay", "stacks", "inStack", "save
 const REVIEW = { APPROVED: ["approved", "ansi2"], CHANGES_REQUESTED: ["changes", "ansi1"] };
 function rowData(pr) {
   const c = pr.checks, pills = [];
+  // Your draft review (not submitted yet) comes first: it waits on you to submit or discard it.
+  if (pr.state === "OPEN" && pr.draftReview) pills.push([pr.draftReview.comments ? `your draft · ${pr.draftReview.comments}` : "your draft", "ansi4"]);
   if (pr.state === "OPEN") pills.push(pr.isDraft ? ["draft", "muted"] : REVIEW[pr.reviewDecision] ?? ["needs review", "ansi3"]);
   // The checks as one icon and a count: failing first, then running, then passing.
   const checks = c.fail > 0 ? ["x", c.fail] : c.pending > 0 ? ["pending", c.pending] : c.pass > 0 ? ["check", c.pass] : null;
@@ -451,7 +453,7 @@ export default class PullRequests extends View {
       const canReview = Boolean(page && this.where?.repo && page.state === "OPEN");
       const working = agentSpaces(this.where?.repo?.main).prs.get((page ?? this.picked)?.number) ?? [];
       return detail(page ?? { ...this.picked, loading: true }, t, {
-        error: this.pageError, nav, login: this.login, agents: working, go: (id) => this.go(id), jiraKey: this.where?.jiraKey, github: this.where?.github, jira: this.where?.jira, jiraIssues: page?.jiraIssues,
+        error: this.pageError, nav, login: this.login, draftReview: this.picked?.draftReview, agents: working, go: (id) => this.go(id), jiraKey: this.where?.jiraKey, github: this.where?.github, jira: this.where?.jira, jiraIssues: page?.jiraIssues,
         wide: (this.only ? this.pageW : this.width) >= PAGE_WIDE, tab: this.tab ?? "conversation",
         pickTab: (tab, cx) => this.pickTab(tab, cx), copyBranch: (cx) => this.copyBranch(cx), openUrl: (url) => openUrl(url),
         open: () => openUrl((this.page ?? this.picked).url),

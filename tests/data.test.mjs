@@ -182,9 +182,16 @@ test("prs: what each pull request waits on", async () => {
     ["approved but a draft", pr(9, { reviewDecision: "APPROVED", isDraft: true }), "open"],
     ["someone else's, failing, not asked", pr(10, { author: { login: "ada" }, statusCheckRollup: [failed] }), "open"],
     ["review requested wins over failing checks", pr(11, { author: { login: "ada" }, reviewRequests: [{ login: "me" }], statusCheckRollup: [failed] }), "review"],
+    ["my draft review on someone else's, approved and green, waits on me", pr(12, { author: { login: "ada" }, reviewDecision: "APPROVED", pending: { nodes: [{ comments: { totalCount: 2 } }] } }), "review"],
+    ["my draft review on my own is not a review", pr(13, { pending: { nodes: [{ comments: { totalCount: 1 } }] } }), "open"],
   ];
   const listed = await prGroups(cases.map(([, p]) => p));
   cases.forEach(([name, , group], n) => assert.equal(listed[n].group, group, name));
+});
+
+test("prs: a draft review of yours is kept with its comment count", async () => {
+  const listed = await prGroups([pr(1, { pending: { nodes: [{ comments: { totalCount: 3 } }] } }), pr(2, { pending: { nodes: [] } }), pr(3)]);
+  assert.deepEqual(listed.map((p) => p.draftReview), [{ comments: 3 }, null, null]);
 });
 
 test("prs: closed and merged are recently closed, a duplicate is kept once", async () => {
