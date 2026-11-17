@@ -378,6 +378,13 @@ export class GitDialog extends View {
       .child(h_flex().justify_end().gap(6).text_size(11).text_color(t.dim)
         .when(Boolean(this.folder && g), (el) => el.child(this.button("git-delete-wt", "Delete worktree…", t, () => { this.close(); openRemove({ path: g.top, main: g.main, on: this.on, branch: st?.branch ?? null }); }, { disabled: !g.linked, danger: true })).child(div().flex_1()))
         .when(Boolean(this.busy), (el) => el.child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
-        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch · esc close" : "esc close") : this.tab === "branches" ? "↑↓ choose · ↵ switch · esc close" : "esc close"));
+        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch" : "") : this.tab === "branches" ? "↑↓ choose" : "")
+        // Buttons for what Enter and Esc do (the confirm view has its own).
+        .when(!this.confirm && !this.folder && this.tab === "branches" && Boolean(st), (el) => {
+          const b = this.rows()[this.at];
+          return el.child(this.button("git-switch", `${b?.path && b.path !== g?.top ? "Go to worktree" : "Switch"}  ↵`, t, (cx) => this.pick(b, cx),
+            { primary: true, disabled: !b || Boolean(this.busy) || b.name === st?.branch }));
+        })
+        .when(!this.confirm, (el) => el.child(this.button("git-close", "Close  esc", t, () => this.close()))));
   }
 }

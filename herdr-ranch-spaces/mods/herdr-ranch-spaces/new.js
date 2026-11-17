@@ -180,6 +180,13 @@ export class NewDialog extends View {
     const tab = (m, label) => div().id(`new-mode-${m}`).px(10).py(3).rounded(6).text_size(12).cursor_pointer()
       .when(this.mode === m, (el) => el.bg(t.selected).text_color(t.foreground)).when(this.mode !== m, (el) => el.text_color(t.muted).hover((s) => s.bg(t.hover)))
       .on_click((_e, cx) => this.setMode(m, cx)).child(label);
+    const chosen = rows[this.at] ?? null;
+    // Buttons for what Esc and Enter do.
+    const button = (id, text, primary, enabled, onClick) => h_flex().id(id).flex_none().items_center().px(12).py(5).rounded(6).text_size(12)
+      .when(primary, (e) => e.bg(enabled ? t.accent : t.raised).text_color(enabled ? t.background : t.dim).font_semibold())
+      .when(!primary, (e) => e.border_1().border_color(t.border).bg(t.background).text_color(t.foreground))
+      .when(enabled, (e) => e.cursor_pointer().hover((s) => s.opacity(0.85)).on_click((_e, cx) => onClick(cx)))
+      .child(text);
     const empty = this.mode === "issue"
       ? (this.issues === undefined ? "Loading your issues…" : this.issueError || (this.found?.missing ? `No issue ${this.found.key}.` : "No open issues assigned to you."))
       : "No branches.";
@@ -195,8 +202,10 @@ export class NewDialog extends View {
           .children(rows.map((r, i) => this.row(r, i, t)))
           .when(rows.length === 0, (el) => el.child(div().p(10).text_color(t.dim).child(empty))))
         .when(Boolean(this.error), (el) => el.child(div().text_color(t.blocked).child(this.error))))
-      .child(h_flex().justify_end().gap(6).text_size(11).text_color(t.dim)
+      .child(h_flex().items_center().gap(8).text_size(11).text_color(t.dim)
         .when(this.busy, (el) => el.child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
-        .child(this.busy ? "creating…" : "tab branch/issue · ↑↓ choose · ↵ create · esc close"));
+        .child(div().flex_1().min_w(0).truncate().child(this.busy ? "creating…" : "tab branch/issue · ↑↓ choose"))
+        .child(button("new-cancel", "Cancel  esc", false, true, () => this.close()))
+        .child(button("new-go", `${chosen?.b?.path ? "Open" : "Create"}  ↵`, true, Boolean(chosen) && !this.busy, (cx) => this.choose(chosen, cx))));
   }
 }
