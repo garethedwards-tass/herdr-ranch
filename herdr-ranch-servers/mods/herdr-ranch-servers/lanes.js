@@ -11,7 +11,8 @@
 // Containers of the same compose project without a lane label are the stack's shared ones.
 // Labels change only when a container is recreated, and a change may recreate only some of a lane's
 // containers: who holds it (lane.owner, lane.branch, lane.serves) comes from its newest container.
-// Pure; tested in tests/servers.test.mjs.
+// Shared: Servers lists the lanes, Spaces badges the worktrees they serve (shared/lanes.js, copied
+// into both). Tested in tests/servers.test.mjs.
 
 const laneOf = (c) => (/^\d+$/.test(c.labels?.lane ?? "") ? Number(c.labels.lane) : null);
 
@@ -74,3 +75,35 @@ export function laneState(lane) {
 }
 
 export const hostOf = (url) => String(url ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+
+// Docker where Herdr's PATH doesn't reach it. Herdr's processes get a login shell's PATH, which misses
+// folders added in ~/.zshrc (Rancher Desktop's ~/.rd/bin, OrbStack's ~/.orbstack/bin). Sets $D to the
+// first docker found: on the PATH, then the usual install folders (macOS: Rancher Desktop, OrbStack,
+// Docker Desktop, Homebrew; Linux; Windows under Git for Windows' sh: Docker Desktop, Rancher Desktop,
+// Podman); empty when none.
+export const FIND_DOCKER = `D=$(command -v docker 2>/dev/null); if [ -z "$D" ]; then for p in "$HOME/.rd/bin/docker" "$HOME/.orbstack/bin/docker" "$HOME/.docker/bin/docker" /usr/local/bin/docker /opt/homebrew/bin/docker /Applications/Docker.app/Contents/Resources/bin/docker "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/docker" /usr/bin/docker /snap/bin/docker "$HOME/.rd/bin/docker.exe" "/c/Program Files/Docker/Docker/resources/bin/docker.exe" "/c/Program Files/Rancher Desktop/resources/resources/win32/bin/docker.exe" "$LOCALAPPDATA/Programs/Rancher Desktop/resources/resources/win32/bin/docker.exe" "/c/Program Files/RedHat/Podman/podman.exe"; do if [ -x "$p" ]; then D=$p; break; fi; done; fi`;
+
+// The lane labels as `docker ps --format` fields (tab-separated, for a shell's single quotes), and
+// those fields back as labels. Servers' probe and LANES_READ both use them.
+const LABELS = ["lane", "url", "database", "owner", "branch", "serves"];
+export const LANE_FORMAT = LABELS.map((k) => `{{.Label "${k === "lane" ? "lane" : `lane.${k}`}"}}`).join("\\t");
+export const labelsOf = (fields) => Object.fromEntries(LABELS.map((k, i) => [k, fields[i] || ""]));
+
+// Only the lane containers, one tab-separated line each: what Spaces needs for its badges.
+export const LANES_READ = `${FIND_DOCKER}; [ -n "$D" ] || exit 0; "$D" ps -a --filter label=lane --format '{{.Names}}\\t{{.State}}\\t{{.Label "com.docker.compose.project.working_dir"}}\\t${LANE_FORMAT}\\t{{.CreatedAt}}'`;
+
+// LANES_READ's output as containers for stacksOf.
+export function parseLaneRead(text) {
+  return String(text ?? "").split("\n").filter((l) => l.includes("\t")).map((line) => {
+    const f = line.split("\t");
+    return { name: f[0], state: f[1], dir: f[2] || "", labels: labelsOf(f.slice(3, 3 + LABELS.length)), created: f[3 + LABELS.length] || "" };
+  });
+}
+
+// The lane serving the checkout at `path` (a worktree's folder), or null.
+export function laneAt(stacks, path) {
+  if (!path) return null;
+  const clean = (p) => String(p).replace(/\/+$/, "");
+  for (const st of stacks ?? []) for (const l of st.lanes) if (l.served.some((w) => clean(w.path) === clean(path))) return l;
+  return null;
+}

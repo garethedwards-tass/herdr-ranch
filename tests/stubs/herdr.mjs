@@ -14,6 +14,7 @@ globalThis.fetch = async (url, init = {}) => {
   return state.fetch(url, init);
 };
 export const spaces = () => state.spaces;
+export const machines = () => state.machines ?? [];
 export const layout = () => state.layout ?? null;
 export const panes = () => state.panes ?? [];
 export const focused = () => state.focused ?? null;

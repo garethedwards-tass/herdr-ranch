@@ -74,3 +74,17 @@ test("lanes: who holds a lane comes from its newest container (labels change onl
   assert.equal(laneState(stacksOf([old, fresh])[0].lanes[0]).text, "free");
   assert.equal(laneState(stacksOf([{ ...old, created: "2026-11-17 04:00:00 +1000 AEST" }, fresh])[0].lanes[0]).text, "PROJ-1");
 });
+
+import { parseLaneRead, laneAt } from "../shared/lanes.js";
+
+test("parseLaneRead and laneAt: the lane serving a worktree", () => {
+  const text = [
+    "app_web_2\trunning\t/srv/stack\t2\thttps://app-2.example.test/\tdb2\tPROJ-9\tPROJ-9\tweb=/w/web/PROJ-9;api=/w/api/PROJ-9\t2026-11-17 02:00:00 +1000 AEST",
+    "app_web\trunning\t/srv/stack\t1\thttps://app.example.test/\tdb\t\t\t\t2026-11-17 01:00:00 +1000 AEST",
+  ].join("\n");
+  const stacks = stacksOf(parseLaneRead(text));
+  assert.equal(laneAt(stacks, "/w/api/PROJ-9/")?.n, 2);
+  assert.equal(laneAt(stacks, "/w/web/OTHER"), null);
+  assert.equal(laneAt(stacks, null), null);
+  assert.deepEqual(parseLaneRead(""), []);
+});

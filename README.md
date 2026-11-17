@@ -73,7 +73,7 @@ Herdr's Files panel with syntax colors from `ranch-highlight`, behind the tab ba
 
 ## Spaces
 
-Herdr's spaces list with git, links and accounts, in the sidebar of the mod-buttons layout. Each space has a git chip (its branch and state, green when in sync; a click opens git and worktree actions), its terminals and agents, and its account as a coloured letter (a click opens the Link dialog, where you set its Jira, Linear or GitHub link and its account). Worktree spaces sit under their repository's space, followed by its worktrees without a space (right-click to create a space there or delete it). **New worktree** starts from a branch or from one of your issues.
+Herdr's spaces list with git, links and accounts, in the sidebar of the mod-buttons layout. Each space has a git chip (its branch and state, green when in sync; a click opens git and worktree actions), its terminals and agents, and its account as a coloured letter (a click opens the Link dialog, where you set its Jira, Linear or GitHub link and its account). Worktree spaces sit under their repository's space, followed by its worktrees without a space (right-click to create a space there or delete it). A worktree a lane serves (see [Servers](#servers)) shows the lane's badge, such as **L2**; a click opens its site. **New worktree** starts from a branch or from one of your issues.
 
 **Accounts:** a space's terminals can start as one of your accounts: a Claude Code login (its config folder) and a GitHub account (`GH_TOKEN` from `gh auth token --user`), so work and personal repositories each use their own. A filter at the top shows one account's spaces. See its [RECIPE.md](herdr-ranch-spaces/RECIPE.md).
 

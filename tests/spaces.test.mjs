@@ -229,3 +229,31 @@ test("worktreesWithWork: a checkout not due keeps its last answer, without runni
   assert.ok(!ran.some((r) => r.startsWith("/w/b ")));
   state.exec = null;
 });
+
+import { readLanes } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/extras.js";
+
+test("readLanes: each machine on its own; a failed read or a machine away drops its lanes", async () => {
+  const line = "web_2\trunning\t/srv\t2\thttps://a.test/\tdb\tP-1\tP-1\tweb=/w/P-1\t2026-11-17 02:00:00 +1000 AEST";
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  state.spaces = [{ id: "s1", machine: null }, { id: "s2", machine: "box" }];
+  state.machines = [{ name: "box", layout: "unavailable" }];
+  const asked = [];
+  state.exec = (cmd, args) => { asked.push(cmd); return { code: 0, stdout: line, stderr: "" }; };
+  const v = { lanes: { box: [{ dir: "/old", lanes: [] }] }, lanesRead: {} };
+  let changes = 0;
+  readLanes(v, () => changes++);
+  await flush();
+  assert.equal(asked.length, 1, "the machine away isn't asked");
+  assert.equal(v.lanes.box, undefined, "and its old lanes go");
+  assert.equal(v.lanes[""][0].lanes[0].n, 2);
+  readLanes(v, () => changes++);
+  await flush();
+  assert.equal(asked.length, 1, "not asked again within LANES_EVERY");
+  v.lanesRead[""] = 1; // due again
+  state.exec = () => ({ code: 1, stdout: "", stderr: "Cannot connect to the Docker daemon" });
+  readLanes(v, () => changes++);
+  await flush();
+  assert.equal(v.lanes[""], undefined, "a failed read drops the lanes");
+  assert.equal(changes, 3);
+  state.exec = null; state.machines = []; state.spaces = [];
+});

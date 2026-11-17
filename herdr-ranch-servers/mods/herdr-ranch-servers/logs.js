@@ -1,7 +1,7 @@
 import { div } from "gpui-kit";
 import { v_flex, h_flex, Editor, EditorState } from "gpui-base";
 import { exec, theme, props, closeOverlay, settings } from "herdr";
-import { FIND_DOCKER } from "./probe.js";
+import { FIND_DOCKER } from "./lanes.js";
 
 const TAIL = "300";
 const TIMEOUT_S = 15;

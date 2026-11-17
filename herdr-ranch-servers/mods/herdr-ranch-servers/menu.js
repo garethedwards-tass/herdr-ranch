@@ -6,8 +6,8 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { props, theme, closeOverlay, openOverlay, exec, notify, shared, setShared, spaces, run } from "herdr";
-import { laneState, hostOf } from "./lanes.js";
-import { FIND_DOCKER, upFor } from "./probe.js";
+import { laneState, hostOf, FIND_DOCKER } from "./lanes.js";
+import { upFor } from "./probe.js";
 import { MOD, KEY_REFRESH, KEY_HIDE_STOPPED, label, healthColor, containerColor, toneColor, meterColor } from "./panel.js";
 
 const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;

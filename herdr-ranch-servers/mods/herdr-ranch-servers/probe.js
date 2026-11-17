@@ -1,9 +1,4 @@
-// herdr-ranch: docker where Herdr's PATH doesn't reach it. Herdr's processes get a login shell's PATH,
-// which misses folders added in ~/.zshrc (Rancher Desktop's ~/.rd/bin, OrbStack's ~/.orbstack/bin).
-// Sets $D to the first docker found: on the PATH, then the usual install folders (macOS: Rancher Desktop,
-// OrbStack, Docker Desktop, Homebrew; Linux; Windows under Git for Windows' sh: Docker Desktop, Rancher
-// Desktop, Podman); empty when none.
-export const FIND_DOCKER = `D=$(command -v docker 2>/dev/null); if [ -z "$D" ]; then for p in "$HOME/.rd/bin/docker" "$HOME/.orbstack/bin/docker" "$HOME/.docker/bin/docker" /usr/local/bin/docker /opt/homebrew/bin/docker /Applications/Docker.app/Contents/Resources/bin/docker "/Applications/Rancher Desktop.app/Contents/Resources/resources/darwin/bin/docker" /usr/bin/docker /snap/bin/docker "$HOME/.rd/bin/docker.exe" "/c/Program Files/Docker/Docker/resources/bin/docker.exe" "/c/Program Files/Rancher Desktop/resources/resources/win32/bin/docker.exe" "$LOCALAPPDATA/Programs/Rancher Desktop/resources/resources/win32/bin/docker.exe" "/c/Program Files/RedHat/Podman/podman.exe"; do if [ -x "$p" ]; then D=$p; break; fi; done; fi`;
+import { FIND_DOCKER, LANE_FORMAT, labelsOf } from "./lanes.js"; // herdr-ranch: shared with Spaces
 
 // One shell script per machine per refresh: load, memory, disk, uptime and docker containers,
 // as key=value lines (c= lines are tab-separated containers). Linux and macOS.
@@ -17,7 +12,7 @@ elif command -v vm_stat >/dev/null 2>&1; then echo "mem=$(sysctl -n hw.memsize) 
 df -Pk / | awk 'NR==2{print "disk="$2" "$3" "$4}'
 if [ -r /proc/uptime ]; then echo "uptime=$(cut -d' ' -f1 /proc/uptime)"; else echo "uptime=$(( $(date +%s) - $(sysctl -n kern.boottime | awk -F'[ ,]+' '{print $4}') ))"; fi
 if [ -n "$D" ]; then
-  if out=$("$D" ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Status}}\\t{{.Image}}\\t{{.Label "com.docker.compose.project"}}\\t{{.Label "com.docker.compose.project.working_dir"}}\\t{{.Label "com.docker.compose.service"}}\\t{{.Label "lane"}}\\t{{.Label "lane.url"}}\\t{{.Label "lane.database"}}\\t{{.Label "lane.owner"}}\\t{{.Label "lane.branch"}}\\t{{.Label "lane.serves"}}\\t{{.CreatedAt}}' 2>&1); then
+  if out=$("$D" ps -a --format '{{.ID}}\\t{{.Names}}\\t{{.State}}\\t{{.Status}}\\t{{.Image}}\\t{{.Label "com.docker.compose.project"}}\\t{{.Label "com.docker.compose.project.working_dir"}}\\t{{.Label "com.docker.compose.service"}}\\t${LANE_FORMAT}\\t{{.CreatedAt}}' 2>&1); then
     printf '%s\\n' "$out" | sed '/^$/d; s/^/c=/'
     "$D" stats --no-stream --format '{{.Name}}\\t{{.MemUsage}}\\t{{.MemPerc}}\\t{{.CPUPerc}}' 2>/dev/null | sed '/^$/d; s/^/s=/'
   else echo "docker_err=$(printf '%s' "$out" | head -1)"; fi
@@ -27,9 +22,9 @@ else echo "docker_err=not installed"; fi
 const number = (text) => Number(String(text).trim().replace(",", "."));
 
 function parseContainer(line) {
-  const [id, name, state, status, image, project, dir, service, lane, url, database, owner, branch, serves, created] = line.split("\t");
-  // herdr-ranch: the compose folder and service, and the lane.* labels (lanes.js).
-  const labels = { lane: lane || "", url: url || "", database: database || "", owner: owner || "", branch: branch || "", serves: serves || "" };
+  const f = line.split("\t"), [id, name, state, status, image, project, dir, service] = f;
+  // herdr-ranch: the compose folder and service, and the lane labels (lanes.js), then CreatedAt.
+  const labels = labelsOf(f.slice(8, 14)), created = f[14];
   return { id, name, state, status, image, project: project || "", dir: dir || "", service: service || "", labels, created: created || "" };
 }
 

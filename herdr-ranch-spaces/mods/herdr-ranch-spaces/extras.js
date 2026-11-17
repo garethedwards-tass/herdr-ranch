@@ -4,7 +4,8 @@
 
 import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { openOverlay, spaces, panes, run, nextCommand } from "herdr";
+import { openOverlay, spaces, panes, run, nextCommand, exec, machines } from "herdr";
+import { LANES_READ, parseLaneRead, stacksOf, laneAt, hostOf } from "./lanes.js";
 import { openLinkDialog } from "./links.js";
 import { LinkDialog } from "./link-dialog.js";
 import { SpaceMenu } from "./menu.js";
@@ -52,6 +53,11 @@ export function start(v, cx) {
   v.openSpaces = new Set(load("spaces.terminals", []));
   v.accountFilter = load("spaces.account", null);
   v.handle = cx.focus_handle();
+  v.lanes = {}; // machine ("" here) -> stacksOf its lane containers, for the worktree rows' lane badges
+  v.lanesRead = {}; // machine -> when its lanes were last asked for (0 while a read runs)
+  cx.spawn(async (cx) => {
+    try { for (;;) { readLanes(v, () => cx.notify()); await cx.sleep(LANES_TICK); } } catch { /* the copy is closing */ }
+  });
   cx.spawn(async () => {
     try {
       for (;;) {
@@ -63,6 +69,45 @@ export function start(v, cx) {
       }
     } catch { /* the copy is closing */ }
   });
+}
+
+// Lanes (shared/lanes.js): read from the lane containers' labels on every machine a space is on.
+// Each machine on its own every LANES_EVERY, so a slow one holds up no other; a machine that's new
+// (or a space just made on one) is read at the next tick. A machine that's away, or a read that
+// fails (docker stopped), drops its lanes rather than keep showing old ones.
+const LANES_EVERY = 30000, LANES_TICK = 3000;
+export function readLanes(v, changed) {
+  const away = new Set(machines().filter((m) => m.layout === "unavailable").map((m) => m.name));
+  const ons = new Set([null, ...spaces().map((s) => s.machine ?? null)]);
+  const set = (key, stacks) => {
+    if (JSON.stringify(v.lanes[key] ?? []) === JSON.stringify(stacks ?? [])) return;
+    if (stacks) v.lanes[key] = stacks; else delete v.lanes[key];
+    changed();
+  };
+  for (const key of Object.keys(v.lanes)) if (!ons.has(key || null) || away.has(key)) set(key, null);
+  for (const on of ons) {
+    const key = on ?? "", last = v.lanesRead[key];
+    if (away.has(on) || last === 0 || Date.now() - (last ?? -Infinity) < LANES_EVERY) continue;
+    v.lanesRead[key] = 0;
+    exec("sh", ["-c", LANES_READ], { on: on ?? undefined, timeout: 15000 })
+      .then((r) => set(key, r.code === 0 ? stacksOf(parseLaneRead(r.stdout)) : null), () => set(key, null))
+      .finally(() => { v.lanesRead[key] = Date.now(); });
+  }
+}
+
+// The lane serving a checkout (a worktree, or a main checkout a lane serves) as a small badge ("L2", tinted like a held lane); a click opens its
+// site. Nothing when no lane serves it.
+function laneBadge(v, id, on, path, t) {
+  const l = laneAt(v.lanes?.[on ?? ""], path);
+  if (!l) return div();
+  const color = l.state === "stopped" ? t.dim : t.accent;
+  return div().id(id).flex_none().h(PILL).px(5).flex().items_center().rounded(4)
+    .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color)
+    .tooltip([`Lane ${l.n}${l.url ? ` · ${hostOf(l.url)}` : ""}`, l.state, l.owner || l.branch ? `Held for ${l.owner || l.branch}` : "", l.url ? "Click to open the site" : ""].filter(Boolean).join("\n"))
+    .when(Boolean(l.url), (el) => el.cursor_pointer().hover((x) => x.bg(color + "2a"))
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .on_click((_e, cx) => { cx.stop_propagation(); cx.open_url(l.url); }))
+    .child(`L${l.n}`);
 }
 
 // Right-click on a space: our menu (Link space, Git, worktrees, Rename, Close).
@@ -127,6 +172,7 @@ export function worktreeSpaceRow(v, r, t) {
     // The caret and folder fold together; the name sits close to its folder.
     .child(foldChevron(v, w, 0, t, svg(CHROME("folder")).size(13).flex_none().text_color(t.muted)))
     .child(div().flex_1().min_w(0).truncate().child(folder || w.name))
+    .child(laneBadge(v, `wt-lane-${w.id}`, w.machine, g?.top, t))
     .child(g ? gitPill(`wt-git-${w.id}`, branch, c, g, t, () => spaceMenu(v, w, g, at)) : div());
 }
 
@@ -182,6 +228,7 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
           .on_click((_e, cx) => { cx.stop_propagation(); openGit(w.id); }))
         .child(where)))
     )
+    .child(laneBadge(v, `space-lane-${w.id}`, w.machine, g?.top, t))
     .child(accountBadge(w, account, t))
     .child(g ? gitChip(v, w, g, at, t) : noGitChip(w, known, t));
 }
@@ -223,6 +270,7 @@ export function looseRow(v, r, t) {
     .child(wide(svg(CHROME("folder")).size(ICON - 2).flex_none().text_color(t.dim))) // like the agent rows beside it
     .child(div().flex_1().min_w(0).truncate().child(base(r.c.path)))
     .when(r.c.locked, (el) => el.child(div().flex_none().text_size(12).text_color(t.dim).child("locked")))
+    .child(laneBadge(v, `loose-lane-${r.c.path}`, r.on, r.c.path, t))
     .child(gitPill(`loose-git-${r.c.path}`, r.c.branch, r.c, { ahead: 0, behind: 0 }, t, null));
 }
 

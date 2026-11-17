@@ -4,6 +4,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 
 ## Unreleased
 
+- **Spaces:** a checkout a lane serves (a worktree, or a main checkout) shows the lane's badge, such as **L2**, read from the lane containers' `lane` labels like Servers' lanes; a click opens the lane's site. Servers and Spaces share `lanes.js`.
 - **Highlighting:** CFML comments (`<!--- --->`, and HTML and SQL comments inside `.cfm` files) are grey like other comments; the CFML queries' extra `@spell` capture stopped them being colored at all.
 - **Spaces:** a Collapse all / Expand all button in the header.
 - **Changes, History:** the diff list redraws only when the diff changes, not on every agent status or focus change, so a large open diff no longer rebuilds every few seconds.
