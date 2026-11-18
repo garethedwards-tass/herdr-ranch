@@ -4,7 +4,8 @@
 
 import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { openOverlay, spaces, panes, run, nextCommand, exec, machines } from "herdr";
+import { openOverlay, spaces, panes, run, nextCommand, exec, machines, shared } from "herdr";
+import { agentsIn, agentsAway, PLACES, STATUS_WORD } from "./agents-at.js";
 import { LANES_READ, parseLaneRead, stacksOf, laneAt, hostOf } from "./lanes.js";
 import { openLinkDialog } from "./links.js";
 import { LinkDialog } from "./link-dialog.js";
@@ -110,6 +111,39 @@ function laneBadge(v, id, on, path, t) {
     .child(`L${l.n}`);
 }
 
+// The agents working in a checkout now, from other spaces or none (agents-at.js): a bot and their
+// number in the most urgent one's status color. A click goes to that agent's terminal; the
+// tooltip says who, how they are and from which space. Nothing when none.
+const AGENT_COLOR = { blocked: "ansi3", done: "ansi2", working: "accent", idle: "dim" };
+function agentBadge(id, list, t) {
+  if (!list?.length) return div();
+  const a = list[0], color = t[AGENT_COLOR[a.status]] ?? t.dim;
+  return h_flex().id(id).flex_none().h(PILL).px(5).gap(3).items_center().rounded(4)
+    .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer().hover((x) => x.bg(color + "2a"))
+    .tooltip(["An agent works here now:", ...list.map((x) => `${x.name} · ${STATUS_WORD[x.status] ?? x.status}${x.spaceName ? ` · space ${x.spaceName}` : ""}`), "Click to go to it"].join("\n"))
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); run("pane.focus", { pane: a.pane }); })
+    .child(svg(`${ICONS}/bot.svg`).size(12).flex_none())
+    .when(list.length > 1, (el) => el.child(String(list.length)));
+}
+const agentsAt = (v, repo, path, except, on) => agentsIn(v.places, v.trees?.[repo], path, except, on);
+
+// A space whose own agent works in another checkout (the primary space's agent in a worktree):
+// a pill with a bot and that worktree's folder, tinted by the agent's status. A click goes to it.
+function awayPill(id, list, t) {
+  if (!list?.length) return div();
+  const a = list[0], color = t[AGENT_COLOR[a.status]] ?? t.dim;
+  return h_flex().id(id).flex_shrink_1().min_w(0).max_w(110).h(PILL).px(5).gap(3).items_center().rounded(4)
+    .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer().hover((x) => x.bg(color + "2a"))
+    .tooltip(["This space's agent works in another checkout:", ...list.map((x) => `${x.name} · ${STATUS_WORD[x.status] ?? x.status} · ${x.checkout}`), "Click to go to it"].join("\n"))
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); run("pane.focus", { pane: a.pane }); })
+    .child(svg(`${ICONS}/bot.svg`).size(12).flex_none())
+    .child(div().min_w(0).truncate().child(`→ ${base(a.checkout)}`))
+    .when(list.length > 1, (el) => el.child(div().flex_none().child(`+${list.length - 1}`)));
+}
+const awayOf = (v, w, g, at) => (g ? agentsAway(v.places, v.trees?.[g.repo], w.id, checkoutAt(v.trees[g.repo], at)?.path ?? g.top) : []);
+
 // Right-click on a space: our menu (Link space, Git, worktrees, Rename, Close).
 // The checkout's state for the git button's color, most pressing first: uncommitted changes
 // (ansi3), behind its upstream (ansi1; with commits to push too, it has diverged), commits to
@@ -172,6 +206,8 @@ export function worktreeSpaceRow(v, r, t) {
     // The caret and folder fold together; the name sits close to its folder.
     .child(foldChevron(v, w, 0, t, svg(CHROME("folder")).size(13).flex_none().text_color(t.muted)))
     .child(div().flex_1().min_w(0).truncate().child(folder || w.name))
+    .child(awayPill(`wt-away-${w.id}`, awayOf(v, w, g, at), t))
+    .child(agentBadge(`wt-agents-${w.id}`, g ? agentsAt(v, g.repo, checkoutAt(v.trees[g.repo], at)?.path, w.id, w.machine) : [], t))
     .child(laneBadge(v, `wt-lane-${w.id}`, w.machine, g?.top, t))
     .child(g ? gitPill(`wt-git-${w.id}`, branch, c, g, t, () => spaceMenu(v, w, g, at)) : div());
 }
@@ -228,6 +264,8 @@ export function spaceTail(v, { w, g, tree, at, known }, t, again) {
           .on_click((_e, cx) => { cx.stop_propagation(); openGit(w.id); }))
         .child(where)))
     )
+    .child(awayPill(`space-away-${w.id}`, awayOf(v, w, g, at), t))
+    .child(agentBadge(`space-agents-${w.id}`, g ? agentsAt(v, g.repo, checkoutAt(v.trees[g.repo], at)?.path, w.id, w.machine) : [], t))
     .child(laneBadge(v, `space-lane-${w.id}`, w.machine, g?.top, t))
     .child(accountBadge(w, account, t))
     .child(g ? gitChip(v, w, g, at, t) : noGitChip(w, known, t));
@@ -248,7 +286,10 @@ export function moreRow(v, r, t) {
     .child(div().truncate().child(`${r.count} worktree${r.count === 1 ? "" : "s"} without a space`))
     // Which work: uncommitted files (amber), commits on no remote (blue, like the pill's ↑).
     .when(r.dirty > 0, (el) => el.child(div().flex_none().text_color(t.ansi3).child(`· ${r.dirty} uncommitted`)))
-    .when(r.unpushed > 0, (el) => el.child(div().flex_none().text_color(t.accent).child(`· ${r.unpushed} unpushed`)));
+    .when(r.unpushed > 0, (el) => el.child(div().flex_none().text_color(t.accent).child(`· ${r.unpushed} unpushed`)))
+    // Agents working in them now: shown folded too, so a worktree in use isn't hidden.
+    .child(div().flex_1())
+    .child(agentBadge(`more-agents-${r.repo}`, (r.paths ?? []).flatMap((p) => agentsAt(v, r.repo, p, null, r.on)), t));
 }
 
 // A worktree without a space's menu (click or right-click), with the git popup's header.
@@ -270,6 +311,7 @@ export function looseRow(v, r, t) {
     .child(wide(svg(CHROME("folder")).size(ICON - 2).flex_none().text_color(t.dim))) // like the agent rows beside it
     .child(div().flex_1().min_w(0).truncate().child(base(r.c.path)))
     .when(r.c.locked, (el) => el.child(div().flex_none().text_size(12).text_color(t.dim).child("locked")))
+    .child(agentBadge(`loose-agents-${r.c.path}`, agentsAt(v, r.repo, r.c.path, null, r.on), t))
     .child(laneBadge(v, `loose-lane-${r.c.path}`, r.on, r.c.path, t))
     .child(gitPill(`loose-git-${r.c.path}`, r.c.branch, r.c, { ahead: 0, behind: 0 }, t, null));
 }
@@ -375,8 +417,14 @@ const STATUS = { blocked: "blocked", done: "done", working: "working", idle: "id
 export function terminalRows(v, w, t, depth = 1) {
   if (!isOpen(v, w.id)) return [];
   // The space's own folder and branch (its first terminal's): a row repeats them only when its own differ.
-  const list = terminalsOf(w), first = list.find((p) => p.cwd) ?? null;
-  return [...list.map((p) => terminalRow(p, t, depth, first)), newTabRow(w, t, depth)];
+  // An agent's folder is where it works now (agents-at.js), not where its shell last said.
+  const live = shared(PLACES) ?? {};
+  const own = terminalsOf(w), home = (live[own.find((p) => p.cwd)?.terminal]?.home || own.find((p) => p.cwd)?.cwd) ?? null;
+  const list = own.map((p) => (live[p.terminal]?.cwd ? { ...p, cwd: live[p.terminal].cwd } : p)), first = list.find((p) => p.cwd) ?? null;
+  // An agent in another checkout than the space's (the primary space's agent in a worktree) says which.
+  const checkouts = Object.values(v.trees ?? {}).flat(), homeAt = checkoutAt(checkouts, home)?.path ?? null;
+  const away = (p) => { const c = checkoutAt(checkouts, p.cwd)?.path ?? null; return c && homeAt && c !== homeAt ? base(c) : null; };
+  return [...list.map((p) => terminalRow(p, t, depth, first, away(p))), newTabRow(w, t, depth)];
 }
 
 // "+ New terminal or agent…" at the end of a space's terminals: a menu of both, as its account.
@@ -391,7 +439,7 @@ function newTabRow(w, t, depth) {
     .child(div().flex_1().min_w(0).truncate().child("New agent or terminal…"));
 }
 
-function terminalRow(p, t, depth, first = null) {
+function terminalRow(p, t, depth, first = null, away = null) {
     // A title that only says user@host or a path (a shell's default) says nothing: the program's name instead.
     const title = clean(p.title), telling = title && title !== p.program?.name && !title.includes("@") && !/^[~/]/.test(title);
     const name = telling ? title : p.program?.name || "terminal";
@@ -404,7 +452,9 @@ function terminalRow(p, t, depth, first = null) {
       // An agent shows its own icon (Herdr's program table), a plain terminal the terminal icon.
       .child(wide(programIcon(p.program, t, ICON + 1) ?? svg(`${ICONS}/square-terminal.svg`).size(ICON).flex_none().text_color(t.dim)))
       .child(div().flex_shrink(0).max_w(140).truncate().child(name))
-      .child(div().flex_1().min_w(0).truncate().text_size(TEXT - 1).text_color(t.dim).child(where))
+      .child(away
+        ? div().flex_1().min_w(0).truncate().text_size(TEXT - 1).text_color(t.accent).child(`→ ${away}`)
+        : div().flex_1().min_w(0).truncate().text_size(TEXT - 1).text_color(t.dim).child(where))
       .when(Boolean(p.status), (el) => el.child(div().size(6).flex_none().rounded(3).bg(color)))
       .child(div().id(`peek-${p.pane}`).flex_none().size(18).flex().items_center().justify_center().rounded(4).text_color(t.dim)
         .hover((s) => s.bg(t.raised ?? t.hover).text_color(t.foreground)).tooltip("Peek: see it here, without switching spaces")

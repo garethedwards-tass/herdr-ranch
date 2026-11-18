@@ -7,6 +7,8 @@ import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, terminals, panes, focused, spaces, run, theme, shared, setShared, setAgentOrder, openOverlay, closeOverlay, props, window, layout } from "herdr";
 // ranch: Claude Code sessions: the chip, the popup, tasks and subagents.
+import { publishPlaces } from "./places.js";
+import { refreshWorktrees, worktreeMark } from "./worktree.js";
 import { start, statsChip, claudeRows, statsView, statsMenu, liveAgents, quietMark, openAgentMenu } from "./extras.js";
 
 function find(node, id) {
@@ -84,6 +86,10 @@ export default class Agents extends View {
   init(_props, cx) {
     if (props()?.sortMenu || props()?.stats) return; // ranch: the stats popup is a copy of its own
     start(this, cx); // ranch
+    cx.timer.every(3000, () => publishPlaces(this)); // ranch: agents' folders, for the Spaces list
+    // ranch: which agents work in a linked worktree (worktree.js), for the marker on their rows.
+    const wt = (cx) => { if (this.wtBusy) return; this.wtBusy = true; cx.spawn(async (cx) => { try { if (await refreshWorktrees(this, agents())) cx.notify(); } catch { /* next time */ } this.wtBusy = false; }); };
+    wt(cx); cx.timer.every(5000, wt);
     this.folded = new Set();
     // Each agent's last state and when it changed (ms), kept across restarts.
     this.changed = JSON.parse(localStorage.getItem("changed") ?? "{}");
@@ -354,6 +360,7 @@ export default class Agents extends View {
         .child(h_flex().flex_1().min_w(0).gap(5).items_center()
           .child(div().min_w(0).max_w(full && more ? 120 : 200).truncate().text_color(idle ? t.muted : t.foreground).child(name))
           .when(full && Boolean(more), el => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(`\u00b7 ${more}`))))
+        .child(worktreeMark(this, a, t) ?? div()) // ranch: in a linked worktree: its folder
         .when(Boolean(machine), el => el.child(div().text_size(10).text_color(t.dim).child(machine)))
         .when(subs.length > 0, el => el.child(fold(a, subs)))
         .child(quietMark(this, a, t) ?? div()) // ranch: not reporting its status; a click brings it back

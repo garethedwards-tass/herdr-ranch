@@ -3,13 +3,17 @@
 // (worktree spaces under their repository's space, checkouts without a space after them).
 // Plain functions, tested in tests/spaces.test.mjs.
 
-import { exec } from "herdr";
+import { exec, shared } from "herdr";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
+// An agent's terminal: where its session started (the Agents list's shared("ranch-agent-places")
+// home), since Herdr's folder can be out of date (a folder renamed under it). Not where the agent
+// works now: an agent off in a worktree doesn't move its space (agents-at.js shows it).
 // `ps`: panes(), read once by the caller (each read copies every pane).
-export function place(s, ps) {
+export function place(s, ps, homes = shared("ranch-agent-places")) {
   const tabs = new Set((s.tabs ?? []).map((c) => c.id));
-  return ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder || null;
+  const p = ps.find((x) => tabs.has(x.tab) && x.cwd);
+  return homes?.[p?.terminal]?.home || p?.cwd || s.folder || null;
 }
 // A place as one key: [machine, folder].
 export const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
@@ -71,7 +75,7 @@ const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
 //   { kind: "space", w, i, g, tree, children? }   a space (tree "├─"/"└─" for a worktree under its repo's
 //                                       space; `children`: how many rows fold under it)
 // Every row under a space has `parent` (that space's id).
-//   { kind: "more", repo, count, open } the fold for a repository's checkouts without a space
+//   { kind: "more", repo, count, open, paths, on } the fold for a repository's checkouts without a space
 //   { kind: "loose", repo, c, tree }    one of those checkouts
 // `list`: [{ w, i, g, at }] (at: the space's folder now); `trees`: repo key -> parseWorktrees();
 // `open`: repo keys whose loose checkouts are unfolded.
@@ -94,7 +98,7 @@ export function arrange(list, trees = {}, open = new Set()) {
     const unfolded = open.has(r.g.repo);
     const tail = [
       ...kids.map((k) => ({ kind: "space", ...k })),
-      ...(loose.length ? [{ kind: "more", repo: r.g.repo, count: loose.length, busy: loose.filter(hasWork).length, dirty: loose.filter((c) => c.changes > 0).length, unpushed: loose.filter((c) => c.unpushed > 0).length, open: unfolded }] : []),
+      ...(loose.length ? [{ kind: "more", repo: r.g.repo, count: loose.length, busy: loose.filter(hasWork).length, dirty: loose.filter((c) => c.changes > 0).length, unpushed: loose.filter((c) => c.unpushed > 0).length, open: unfolded, paths: loose.map((c) => c.path), on: r.w.machine ?? null }] : []),
       ...(unfolded ? loose.map((c) => ({ kind: "loose", repo: r.g.repo, main: r.g.main, c, on: r.w.machine ?? null })) : []),
     ];
     // `parent`: the space they fold under; the loose rows count once, in their own fold.

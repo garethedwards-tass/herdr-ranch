@@ -64,6 +64,8 @@ export function apply(st, records) {
     else if (t === "mode" && d.mode) st.mode = d.mode;
     else if (t === "cost-state") st.cost = { usd: d.totalCostUSD ?? null, linesAdded: d.totalLinesAdded ?? null, linesRemoved: d.totalLinesRemoved ?? null };
     if (d?.timestamp) st.lastAt = d.timestamp;
+    // Where it works now: every record carries the session's folder, which follows a cd (places.js).
+    if (d?.cwd && !d.isSidechain) st.cwd = d.cwd;
     const m = d?.message;
     if (t === "assistant" && m && !d.isSidechain) {
       // A reply Claude Code wrote itself (a usage limit, an API error) has no model and zero usage:

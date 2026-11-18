@@ -7,6 +7,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { openOverlay, closeOverlay, agents, terminals, home, shared, panes, spaces, run, notify, hc } from "herdr";
 import { bringBack } from "./revive.js";
+import { worktreeProps, worktreeLines, WORKTREE_H } from "./worktree.js";
 import { liveSessions, configDirs, pickSession, projectDir, firstRead, readSince, subagents, apply, totals, windowOf, tokens, taskList } from "./claude.js";
 
 export const MOD = "herdr-ranch-agents";
@@ -90,9 +91,12 @@ async function refresh(v) {
   for (const a of mine) {
     seen.add(a.address);
     const at = cwd.get(a.address);
-    const candidates = v.sessions.filter((s) => s.cwd === at).map((s) => ({ ...s, title: [...v.claude.values()].find((c) => c.id === s.sessionId)?.st.title }));
+    let candidates = v.sessions.filter((s) => s.cwd === at).map((s) => ({ ...s, title: [...v.claude.values()].find((c) => c.id === s.sessionId)?.st.title }));
     // Several sessions in its folder: the terminal's foreground process tells which is its own.
-    const pid = candidates.length > 1 ? await foregroundPid(v, a.address, candidates) : null;
+    let pid = candidates.length > 1 ? await foregroundPid(v, a.address, candidates) : null;
+    // None: Herdr's folder for the terminal is out of date (the session started elsewhere, or its
+    // folder moved). Its foreground process names the session.
+    if (!candidates.length) { pid = await foregroundPid(v, a.address, v.sessions); candidates = v.sessions.filter((s) => pid != null && String(s.pid) === String(pid)); }
     const s = pickSession(candidates, a.title, pid);
     let c = v.claude.get(a.address);
     if (!s) { if (c) { v.claude.delete(a.address); changed = true; } continue; }
@@ -146,7 +150,8 @@ const level = (t, p) => (p >= 85 ? t.ansi1 : p >= 60 ? t.ansi3 : t.ansi2);
 export function openAgentMenu(v, a) {
   const c = v.claude?.get(a.address), s = c?.st.context ? snapshot(c) : null;
   const name = s ? shortModel(c.st.model) : c ? "Claude" : a.program?.name ?? "Agent";
-  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 280, height: menuHeight(s), props: { stats: s, menu: true, pane: a.pane, name, terminal: a.address, pinned: Boolean(a.pinned) } });
+  const worktree = worktreeProps(v, a);
+  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 280, height: menuHeight(s) + (worktree ? WORKTREE_H : 0), props: { stats: s, menu: true, pane: a.pane, name, terminal: a.address, pinned: Boolean(a.pinned), worktree } });
 }
 
 export function statsChip(v, a, t, status = null) {
@@ -188,6 +193,7 @@ export function statsMenu(p, t) {
   const s = p.stats;
   if (!s) return v_flex().id("agent-menu").w_full().p(6).gap(1).bg(t.popover).text_size(12.5)
     .child(div().px(8).pt(4).pb(8).font_semibold().truncate().text_color(t.foreground).child(p.name ?? "Agent"))
+    .when(Boolean(p.worktree), (el) => el.child(worktreeLines(p.worktree, t)))
     .child(div().h(1).mx(4).mb(4).bg(t.border))
     .children(menuRows(p, t));
   const used = Math.min(1, s.context / s.window), running = s.subs.filter((x) => !x[2]).length;
@@ -202,6 +208,7 @@ export function statsMenu(p, t) {
       .when(Boolean(extra), (el) => el.child(div().truncate().text_size(12).text_color(t.dim).child(extra)))
       // What stopped it, in Claude Code's words (e.g. "You've hit your 5-hour limit · resets 3:30pm").
       .when(Boolean(s.apiError), (el) => el.child(div().mt(2).px(6).py(3).rounded(5).bg(t.blocked + "1a").text_size(12).text_color(t.blocked).truncate().child(s.apiError))))
+    .when(Boolean(p.worktree), (el) => el.child(worktreeLines(p.worktree, t)))
     .child(div().h(1).mx(4).mb(4).bg(t.border))
     .children(menuRows(p, t));
 }

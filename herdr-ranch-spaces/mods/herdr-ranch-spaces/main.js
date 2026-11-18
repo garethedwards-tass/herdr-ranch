@@ -12,6 +12,7 @@ import { spaces, machines, panes, run, openOverlay, exec, hc, theme, shared, set
 // ranch: what Herdr Ranch adds, and its git reads.
 import { dialogFor, start, spaceMenu, spaceTail, moreRow, looseRow, terminalRows, foldChevron, isOpen, worktreeSpaceRow, newSpaceMenu, programIcon, foldAllButton, byAccount, accountFilterRow } from "./extras.js";
 import { writeIcons } from "./actions.js";
+import { agentPlaces, PLACES } from "./agents-at.js";
 import { probe, worktreesWithWork, arrange } from "./git.js";
 const GROUP_GAP = 8; // ranch: room after an open space's rows
 const LOOSE_EVERY = 60000; // ranch: how often a worktree without a space has its work read again
@@ -300,6 +301,8 @@ export default class Spaces extends View {
 
   // The rows, under a header per machine once one isn't this computer.
   grouped(t, collapsed) {
+    // ranch: where every agent works now, for the agent badges on checkouts (agents-at.js).
+    this.places = agentPlaces(panes(), spaces(), shared(PLACES) ?? {});
     // ranch: worktree rows (not on the rail), drawn by extras.js; a row's machine.
     const rows = byAccount(this, this.ordered()).filter((r) => !collapsed || r.kind === "space"); // ranch: the account filter
     const draw = (r) => (r.kind === "more" ? moreRow(this, r, t) : r.kind === "loose" ? looseRow(this, r, t) : collapsed ? this.compact(r, t) : r.tree ? worktreeSpaceRow(this, r, t) : this.row(r, t));
