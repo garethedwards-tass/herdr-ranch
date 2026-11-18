@@ -329,7 +329,8 @@ export class GitDialog extends View {
           const here = b.name === cur, elsewhere = b.path && b.path !== this.g.top;
           return h_flex().id(`branch-${i}`).flex_none().h(30).px(10).gap(8).items_center().rounded(6).cursor_pointer()
             .when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((s) => s.bg(t.hover)))
-            .on_click((_e, cx) => { this.at = i; this.pick(b, cx); })
+            // A click only selects: Enter or the Switch button switches.
+            .on_click((_e, cx) => { this.at = i; cx.notify(); })
             .child(div().flex_1().min_w(0).truncate().text_color(here ? t.accent : t.foreground).child(b.fresh ? `Create and switch to ${b.name}` : b.name))
             .when(Boolean(b.remote), (el) => el.child(div().flex_none().text_size(11).text_color(t.accent).child(b.remote)))
             .when(here, (el) => el.child(div().flex_none().text_size(11).text_color(t.accent).child("current")))
@@ -378,7 +379,7 @@ export class GitDialog extends View {
       .child(h_flex().justify_end().gap(6).text_size(11).text_color(t.dim)
         .when(Boolean(this.folder && g), (el) => el.child(this.button("git-delete-wt", "Delete worktree…", t, () => { this.close(); openRemove({ path: g.top, main: g.main, on: this.on, branch: st?.branch ?? null }); }, { disabled: !g.linked, danger: true })).child(div().flex_1()))
         .when(Boolean(this.busy), (el) => el.child(div().frames(["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"], 90)))
-        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch" : "") : this.tab === "branches" ? "↑↓ choose" : "")
+        .child(this.busy ? "working…" : this.confirm ? "s stash · b bring · esc cancel" : this.folder ? (this.naming ? "↵ make the branch" : "") : this.tab === "branches" ? "click or ↑↓ to choose" : "")
         // Buttons for what Enter and Esc do (the confirm view has its own).
         .when(!this.confirm && !this.folder && this.tab === "branches" && Boolean(st), (el) => {
           const b = this.rows()[this.at];
