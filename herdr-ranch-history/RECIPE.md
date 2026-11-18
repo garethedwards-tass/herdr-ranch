@@ -9,7 +9,7 @@ The git commit history of the repository you're working in, in a side panel next
 - While a search is on, a line under the header says what's happening: "Searching the whole history…", "n in the whole history", or the error (`ansi1`).
 - **Footer:** ↑ ↓ move, ↵ open, Esc clear (while searching).
 - **A commit:** a `surface` card with **← History** (Esc), ↑ ↓ for the newer and older commit, **Copy sha**, the title, the message body (code font, cut at 1500 characters), "author committed 2d ago", the sha and its refs; under it the commit's files as the Pull requests Files tab shows them (`files-tab.js`): Unified | Split (`S`), Expand all (`E`), a card per file with its diff. No Viewed and no GitHub link.
-- **Linked** (in the commit card, when there is any): a button per pull request that contains the commit (`PR #12 · title`), per issue it closes (`Issue #4`) and per ticket key in its message (`TASS-123`); a click opens it in Pull requests or Issues.
+- **Linked** (in the commit card, when there is any): a button per pull request that contains the commit (`PR #12 · title`), per issue it closes (`Issue #4`) and per ticket key in its message (`ACME-123`); a click opens it in Pull requests or Issues.
 
 ## How it behaves
 
@@ -34,7 +34,7 @@ The git commit history of the repository you're working in, in a side panel next
 
 - `--grep` and `--author` together mean both, not either: plain words need two searches.
 - `--max-count` after `-1` wins: put `-1` last when looking up one sha.
-- `code:` is slow on a large history (about 14 s on tassweb's); say so while it runs.
+- `code:` is slow on a large history (about 14 s on a large app's); say so while it runs.
 - Minified files put a whole file on one line: `diff.js` cuts lines at 500 characters.
 - `svg()` can't read a linked mod folder, so the History button's icon comes through mod-buttons' own copy.
 

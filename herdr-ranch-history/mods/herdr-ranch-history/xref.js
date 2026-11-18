@@ -62,7 +62,7 @@ const NOT_TICKETS = new Set(["UTF", "UCS", "SHA", "MD", "ISO", "RFC", "CVE", "CW
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The ticket keys in a text, in order, each once. With `prefixes` (the linked project keys,
-// such as ["TASS"]) only those, in any case ("tass-12" is TASS-12); without, any KEY-123 that
+// such as ["ACME"]) only those, in any case ("acme-12" is ACME-12); without, any KEY-123 that
 // isn't a known non-ticket word.
 export function ticketKeys(text, prefixes = null) {
   const out = new Set(), list = (prefixes ?? []).filter(Boolean);
@@ -155,7 +155,7 @@ export const sameRepo = (a, b) => Boolean(a && b && a.toLowerCase() === b.toLowe
 // ---- Commits that mention a key -----------------------------------------------------------
 
 const US = "\x1f", RS = "\x1e";
-// git's extended regex for a key as a whole word: TASS-12 but not TASS-123 or XTASS-12.
+// git's extended regex for a key as a whole word: ACME-12 but not ACME-123 or XACME-12.
 export function mentionPattern(key) {
   const k = escape(key);
   return key.startsWith("#") ? `${k}([^0-9]|$)` : `(^|[^A-Za-z0-9_])${k}([^0-9]|$)`;

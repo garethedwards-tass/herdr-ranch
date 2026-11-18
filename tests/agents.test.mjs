@@ -75,9 +75,9 @@ test("revive: typable keys, the prompt, background agents, /stop, busy, vim", ()
   assert.equal(runningAgents("❯ x\n  ⏵⏵ auto mode on · PR #2"), false);
   assert.equal(stopOffered("❯ /stop\n  ❯ /stop      Stop this background session; transcript and worktree are kept"), true);
   assert.equal(stopOffered("  ❯ /status   Show status"), false);
-  assert.equal(busyTitle("◑ TASS-1 fix"), true);
-  assert.equal(busyTitle("✳ Tassdocker setup"), false);
-  assert.equal(busyTitle("TASS-10497 product impact"), false);
+  assert.equal(busyTitle("◑ ACME-1 fix"), true);
+  assert.equal(busyTitle("✳ Docker setup"), false);
+  assert.equal(busyTitle("ACME-10497 product impact"), false);
   assert.equal(busyTitle(""), false);
   assert.equal(busyScreen("✻ Working… (12s · esc to interrupt)\n❯ \n"), true);
   assert.equal(busyScreen("✻ Worked for 9m\n❯ \n"), false);

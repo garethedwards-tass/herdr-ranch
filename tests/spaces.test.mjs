@@ -70,8 +70,8 @@ test("tail: only what the name doesn't say", () => {
 });
 
 test("linkLabel: the issue tracker's key, else the GitHub repository", () => {
-  assert.equal(linkLabel({ github: "o/repo", jira: { site: "s", key: "TASS" } }), "TASS");
-  assert.equal(linkLabel({ github: "o/repo", jira: { site: "s", key: "TASS" }, issues: "github" }), "repo");
+  assert.equal(linkLabel({ github: "o/repo", jira: { site: "s", key: "ACME" } }), "ACME");
+  assert.equal(linkLabel({ github: "o/repo", jira: { site: "s", key: "ACME" }, issues: "github" }), "repo");
   assert.equal(linkLabel({ issues: "linear", linear: { key: "ENG" } }), "ENG");
   assert.equal(linkLabel(null), "");
 });
@@ -103,27 +103,27 @@ test("arrange: the fold counts the worktrees with work", () => {
 });
 
 test("parseRefs: local branches with their checkouts, remote ones only without a local branch", () => {
-  const got = parseRefs("refs/heads/main\t30\nrefs/remotes/origin/HEAD\t30\nrefs/remotes/origin/main\t30\nrefs/remotes/origin/feat/x\t20\nrefs/heads/TASS-1-a\t10\n", [{ path: "/w/t", branch: "TASS-1-a" }]);
-  assert.deepEqual(got.map((b) => [b.name, b.remote, b.ref, b.path]), [["main", null, "main", null], ["feat/x", "origin", "origin/feat/x", null], ["TASS-1-a", null, "TASS-1-a", "/w/t"]]);
+  const got = parseRefs("refs/heads/main\t30\nrefs/remotes/origin/HEAD\t30\nrefs/remotes/origin/main\t30\nrefs/remotes/origin/feat/x\t20\nrefs/heads/ACME-1-a\t10\n", [{ path: "/w/t", branch: "ACME-1-a" }]);
+  assert.deepEqual(got.map((b) => [b.name, b.remote, b.ref, b.path]), [["main", null, "main", null], ["feat/x", "origin", "origin/feat/x", null], ["ACME-1-a", null, "ACME-1-a", "/w/t"]]);
 });
 
 test("new worktree: branch names from issues, git worktree add's arguments, where it goes", () => {
-  assert.equal(issueBranch("TASS-15439", "Request ID: add it to every log line, please"), "TASS-15439-request-id-add-it-to-every");
+  assert.equal(issueBranch("ACME-15439", "Request ID: add it to every log line, please"), "ACME-15439-request-id-add-it-to-every");
   assert.equal(issueBranch("#12", "Fix it"), "issue-12-fix-it");
   assert.equal(issueBranch("ENG-3", ""), "ENG-3");
   assert.deepEqual(addArgs("/p", { name: "a", exists: true }), ["worktree", "add", "/p", "a"]);
   assert.deepEqual(addArgs("/p", { name: "x", remote: "origin", ref: "origin/x" }), ["worktree", "add", "--track", "-b", "x", "/p", "origin/x"]);
   assert.deepEqual(addArgs("/p", { name: "n", fresh: true }), ["worktree", "add", "-b", "n", "/p", "HEAD"]);
-  assert.equal(worktreePath("/Users/me", "tassweb", "feat/a b"), "/Users/me/.herdr/worktrees/tassweb/feat-a-b");
+  assert.equal(worktreePath("/Users/me", "webapp", "feat/a b"), "/Users/me/.herdr/worktrees/webapp/feat-a-b");
 });
 
 test("issues: which tracker a link reads, and what looks like a key", () => {
-  assert.deepEqual(source({ jira: { site: "s.atlassian.net", key: "TASS" }, github: "o/r" }), { kind: "jira", site: "s.atlassian.net", project: "TASS" });
+  assert.deepEqual(source({ jira: { site: "s.atlassian.net", key: "ACME" }, github: "o/r" }), { kind: "jira", site: "s.atlassian.net", project: "ACME" });
   assert.deepEqual(source({ jira: { site: "s", key: "T" }, issues: "github", github: "o/r" }), { kind: "github", repo: "o/r" });
   assert.deepEqual(source({ issues: "linear", linear: { teamId: "t1" } }), { kind: "linear", team: "t1" });
   assert.deepEqual(source(null, "o/detected"), { kind: "github", repo: "o/detected" });
   assert.equal(source(null, null), null);
-  assert.ok(looksLikeKey("TASS-12") && looksLikeKey("#4") && !looksLikeKey("tass") && !looksLikeKey("fix-12"));
+  assert.ok(looksLikeKey("ACME-12") && looksLikeKey("#4") && !looksLikeKey("acme") && !looksLikeKey("fix-12"));
 });
 
 test("parseStatus: branch, upstream, ahead/behind and the files by kind", () => {

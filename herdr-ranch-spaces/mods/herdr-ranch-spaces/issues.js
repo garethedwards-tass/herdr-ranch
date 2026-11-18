@@ -1,5 +1,5 @@
 // Issues to start a worktree from, through the space's link (links.js): Jira, Linear or GitHub.
-// mine(): the open issues assigned to you; lookup(): one issue by its key ("TASS-12", "#12").
+// mine(): the open issues assigned to you; lookup(): one issue by its key ("ACME-12", "#12").
 // Each is { key, title }.
 
 import { exec } from "herdr";

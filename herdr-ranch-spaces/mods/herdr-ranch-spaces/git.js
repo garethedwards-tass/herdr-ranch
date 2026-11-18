@@ -172,7 +172,7 @@ export function checkoutAt(list, at) {
 export const folderSlug = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 export const worktreePath = (home, repo, branch) => `${home}/.herdr/worktrees/${repo}/${folderSlug(branch)}`;
 
-// A branch name for an issue: "TASS-123-fix-the-login-page", "issue-12-fix-the-login-page".
+// A branch name for an issue: "ACME-123-fix-the-login-page", "issue-12-fix-the-login-page".
 export function issueBranch(key, title) {
   const words = (title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").filter(Boolean).slice(0, 6).join("-").slice(0, 40).replace(/-+$/, "");
   const head = /^#?\d+$/.test(key) ? `issue-${key.replace("#", "")}` : key;

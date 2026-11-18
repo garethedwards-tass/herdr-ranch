@@ -37,7 +37,7 @@ export class GitDialog extends View {
     this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.at = 0; cx.notify(); });
     this.input.on("submit", (_e, cx) => this.pick(this.rows()[this.at], cx));
     // A detached worktree's new branch name.
-    this.nameInput = InputState.new({ placeholder: "new branch name, e.g. TASS-1234-graalvm" });
+    this.nameInput = InputState.new({ placeholder: "new branch name, e.g. ACME-1234-new-search" });
     this.nameInput.on("submit", (_e, cx) => this.makeBranch(cx));
     this.load(cx);
   }
