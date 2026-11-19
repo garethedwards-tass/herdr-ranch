@@ -35,6 +35,7 @@ Versions of the Herdr Ranch suite: the Issues, Pull requests and Reviews mods an
 - **Pull requests:** a **Commits** tab (`4`) lists the commits by day with their checks. A click opens a commit's diff in the same view; `[` and `]` step to the older and newer commit, a click on a sha copies it.
 - **Pull requests:** a **Pushed** filter lists the open pull requests with a commit in the last 7 days, latest push first, each with the age of its last push.
 - **History:** a new panel with the git commit history of the repository you're in: by day, filters (Mine, Merges, Recent), this branch or all, a search across the whole history (`author:`, `path:`, `code:`, `since:`, a sha), and each commit's diffs, unified or split.
+- **Reviews:** an agent that asked for a review keeps showing under **Needs you** until you answer. Before, its own status report at the end of its turn (Claude Code's "done", when it runs `ranch-review` in the background) replaced it, so the agent looked finished or running while the review waited.
 
 ## v0.5.0
 

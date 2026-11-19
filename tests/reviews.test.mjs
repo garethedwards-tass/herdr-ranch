@@ -2,7 +2,7 @@
 // Run: cd tests && npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { imageOnly, diagramOf, isDrawioFile, hashOf, isDark, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, abandon, orphaned, openFor, changedBlocks, foldRuns } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
+import { imageOnly, diagramOf, isDrawioFile, hashOf, isDark, splitBlocks, formatFeedback, outcomeText, pastePrompt, lastClaudeText, lastCodexText, quoteOf, stateOf, newId, matchBlocks, countMatches, hitsIn, docKey, newestPerDoc, carryDraft, markHits, abandon, orphaned, reblock, openFor, changedBlocks, foldRuns } from "../herdr-ranch-reviews/mods/herdr-ranch-reviews/reviews.js";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -273,4 +273,9 @@ test("isDrawioFile, hashOf, isDark", () => {
   assert.equal(isDark("#fff"), false);
   assert.equal(isDark("#ffffffcc"), false);
   assert.equal(isDark(undefined), true);
+});
+
+test("reblock: a waiting review puts a stopped agent back under Needs you, never a working one", () => {
+  const cases = [["done", true], ["idle", true], ["working", false], ["blocked", false], [null, false], [undefined, false]];
+  for (const [state, expected] of cases) assert.equal(reblock(state), expected, String(state));
 });
