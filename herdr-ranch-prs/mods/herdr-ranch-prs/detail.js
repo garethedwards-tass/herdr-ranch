@@ -80,6 +80,10 @@ export function detail(pr, t, a) {
       : d === "CHANGES_REQUESTED" ? row("m-review", t.ansi1, "x", "Changes requested", "A reviewer asked for changes.")
       : d === "REVIEW_REQUIRED" ? row("m-review", t.ansi3, "pending", "Review required", asked ? "You were asked to review." : "At least one approving review is needed.")
       : row("m-review", t.dim, "comment", "No review required", asked ? "You were asked to review." : "Reviews are optional here."));
+    // Your review that isn't submitted yet: only GitHub can submit or discard it.
+    const dr = a.draftReview;
+    if (dr) rows.push(row("m-draft", t.ansi4, "comment", `Your review is a draft${dr.comments ? ` with ${dr.comments} comment${dr.comments > 1 ? "s" : ""}` : ""}`,
+      "Nobody sees it yet. Submit or discard it on GitHub.", () => a.openUrl(`${pr.url}/files`)));
     const ms = pr.mergeStateStatus;
     const [mc, mi, mt] = pr.state === "MERGED" ? [t.ansi5, "merged", "Merged"] : pr.state === "CLOSED" ? [t.ansi1, "closed", "Closed without merging"]
       : ms === "CLEAN" ? [t.ansi2, "check", "Ready to merge"] : ms === "DIRTY" ? [t.ansi1, "x", "This branch has conflicts"]

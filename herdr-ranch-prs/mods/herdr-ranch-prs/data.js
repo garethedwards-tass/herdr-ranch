@@ -9,6 +9,7 @@ import { prepareFile } from "./diff.js";
 const FIELDS = `number title author { login } assignees(first: 20) { nodes { login } } headRefName baseRefName
   isDraft reviewDecision reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } }
   additions deletions updatedAt url state isCrossRepository
+  pending: reviews(states: PENDING, first: 1) { nodes { comments { totalCount } } }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { contexts {
     checkRunCountsByState { state count } statusContextCountsByState { state count } } } } } }`;
 const LIST = (states, first) => `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
@@ -48,7 +49,7 @@ function slim(pr, login) {
     number: pr.number, title: (pr.title ?? "").trim(), author: { login: pr.author?.login ?? null }, assignees: (pr.assignees ?? []).map((a) => a.login), headRefName: pr.headRefName, baseRefName: pr.baseRefName ?? "",
     isDraft: pr.isDraft, reviewDecision: pr.reviewDecision, reviewRequests: (pr.reviewRequests ?? []).map((r) => ({ login: r.login })),
     checks: pr.checks, additions: pr.additions, deletions: pr.deletions, updatedAt: pr.updatedAt, url: pr.url, state: pr.state,
-    fork: Boolean(pr.isCrossRepository), pushedAt: pr.pushedAt ?? null,
+    fork: Boolean(pr.isCrossRepository), pushedAt: pr.pushedAt ?? null, draftReview: pr.draftReview ?? null,
   };
   s.group = group(s, login);
   return s;
@@ -65,6 +66,9 @@ function fromNode(n) {
     // When the newest commit was made: a push brings new commits, so this is the last push
     // (a rebase or amend renews it too).
     pushedAt: n.commits?.nodes?.[0]?.commit?.committedDate ?? null,
+    // Your review that isn't submitted yet: GitHub shows a pending review only to its author,
+    // so any node here is the signed-in account's. { comments } or null.
+    draftReview: n.pending?.nodes?.[0] ? { comments: n.pending.nodes[0].comments?.totalCount ?? 0 } : null,
   };
 }
 
@@ -206,7 +210,8 @@ export const GROUPS = [
 function group(pr, login) {
   if (pr.state !== "OPEN") return "closed";
   const mine = pr.author?.login === login, c = pr.checks;
-  if (!mine && (pr.reviewRequests ?? []).some((r) => r.login === login)) return "review";
+  // Asked of you, or your draft review waits to be submitted or discarded.
+  if (!mine && (pr.draftReview || (pr.reviewRequests ?? []).some((r) => r.login === login))) return "review";
   if (mine && (pr.reviewDecision === "CHANGES_REQUESTED" || c.fail > 0)) return "fix";
   if (!pr.isDraft && pr.reviewDecision === "APPROVED" && c.fail === 0 && c.pending === 0) return "ready";
   return "open";
