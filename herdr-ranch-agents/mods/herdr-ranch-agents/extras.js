@@ -7,6 +7,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { openOverlay, closeOverlay, agents, terminals, home, shared, setShared, panes, spaces, run, notify, hc } from "herdr";
 import { bringBack } from "./revive.js";
+import { accounts, accountOf, defaultLabel } from "./accounts.js";
 import { worktreeProps, worktreeLines, WORKTREE_H } from "./worktree.js";
 import { isCodex, refreshCodex, codexSnapshot, codexModel, codexShort, restartCodexAgent } from "./codex.js";
 import { liveSessions, configDirs, pickSession, projectDir, firstRead, readSince, subagents, apply, totals, windowOf, tokens, taskList } from "./claude.js";
@@ -52,6 +53,7 @@ const isClaude = (a) => (a.app === "claude-code" || a.program?.key === "claude")
 
 // The watcher: every few seconds, for each Claude Code agent here, what was added to its session.
 export function start(v, cx) {
+  v.accountFilter = load("agents.account", null);
   v.claude = new Map(); // agent address -> { id, file, dir, st, offset, subs, read, started }
   v.openTasks = new Set();
   v.reviving = new Set(); // agents being brought back (revive.js)
@@ -354,4 +356,44 @@ export function statsView(p, t) {
         .child(div().flex_none().text_color(t.dim).child(type))
         .child(div().flex_1().min_w(0).truncate().text_color(done ? t.dim : t.foreground).child(desc)))))
     .child(div().pt(8).text_size(10.5).text_color(t.dim).child(`From Claude Code's files in ~/.claude. ${s.guessed ? "The window size is an estimate." : ""}`));
+}
+
+// --- The account filter ------------------------------------------------------------------------
+
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k) ?? "null") ?? d; } catch { return d; } };
+const save = (k, val) => { try { localStorage.setItem(k, JSON.stringify(val)); } catch { /* this session only */ } };
+
+// v.accountFilter is null (every agent), "none" (agents on the default account) or an account's
+// id. A filter on an account since removed shows every agent.
+export function accountFilterOf(v) {
+  const f = v.accountFilter;
+  return f === "none" || (f && accounts().some((a) => a.id === f)) ? f : null;
+}
+
+// An agent's account, as Spaces has it: its space's own, else the account of the repository it
+// works in (on its machine). "none" for the default account.
+export function agentAccount(v, a) {
+  const info = v.wt?.get(v.folders?.[a.address])?.info;
+  const on = a.address.includes("/") ? a.address.split("/")[0] : null;
+  return accountOf({ id: a.space }, info ? { main: info.main, on } : null)?.id ?? "none";
+}
+
+// Keeps the agents on the filtered account.
+export function byAccount(v, list) {
+  const f = accountFilterOf(v);
+  return f ? list.filter((a) => agentAccount(v, a) === f) : list;
+}
+
+// Under the header, once there is an account: All, each account, then the default (Default, or its name).
+export function accountFilterRow(v, t) {
+  const list = accounts();
+  if (!list.length) return div();
+  const cur = accountFilterOf(v);
+  const opts = [[null, "All"], ...list.map((a) => [a.id, a.label]), ["none", defaultLabel()]];
+  return h_flex().id("agents-account-filter").flex_none().flex_wrap().gap(4).px(16).pb(6).text_size(12)
+    .children(opts.map(([id, label]) => div().id(`agents-account-${id ?? "all"}`).px(7).py(1).rounded_full().cursor_pointer()
+      .border_1().border_color(cur === id ? t.accent : t.border).text_color(cur === id ? t.accent : t.muted)
+      .when(cur === id, (e) => e.bg(t.accent + "14")).when(cur !== id, (e) => e.hover((s) => s.bg(t.hover).text_color(t.foreground)))
+      .on_click((_e, cx) => { v.accountFilter = id; save("agents.account", id); cx.notify(); })
+      .child(label)));
 }

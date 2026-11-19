@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState, apply, totals, windowOf, tokens, parseFirstRead, pickSession, subagentOf, taskList, projectDir, utf8Length, configDirs } from "../herdr-ranch-agents/mods/herdr-ranch-agents/claude.js";
-import { modelName } from "../herdr-ranch-agents/mods/herdr-ranch-agents/extras.js";
+import { modelName, agentAccount, byAccount } from "../herdr-ranch-agents/mods/herdr-ranch-agents/extras.js";
+import { state as herdr } from "./stubs/herdr.mjs";
 
 const reply = (id, usage, content = [], extra = {}) => ({ type: "assistant", requestedModel: "claude-opus-5-5", effort: "medium", ...extra, message: { id, model: "claude-opus-5-5", usage, content } });
 const u = (input, cacheWrite, cacheRead, output) => ({ input_tokens: input, cache_creation_input_tokens: cacheWrite, cache_read_input_tokens: cacheRead, output_tokens: output });
@@ -201,4 +202,24 @@ test("recordsCoverFooter: the records clear a running footer only when they cove
   assert.equal(recordsCoverFooter([{ done: true }, { done: true }], screen), true);
   assert.equal(recordsCoverFooter([{ done: true }, { done: false }], screen), false);
   assert.equal(recordsCoverFooter(null, screen), false);
+});
+
+test("byAccount: agents by their space's account, else their repository's; a removed account shows all", () => {
+  herdr.shared["ranch-accounts"] = {
+    accounts: [{ id: "work", label: "Work" }, { id: "home", label: "Home" }],
+    spaces: { s1: { account: "work", main: "/r/a", on: null }, s9: { account: "home", main: "/r/b", on: null } },
+  };
+  const v = {
+    folders: { t1: "/r/a", t2: "/r/b/wt", t3: "/r/c", "vps/t4": "/r/b" },
+    wt: new Map([["/r/a", { info: { main: "/r/a" } }], ["/r/b/wt", { info: { main: "/r/b" } }], ["/r/c", { info: { main: "/r/c" } }]]),
+  };
+  const list = [{ address: "t1", space: "s1" }, { address: "t2", space: "s2" }, { address: "t3", space: "s3" }, { address: "vps/t4", space: "s4" }];
+  assert.deepEqual(list.map((a) => agentAccount(v, a)), ["work", "home", "none", "none"]);
+  const shown = (f) => byAccount({ ...v, accountFilter: f }, list).map((a) => a.address);
+  assert.deepEqual(shown(null), ["t1", "t2", "t3", "vps/t4"]);
+  assert.deepEqual(shown("work"), ["t1"]);
+  assert.deepEqual(shown("home"), ["t2"]);
+  assert.deepEqual(shown("none"), ["t3", "vps/t4"]);
+  assert.deepEqual(shown("gone"), ["t1", "t2", "t3", "vps/t4"]);
+  delete herdr.shared["ranch-accounts"];
 });

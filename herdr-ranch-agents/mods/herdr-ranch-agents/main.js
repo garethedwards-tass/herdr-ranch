@@ -9,7 +9,7 @@ import { agents, terminals, panes, focused, spaces, run, theme, shared, setShare
 // ranch: Claude Code sessions: the chip, the popup, tasks and subagents.
 import { publishPlaces } from "./places.js";
 import { refreshWorktrees, worktreeMark } from "./worktree.js";
-import { start, statsChip, claudeRows, statsView, statsMenu, liveAgents, quietMark, openAgentMenu } from "./extras.js";
+import { start, statsChip, claudeRows, statsView, statsMenu, liveAgents, quietMark, openAgentMenu, byAccount, accountFilterRow, accountFilterOf } from "./extras.js";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -264,10 +264,15 @@ export default class Agents extends View {
     const urgency = new Map(list.map((a) => [a.address, Math.max(this.rank(a), ...this.tree(all, a.address).map((s) => RANK[kidStatus(s.t, this.listed)] ?? 0))]));
     const rankOf = (a) => urgency.get(a.address);
     if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
-    const pinned = list.filter((a) => a.pinned);
-    const rest = list.filter((a) => !a.pinned);
+    let pinned = list.filter((a) => a.pinned);
+    let rest = list.filter((a) => !a.pinned);
     list = [...pinned, ...rest];
     setAgentOrder(list.map((a) => a.address));
+    // ranch: the account filter hides rows only; Herdr's agent order above keeps every agent.
+    const everyone = list.length;
+    list = byAccount(this, list);
+    pinned = pinned.filter((a) => list.includes(a));
+    rest = rest.filter((a) => list.includes(a));
 
     const withKids = (a, i) => {
       const subs = collapsed ? [] : this.tree(all, a.address);
@@ -460,8 +465,12 @@ export default class Agents extends View {
             ),
         ),
       )
+      .when(!collapsed && !folded, (el) => el.child(accountFilterRow(this, t))) // ranch: agents by account
+      .when(list.length === 0 && everyone > 0 && !collapsed && !folded, (el) =>
+        el.child(div().px(16).text_size(12).text_color(t.dim).child(accountFilterOf(this) === "none" ? "No agents on the default account." : "No agents on this account.")),
+      )
       // ranch: the empty text also names agents found by their pane (liveAgents).
-      .when(list.length === 0 && !collapsed && !folded, (el) =>
+      .when(everyone === 0 && !collapsed && !folded, (el) =>
         el.child(div().px(12).text_size(12).text_color(t.dim).child("No agents yet. Agents show up here when they report their status, or run in a pane as a known agent. Older versions and agents inside tmux may not.")),
       )
       .when(!folded, (el) => el.child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows)))
