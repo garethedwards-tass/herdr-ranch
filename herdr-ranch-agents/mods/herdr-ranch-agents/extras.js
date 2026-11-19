@@ -56,6 +56,7 @@ export function start(v, cx) {
   v.openTasks = new Set();
   v.reviving = new Set(); // agents being brought back (revive.js)
   v.seenRestart = shared(KEY_RESTART)?.at ?? 0;
+  v.instance = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; // claims a Restart ask
   v.sessions = []; v.sessionsAt = 0;
   const tick = (cx) => {
     restartAsked(v, cx);
@@ -158,7 +159,7 @@ export function openAgentMenu(v, a) {
   const name = c?.st.context ? shortModel(c.st.model) : c ? "Claude" : x ? codexModel(x.st.model) : a.program?.name ?? "Agent";
   // Restart: only a Claude Code agent here whose conversation the watcher knows (revive.js).
   // Codex: one whose conversation was found (codex.js).
-  const restart = ((Boolean(c?.id) && isClaude(a)) || (Boolean(x?.id) && isCodex(a))) && !v.reviving.has(a.address);
+  const restart = ((Boolean(c?.id) && isClaude(a)) || (Boolean(x?.id) && x.sure && isCodex(a))) && !v.reviving.has(a.address);
   const worktree = worktreeProps(v, a);
   const props = { stats: s, menu: true, pane: a.pane, name, terminal: a.address, pinned: Boolean(a.pinned), restart, worktree };
   // As high as the rows it has: a Codex or other agent has fewer than a Claude Code one.
@@ -174,10 +175,19 @@ function restartAsked(v, cx) {
   if (!ask?.at || ask.at === v.seenRestart) return;
   v.seenRestart = ask.at;
   if (Date.now() - ask.at > 60000) return; // an old ask, from before a reload
-  const a = liveAgents(agents(), terminals()).find((x) => x.address === ask.terminal);
-  if (a && isCodex(a)) restartCodexAgent(v, a, cx);
-  else if (a) bringBack(v, a, cx, true);
-  else notify({ title: "Couldn't restart the agent", body: "It isn't in the list any more.", level: "warning" });
+  // Every Agents list (one per window) sees the ask: one claims it. Each writes its id; after a
+  // moment, only the list whose id is still there acts, so one click restarts once.
+  if (ask.claimed) return;
+  setShared(KEY_RESTART, { ...ask, claimed: v.instance });
+  cx.spawn(async (cx) => {
+    await cx.sleep(600);
+    const now = shared(KEY_RESTART);
+    if (now?.at !== ask.at || now.claimed !== v.instance) return;
+    const a = liveAgents(agents(), terminals()).find((x) => x.address === ask.terminal);
+    if (a && isCodex(a)) restartCodexAgent(v, a, cx);
+    else if (a) bringBack(v, a, cx, true);
+    else notify({ title: "Couldn't restart the agent", body: "It isn't in the list any more.", level: "warning" });
+  });
 }
 
 export function statsChip(v, a, t, status = null) {

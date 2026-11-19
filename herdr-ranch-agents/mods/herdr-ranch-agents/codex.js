@@ -18,17 +18,20 @@ import { keysFor, envVar } from "./revive.js";
 export const isCodex = (a) => (a.app === "codex" || a.program?.key === "codex") && !a.address.includes("/");
 
 const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-const field = (line, k) => new RegExp(`[{,]"${k}":"((?:[^"\\\\]|\\\\.)*)"`).exec(line)?.[1] ?? null;
+const field = (line, k) => new RegExp(`(?:^|[\\s{,])"${k}":"((?:[^"\\\\]|\\\\.)*)"`).exec(line)?.[1] ?? null;
 
 // The recent conversations Codex started for you (not subagents): [{ id, cwd, file, mtime }], newest
-// first. `out` is lines of "<file>\t<mtime>\t<first line, cut short>".
+// first. `out` is lines of "<file>\t<mtime>\t<session_meta's fields>": only "id", "cwd",
+// "parent_thread_id" and "source" are picked from the first line (grep -o), wherever they are in it,
+// so long instructions before them don't matter. No source counts as yours unless it has a parent.
 export function parseSessionList(out, dir) {
   const list = [];
   for (const line of (out ?? "").split("\n")) {
     const [file, mtime, ...rest] = line.split("\t");
     const meta = rest.join("\t");
-    if (!file || !/"type":"session_meta"/.test(meta)) continue;
-    if (/"parent_thread_id"/.test(meta) || !/"source":"cli"/.test(meta)) continue;
+    if (!file) continue;
+    if (/"parent_thread_id"/.test(meta) || /"source":\{/.test(meta)) continue;
+    if (/"source":"/.test(meta) && !/"source":"cli"/.test(meta)) continue;
     const id = field(meta, "id"), cwd = field(meta, "cwd");
     if (id && cwd) list.push({ id, cwd, file: `${dir}/${file}`, mtime: Number(mtime) || 0 });
   }
@@ -36,7 +39,9 @@ export function parseSessionList(out, dir) {
 }
 
 export async function codexSessions(dir = `${home()}/.codex/sessions`) {
-  const script = 'cd "$1" 2>/dev/null || exit 0; ls -t */*/*/rollout-*.jsonl 2>/dev/null | head -60 | while IFS= read -r f; do m=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f"); printf "%s\\t%s\\t" "$f" "$m"; head -c 4000 "$f" | head -n 1 | tr -d "\\t"; echo; done';
+  // Files changed in the last 3 days (a resumed old conversation keeps writing its own day's file),
+  // listed by find, so no command line holds every file ever written; the newest 60.
+  const script = 'cd "$1" 2>/dev/null || exit 0; find . -name "rollout-*.jsonl" -mtime -3 -exec sh -c \'for f; do m=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f"); printf "%s %s\\n" "$m" "$f"; done\' sh {} + 2>/dev/null | sort -rn | head -60 | while read -r m f; do printf "%s\\t%s\\t" "${f#./}" "$m"; head -n 1 "$f" | grep -o -E \'"(id|cwd|parent_thread_id)":"[^"]*"|"source":("[a-z]*"|\\{)\' | head -n 8 | tr "\\n\\t" "  "; echo; done';
   const r = await exec("sh", ["-c", script, "sh", dir], { timeout: 15000 }).catch(() => null);
   return parseSessionList(r?.stdout, dir);
 }
@@ -54,11 +59,15 @@ export async function codexNames(file = `${home()}/.codex/session_index.jsonl`) 
   return parseIndex(r?.stdout);
 }
 
-// The terminal's conversation: the one in its folder whose name starts its title, else the newest there.
-export function pickCodex(list, cwd, title, names) {
+// The terminal's conversation: the one in its folder whose name starts its title, else the newest
+// there. `sure` when the name matched, or no other Codex terminal shares the folder (`sharing`):
+// Restart only resumes a conversation it is sure of.
+export function pickCodex(list, cwd, title, names, sharing = 1) {
   const here = list.filter((s) => s.cwd === cwd);
   const name = (title ?? "").split(" | ")[0].trim();
-  return (name && here.find((s) => names?.get(s.id) === name)) || here[0] || null;
+  const named = name ? here.find((s) => names?.get(s.id) === name) : null;
+  if (named) return { ...named, sure: true };
+  return here[0] ? { ...here[0], sure: sharing <= 1 } : null;
 }
 
 // The newest turn_context and token_count after `offset`, and the file's size, from one sh call.
@@ -78,7 +87,9 @@ export function parseRead(out) {
   return { st, size };
 }
 export async function readCodex(file, offset = 0) {
-  const script = 's=$(wc -c < "$1" | tr -d " "); tail -c +$(($2 + 1)) "$1" | head -c $((s - $2)) | awk \'/"type":"turn_context"/{a=$0} /"type":"token_count"/{b=$0} END{if(a!="")print a; if(b!="")print b}\'; echo "SIZE $s"';
+  // Whole lines only: a line Codex is still writing is left for next time (SIZE stops before it).
+  // A token_count without usage (info null: a rate-limit update) doesn't replace one with usage.
+  const script = 'export LC_ALL=C; s=$(wc -c < "$1" | tr -d " "); [ "$s" -gt "$2" ] || { echo "SIZE $s"; exit 0; }; if [ "$(tail -c +$s "$1" | head -c 1 | od -An -tx1 | tr -d " \\n")" != 0a ]; then p=$(tail -c +$(($2 + 1)) "$1" | head -c $((s - $2)) | tail -n 1 | wc -c | tr -d " "); s=$((s - p)); fi; tail -c +$(($2 + 1)) "$1" | head -c $((s - $2)) | awk \'/"type":"turn_context"/{a=$0} /"type":"token_count"/ && /"last_token_usage"/{b=$0} END{if(a!="")print a; if(b!="")print b}\'; echo "SIZE $s"';
   const r = await exec("sh", ["-c", script, "sh", file, String(offset)], { timeout: 15000 }).catch(() => null);
   return parseRead(r?.stdout);
 }
@@ -101,16 +112,19 @@ export async function refreshCodex(v, mine, all) {
   const now = Date.now();
   if (!v.codexList || now - (v.codexListAt ?? 0) > LIST_EVERY) { v.codexList = await codexSessions(); v.codexNames = await codexNames(); v.codexListAt = now; }
   const cwd = new Map(all.map((t) => [t.address, t.cwd]));
+  const sharing = new Map();
+  for (const a of mine) sharing.set(cwd.get(a.address), (sharing.get(cwd.get(a.address)) ?? 0) + 1);
   let changed = false;
   const seen = new Set();
   for (const a of mine) {
     seen.add(a.address);
-    const s = pickCodex(v.codexList, cwd.get(a.address), a.title, v.codexNames);
+    const s = pickCodex(v.codexList, cwd.get(a.address), a.title, v.codexNames, sharing.get(cwd.get(a.address)));
     let c = v.codex.get(a.address);
     if (!s) { if (c) { v.codex.delete(a.address); changed = true; } continue; }
+    if (c && c.sure !== s.sure) { c.sure = s.sure; changed = true; }
     if (!c || c.id !== s.id) {
       const { st, size } = await readCodex(s.file, 0);
-      v.codex.set(a.address, { id: s.id, file: s.file, cwd: s.cwd, st, offset: size ?? 0, read: now });
+      v.codex.set(a.address, { id: s.id, file: s.file, cwd: s.cwd, sure: s.sure, st, offset: size ?? 0, read: now });
       changed = true;
       continue;
     }
@@ -136,19 +150,30 @@ const ONE = new Set(["-c", "--config", "--enable", "--disable", "--remote", "--r
 const NONE = new Set(["--oss", "--approve-for-me", "--dangerously-bypass-approvals-and-sandbox", "--dangerously-bypass-hook-trust", "--worktree",
   "--search", "--no-alt-screen", "--no-daemon", "--strict-config", "--include-non-interactive", "--full-auto", "--yolo"]);
 const DROP = new Set(["--last", "--all"]);
+// The script already goes to the conversation's folder (the one -C chose): -C is left out. A
+// relative path after -C was relative to the folder before it, which isn't known: it stops.
+const CD = new Set(["-C", "--cd"]), PATHS = new Set(["--add-dir", "-i", "--image"]);
 export function codexResumeArgs(args, id) {
-  const keep = [];
+  const pairs = [], flags = [];
   const a = [...args];
   if (a[0] === "resume") a.shift();
   for (let i = 0; i < a.length; i++) {
     const x = a[i];
     if (DROP.has(x)) continue;
-    if (/^--[\w-]+=/.test(x)) { if (ONE.has(x.split("=")[0])) { keep.push(x); continue; } throw new Error(`Unknown Codex option ${x.split("=")[0]}`); }
-    if (ONE.has(x)) { if (i + 1 >= a.length) throw new Error(`${x} has no value`); keep.push(x, a[++i]); continue; }
-    if (NONE.has(x)) { keep.push(x); continue; }
+    if (/^--[\w-]+=/.test(x)) { const k = x.split("="), name = k[0]; if (!ONE.has(name)) throw new Error(`Unknown Codex option ${name}`); pairs.push([name, x.slice(name.length + 1), true]); continue; }
+    if (ONE.has(x)) { if (i + 1 >= a.length) throw new Error(`${x} has no value`); pairs.push([x, a[++i], false]); continue; }
+    if (NONE.has(x)) { flags.push(x); continue; }
     if (/^-/.test(x)) throw new Error(`Unknown Codex option ${x}`);
     // a prompt or a session: left out
   }
+  const cd = pairs.some(([k]) => CD.has(k));
+  const keep = [];
+  for (const [k, val, joined] of pairs) {
+    if (CD.has(k)) continue;
+    if (cd && PATHS.has(k) && !/^[/~]/.test(val)) throw new Error(`${k} ${val} is relative to a folder -C changed`);
+    keep.push(...(joined ? [`${k}=${val}`] : [k, val]));
+  }
+  keep.push(...flags);
   return ["resume", ...keep, id];
 }
 
@@ -184,6 +209,7 @@ export async function restartCodex(t, session, cx) {
   if (g.status?.state === "working") return "It's working: try again when it's done.";
   const { id, cwd } = session ?? {};
   if (!id || !/^[\w-]+$/.test(id) || !cwd) return "Couldn't tell which conversation it is: restart it by hand.";
+  if (!session.sure) return "Another Codex terminal shares its folder, so which conversation is its own isn't certain: restart it by hand.";
   if (String(g.pid) === String(g.foreground.pid)) return "Codex is the terminal's own program, with no shell behind it: restart it by hand.";
   let args;
   try { args = codexResumeArgs(g.foreground.argv.slice(1), id); } catch (e) { return `${e.message}: restart it by hand.`; }

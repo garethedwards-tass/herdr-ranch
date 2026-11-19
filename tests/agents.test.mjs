@@ -61,7 +61,7 @@ test("pickSession, subagentOf, windows, names and paths", () => {
   assert.equal(utf8Length("a·€😀"), 1 + 2 + 3 + 4);
 });
 
-import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimInsert, resumeArgs, helpArity, envVar, setupFor, scriptFor , restartOffered, restartInMenu, exitOffered, agentEntry } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
+import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimInsert, resumeArgs, helpArity, envVar, setupFor, scriptFor , restartOffered, restartInMenu, exitOffered, agentEntry, recordsCoverFooter } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
 
 test("revive: typable keys, the prompt, background agents, /stop, busy, vim", () => {
   assert.deepEqual(keysFor("sh /Users/a.b/x-1=2"), ["s", "h", "space", "/", "shift+u", "s", "e", "r", "s", "/", "a", ".", "b", "/", "x", "-", "1", "=", "2"]);
@@ -184,4 +184,21 @@ test("agentEntry: the session's kind from claude agents --json", () => {
   assert.equal(agentEntry(list, "zzz", 10).kind, "interactive");
   assert.equal(agentEntry(list, "zzz", 11), null);
   assert.equal(agentEntry(null, "a", 10), null);
+});
+
+test("menu matches stay on one line: the typed prompt with padding or a blank line isn't the menu", () => {
+  assert.ok(!exitOffered("❯ /exit\n\n  No commands match"));
+  assert.ok(!exitOffered("❯ /exit   \n──"));
+  assert.ok(!restartInMenu("❯ /restart\n\n  No commands match"));
+  assert.ok(!stopOffered("❯ /stop\nStop this background session"));
+  assert.ok(exitOffered("❯ /exit\n──\n  ❯ /exit      Exit the REPL"));
+});
+
+test("recordsCoverFooter: the records clear a running footer only when they cover it", () => {
+  const screen = "x\n  ← 2 agents";
+  assert.equal(recordsCoverFooter([], screen), false);
+  assert.equal(recordsCoverFooter([{ done: true }], screen), false); // fewer records than the footer counts
+  assert.equal(recordsCoverFooter([{ done: true }, { done: true }], screen), true);
+  assert.equal(recordsCoverFooter([{ done: true }, { done: false }], screen), false);
+  assert.equal(recordsCoverFooter(null, screen), false);
 });

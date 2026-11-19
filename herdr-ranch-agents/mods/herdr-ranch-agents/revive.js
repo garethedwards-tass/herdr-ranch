@@ -46,6 +46,11 @@ const bottom = (screen, n = 5) => (screen ?? "").split("\n").slice(-n).join("\n"
 
 // Whether a background agent of the session is still running (the status bar's "← 2 agents").
 export const runningAgents = (screen) => /← \d+ agents?\b/.test(bottom(screen));
+export const footerAgents = (screen) => Number(/← (\d+) agents?\b/.exec(bottom(screen))?.[1] ?? 0);
+// Whether the session's own records say every background agent the footer counts has finished:
+// only when there are records, all done, and at least as many as the footer shows (the watcher
+// keeps the newest 8, and none when they couldn't be read).
+export const recordsCoverFooter = (subs, screen) => Array.isArray(subs) && subs.length > 0 && subs.length >= footerAgents(screen) && subs.every((x) => x.done);
 
 // Whether Claude Code is working: "esc to interrupt" in its status bar, or a spinner glyph leading
 // its title (✳ when it waits). Either one is enough to leave it alone.
@@ -59,12 +64,14 @@ export const vimInsert = (screen) => /-- INSERT --/.test(bottom(screen, 8));
 // /restart to apply"); older versions say "Restart to update" and have no /restart.
 export const restartOffered = (screen) => /\/restart to apply/i.test(bottom(screen, 10));
 // Whether the slash menu's highlighted entry is /restart.
-export const restartInMenu = (screen) => /^\s*❯\s\/restart\s{2,}\S/m.test(screen ?? ""); // the menu line, not the prompt
+// Every menu match stays on one line ([ \u00a0], not \s, which also takes a newline): the typed
+// prompt line followed by padding or a blank line must not count as the menu's entry.
+export const restartInMenu = (screen) => /^[ \u00a0]*❯[ \u00a0]\/restart[ \u00a0]{2,}\S/m.test(screen ?? ""); // the menu line, not the prompt
 
 // Whether the slash menu's highlighted entry is Claude Code's /stop for a background session.
 // Whether the slash menu's highlighted entry is /exit (a session that isn't in the background).
-export const exitOffered = (screen) => /^\s*❯\s\/exit\s{2,}\S/m.test(screen ?? "");
-export const stopOffered = (screen) => /^\s*❯\s\/stop\s+Stop this background session/m.test(screen ?? "");
+export const exitOffered = (screen) => /^[ \u00a0]*❯[ \u00a0]\/exit[ \u00a0]{2,}\S/m.test(screen ?? "");
+export const stopOffered = (screen) => /^[ \u00a0]*❯[ \u00a0]\/stop[ \u00a0]+Stop this background session/m.test(screen ?? "");
 
 // Claude Code's options by what follows them: nothing (0), one value (1), an optional value ("?"),
 // or several ("*"). Read from the installed `claude --help` (helpArity); STATIC is 2.1.325's, for
@@ -279,7 +286,7 @@ export async function revive(t, session, cx, restart = false) {
   if (busyTitle(g.title) || busyScreen(screen)) return "It looks busy: try again when it's done.";
   // Claude Code's footer ("← 1 agent") keeps finished background agents too: a restart goes by the
   // session's own records (claude.js subagents) when it has them.
-  const recordsIdle = restart && Array.isArray(session.subs) && session.subs.every((x) => x.done);
+  const recordsIdle = restart && recordsCoverFooter(session.subs, screen);
   if (runningAgents(screen) && !recordsIdle) return "A background agent of that session is still running: try again when it's done.";
   if (vim && !vimInsert(screen)) return "Its prompt uses vim keys and isn't in insert mode: press i there, then try again.";
   // A typed draft stays when a key is added; Claude Code's suggested reply is replaced.
@@ -311,6 +318,9 @@ export async function revive(t, session, cx, restart = false) {
     stop = stopOffered(await read(t));
     if (!stop) { await keys(t, ["esc", "ctrl+u"]); await cx.sleep(200); }
   }
+  // /exit only detaches a background session, which would leave it running beside the new one:
+  // without /stop it is used only for a session Claude Code lists as interactive.
+  if (!stop && !plain) return entry ? "That background session doesn't offer /stop: restart it by hand." : "Couldn't tell whether it's a background session (claude agents didn't answer): try again, or restart it by hand.";
   if (!stop) {
     // An interactive session (started as plain `claude`): /exit ends it.
     await keys(t, keysFor("/exit"));
