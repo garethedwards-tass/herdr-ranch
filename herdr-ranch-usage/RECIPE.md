@@ -12,7 +12,7 @@ from the CLIs themselves; the mod never reads a token or credential file.
   `shared/accounts.js`). Each account with a Claude Code folder gets its own reading, id
   `claude:<account id>`, named `Claude · <label>` and marked with the account's coloured letter (as on
   the Spaces list) on the bar, in the panel and in settings. The usual `~/.claude` is `claude`
-  ("Claude · Default"), unless an account uses that folder. Two accounts on one folder are read once.
+  ("Claude · Default", or `Claude · <name>` when no account is renamed in Link space), unless an account uses that folder. Two accounts on one folder are read once.
   A GitHub-only account has no reading.
 - `helpers/claude-usage.sh <folder>` sets `CLAUDE_CONFIG_DIR` to the account's folder, or unsets
   it for `""`, so each CLI run uses that account's own login.

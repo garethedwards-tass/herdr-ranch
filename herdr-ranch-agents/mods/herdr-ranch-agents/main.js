@@ -23,6 +23,18 @@ function find(node, id) {
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
+// ranch: fold the panel to its header, or back. Folded = its layout block has a px size (the
+// other list takes the room); unfolding gives back the weight it had. The layout's "min" for the
+// block must allow the header's height (mod-buttons.json).
+const isFolded = (id) => find(layout(), id)?.size?.px != null;
+function toggleFold(id, px) {
+  const size = find(layout(), id)?.size;
+  if (size?.px != null) { run("layout.resize", { id, weight: shared(`sidebar.fold.${id}`) ?? 1 }); return; }
+  setShared(`sidebar.fold.${id}`, size?.weight ?? 1);
+  run("layout.resize", { id, px });
+}
+const foldChevronIcon = (folded) => `mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`;
+
 // To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
 function toggleSidebar() {
   const width = find(layout(), "sidebar")?.size?.px;
@@ -84,7 +96,7 @@ function icon(p, size, color) {
 
 export default class Agents extends View {
   init(_props, cx) {
-    if (props()?.sortMenu || props()?.stats) return; // ranch: the stats popup is a copy of its own
+    if (props()?.sortMenu || props()?.stats || props()?.menu) return; // ranch: the stats popup and the agent menu are copies of their own
     start(this, cx); // ranch
     cx.timer.every(3000, () => publishPlaces(this)); // ranch: agents' folders, for the Spaces list
     // ranch: which agents work in a linked worktree (worktree.js), for the marker on their rows.
@@ -227,8 +239,11 @@ export default class Agents extends View {
   render(cx) {
     const t = theme();
     if (props()?.sortMenu) return this.sortMenu(t);
-    if (props()?.stats) return props().menu ? statsMenu(props(), t) : statsView(props(), t); // ranch: the pill's menu, or Usage details
+    // ranch: the pill's menu (stats is null for an agent without Claude Code's records, e.g. Codex), or Usage details
+    if (props()?.menu) return statsMenu(props(), t);
+    if (props()?.stats) return statsView(props(), t);
     const collapsed = narrow();
+    const folded = !collapsed && isFolded("agents"); // ranch: the panel folded to its header
     const sort = sortOf();
     // ranch: agents that stopped reporting a status too; each host list read once.
     const all = terminals(), allPanes = panes(), allSpaces = spaces();
@@ -427,7 +442,12 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(11.5).font_medium().text_color(t.dim).child("Agents"))
+            .child(h_flex().id("ag-fold").gap(5).items_center().cursor_pointer().text_size(11.5).font_medium().text_color(t.dim).hover((s) => s.text_color(t.foreground))
+              .tooltip(folded ? "Show the Agents list" : "Fold the Agents list to its header")
+              .on_click(() => toggleFold("agents", 42)) // ranch: fold the panel
+              .child(svg(foldChevronIcon(folded)).size(10))
+              .child("Agents")
+              .when(folded && list.length > 0, (el) => el.child(div().text_color(t.dim).child(String(list.length)))))
             .child(
               div()
                 .id("ag-sort")
@@ -441,10 +461,10 @@ export default class Agents extends View {
         ),
       )
       // ranch: the empty text also names agents found by their pane (liveAgents).
-      .when(list.length === 0 && !collapsed, (el) =>
+      .when(list.length === 0 && !collapsed && !folded, (el) =>
         el.child(div().px(12).text_size(12).text_color(t.dim).child("No agents yet. Agents show up here when they report their status, or run in a pane as a known agent. Older versions and agents inside tmux may not.")),
       )
-      .child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows))
+      .when(!folded, (el) => el.child(v_flex().id("ag-list").flex_1().min_h(0).px(collapsed ? 0 : 8).overflow_y_scrollbar().mode("always").children(rows)))
       .when(collapsed, (el) =>
         el.child(
           h_flex()

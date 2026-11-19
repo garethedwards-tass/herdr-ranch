@@ -16,7 +16,7 @@ import { props, closeOverlay, theme, spaces, exec, run } from "herdr";
 import { spaceRepo, linkOf, saveLink, knownSites, detectGithub, openUrl } from "./links.js";
 import { credentials, myself, findProjects, cleanSite, call, TOKEN_PAGE, storeSignIn, removeSignIn, platform, STORE, validSite, trustedSite, trustSite } from "./jira-client.js";
 import { fs } from "./links.js";
-import { accounts, accountOf, setAccount, addAccount, removeAccount, checkAccount, parseGhAccounts, accountColor, accountLetter } from "./accounts.js";
+import { accounts, accountOf, setAccount, addAccount, removeAccount, checkAccount, parseGhAccounts, accountColor, accountLetter, defaultLabel, setDefaultLabel } from "./accounts.js";
 import { linearKey, viewer as linearViewer, findTeams, connectLinear, disconnectLinear, KEY_PAGE as LINEAR_KEY_PAGE } from "./linear-client.js";
 
 const branchKey = (branch) => /\b([A-Z][A-Z0-9]{1,9})-\d+\b/.exec(branch ?? "")?.[1] ?? "";
@@ -54,6 +54,11 @@ export class LinkDialog extends View {
     this.acct = undefined; this.acctWas = undefined; this.acctForm = false; this.acctError = ""; this.ghUsers = null; this.ghUser = "";
     this.acctLabel = InputState.new({ placeholder: "Work, Personal…" });
     this.acctDir = InputState.new({ placeholder: "~/.claude-<label> (empty: keep the usual login)" });
+    // Renaming no account (Default): its own small form, saved straight away.
+    this.defForm = false; this.defError = "";
+    this.defName = InputState.new({ placeholder: "Default" });
+    this.defName.on("change", (_e, cx) => { if (this.defError) { this.defError = ""; cx.notify(); } });
+    this.defName.on("submit", (_e, cx) => this.renameDefault(cx));
     for (const s of [this.acctLabel, this.acctDir]) {
       s.on("change", (_e, cx) => { if (this.acctError) { this.acctError = ""; cx.notify(); } });
       s.on("submit", (_e, cx) => this.addAccount(cx));
@@ -265,6 +270,20 @@ export class LinkDialog extends View {
     cx.notify();
   }
 
+  // The name for no account; empty goes back to "Default".
+  renameDefault(cx) {
+    const label = this.defName.value().trim();
+    if (label && !/^[\w .-]{1,40}$/.test(label)) { this.defError = "Name: letters, digits, spaces, . _ -"; cx.notify(); return; }
+    setDefaultLabel(label);
+    this.defForm = false;
+    cx.notify();
+  }
+  openDefaultForm(cx) {
+    this.defForm = !this.defForm; this.defError = "";
+    if (this.defForm) this.defName.set_value(defaultLabel() === "Default" ? "" : defaultLabel());
+    cx.notify();
+  }
+
   openAccountForm(cx) {
     this.acctForm = !this.acctForm; this.acctError = "";
     if (this.acctForm && this.ghUsers === null) cx.spawn(async (cx) => {
@@ -408,21 +427,28 @@ export class LinkDialog extends View {
           .when(L.state === "in", (e) => e.child(button("lin-disconnect", "Remove key", null, (cx) => cx.spawn(async (cx) => { await disconnectLinear(); this.linForm = true; this.checkLinear(cx); }))))
           .child(button("lin-connect", this.connecting ? "Testing…" : "Connect", "blue", (cx) => this.connectLinear(cx))))));
 
-    // Account: Default or one of the list, its details, and the New account form.
+    // Account: no account (Default, or what you named it) or one of the list, its details, and the New account form.
     const accts = accounts(), cur = accts.find((x) => x.id === this.acct) ?? null;
     const letter = (x) => div().size(14).flex_none().flex().items_center().justify_center().rounded(3).bg(accountColor(x, t)).text_color(t.background).text_size(9).font_semibold().child(accountLetter(x));
     const acctChip = (x) => h_flex().id(`acct-${x?.id ?? "default"}`).gap(5).items_center().pl(x ? 4 : 9).pr(9).py(1).rounded_full().text_size(fs.tiny).cursor_pointer()
       .border_1().border_color(this.acct === (x?.id ?? null) ? t.accent : t.border).text_color(this.acct === (x?.id ?? null) ? t.accent : t.muted)
       .when(this.acct === (x?.id ?? null), (e) => e.bg(t.accent + "14")).hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => { this.acct = x?.id ?? null; cx.notify(); })
-      .when(Boolean(x), (e) => e.child(letter(x))).child(x?.label ?? "Default");
+      .when(Boolean(x), (e) => e.child(letter(x))).child(x?.label ?? defaultLabel());
     const accountBody = v_flex().gap(8)
       .child(h_flex().gap(6).flex_wrap().items_center()
         .child(acctChip(null)).children(accts.map(acctChip))
         .child(chip("acct-new", this.acctForm ? "Cancel new account" : "New account…", this.acctForm, (cx) => this.openAccountForm(cx))))
       .child(h_flex().gap(8).items_center()
         .child(div().flex_1().min_w(0).child(hint(cur ? [cur.claudeDir && `Claude Code: ${cur.claudeDir}`, cur.ghUser && `GitHub: ${cur.ghUser}`].filter(Boolean).join(" · ") : "Your usual Claude Code login and gh account.")))
-        .when(Boolean(cur), (e) => e.child(button("acct-remove", "Remove from list", "link", (cx) => { removeAccount(cur.id); if (this.acctWas === cur.id) this.acctWas = null; this.acct = null; cx.notify(); }))))
+        .when(Boolean(cur), (e) => e.child(button("acct-remove", "Remove from list", "link", (cx) => { removeAccount(cur.id); if (this.acctWas === cur.id) this.acctWas = null; this.acct = null; cx.notify(); })))
+        .when(!cur && this.acct !== undefined, (e) => e.child(button("acct-rename-default", this.defForm ? "Cancel" : "Rename", "link", (cx) => this.openDefaultForm(cx)))))
+      .when(!cur && this.defForm, (e) => e.child(v_flex().gap(8).p(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
+        .child(v_flex().gap(4).child(label("Name for your usual login")).child(box(this.defName, false)))
+        .when(Boolean(this.defError), (e) => e.child(hint(this.defError, t.ansi1)))
+        .child(h_flex().gap(8).items_center()
+          .child(div().flex_1().min_w(0).child(hint("Shown everywhere instead of Default. Empty goes back to Default.")))
+          .child(button("acct-rename-save", "Save", "blue", (cx) => this.renameDefault(cx))))))
       .when(this.acctForm, (e) => e.child(v_flex().gap(8).p(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
         .child(v_flex().gap(4).child(label("Label")).child(box(this.acctLabel, false)))
         .child(v_flex().gap(4).child(label("Claude Code config folder")).child(box(this.acctDir, false)))

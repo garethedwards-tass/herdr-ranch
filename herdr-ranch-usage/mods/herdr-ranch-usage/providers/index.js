@@ -5,8 +5,9 @@ import codex from "./codex.js";
 // Every account with a Claude Code folder (the accounts the Spaces list keeps) gets its own
 // reading, as `claude:<account id>`; the usual ~/.claude is "claude" unless an account uses it.
 // Order here is the order in the status bar and the settings popup.
-// accounts: [{ id, label, claudeDir? }]; expand: a folder with ~ as an absolute path.
-export function providerList(accounts = [], home = "", expand = (p) => p) {
+// accounts: [{ id, label, claudeDir? }]; expand: a folder with ~ as an absolute path; plain: the
+// name for the usual folder beside accounts ("Default" unless you named it).
+export function providerList(accounts = [], home = "", expand = (p) => p, plain = "Default") {
   const usual = `${home}/.claude`;
   const mine = [];
   const seen = new Set();
@@ -17,7 +18,7 @@ export function providerList(accounts = [], home = "", expand = (p) => p) {
     seen.add(dir);
     mine.push({ ...claude, id: `claude:${a.id}`, name: `Claude · ${a.label}`, account: a, configDir: dir === usual ? "" : dir, dir });
   }
-  const own = seen.has(usual) ? [] : [{ ...claude, name: mine.length ? "Claude · Default" : "Claude", account: null, configDir: "", dir: usual }];
+  const own = seen.has(usual) ? [] : [{ ...claude, name: mine.length ? `Claude · ${plain}` : "Claude", account: null, configDir: "", dir: usual }];
   return [...own, ...mine, codex];
 }
 

@@ -13,7 +13,7 @@ import { SpaceMenu } from "./menu.js";
 import { NewDialog } from "./new.js";
 import { RemoveDialog } from "./remove.js";
 import { GitDialog } from "./git-dialog.js";
-import { accounts, accountOf, accountColor, accountLetter } from "./accounts.js";
+import { accounts, accountOf, accountColor, accountLetter, defaultLabel } from "./accounts.js";
 import { openNew, openGit, ICONS } from "./actions.js";
 import { base, checkoutAt, hasWork } from "./git.js";
 
@@ -236,7 +236,7 @@ function button(id, path, tip, t, onClick, color = null) {
 function accountBadge(w, a, t) {
   if (!a) return div().id(`space-account-${w.id}`).size(PILL).flex_none().flex().items_center().justify_center().rounded(4)
     .border_1().border_color(t.dim + "55").text_color(t.dim).cursor_pointer().hover((s) => s.border_color(t.muted).text_color(t.muted))
-    .tooltip("Default account\nClick to link the space or pick an account")
+    .tooltip(`${defaultLabel()} (no account)\nClick to link the space or pick an account`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
     .child(svg(`${ICONS}/link.svg`).size(12));
@@ -361,12 +361,12 @@ export function byAccount(v, rows) {
   });
 }
 
-// Under the header, once there is an account: All, each account, No account.
+// Under the header, once there is an account: All, each account, then no account (Default, or its name).
 export function accountFilterRow(v, t) {
   const list = accounts();
   if (!list.length) return div();
   const cur = accountFilterOf(v);
-  const opts = [[null, "All"], ...list.map((a) => [a.id, a.label]), ["none", "No account"]];
+  const opts = [[null, "All"], ...list.map((a) => [a.id, a.label]), ["none", defaultLabel()]];
   return h_flex().id("spaces-account-filter").flex_none().flex_wrap().gap(4).px(16).pb(6).text_size(12)
     .children(opts.map(([id, label]) => div().id(`spaces-account-${id ?? "all"}`).px(7).py(1).rounded_full().cursor_pointer()
       .border_1().border_color(cur === id ? t.accent : t.border).text_color(cur === id ? t.accent : t.muted)

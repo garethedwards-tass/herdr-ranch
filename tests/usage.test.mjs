@@ -54,3 +54,8 @@ test("parseSession: dir says which account's folder held the session", () => {
   assert.equal(parseSession("tokens=5000 calls=3 compactions=0 dir=2", "claude").dir, 2);
   assert.equal(parseSession("tokens=5000 window=9000 calls=1", "codex").dir, null);
 });
+
+test("providerList: the usual folder takes the name given for no account", () => {
+  const list = providerList([work], H, expand, "Me");
+  assert.equal(list[0].name, "Claude · Me");
+});

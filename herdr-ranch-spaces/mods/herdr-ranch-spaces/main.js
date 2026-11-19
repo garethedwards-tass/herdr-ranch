@@ -29,6 +29,18 @@ function find(node, id) {
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
+// ranch: fold the panel to its header, or back. Folded = its layout block has a px size (the
+// other list takes the room); unfolding gives back the weight it had. The layout's "min" for the
+// block must allow the header's height (mod-buttons.json).
+const isFolded = (id) => find(layout(), id)?.size?.px != null;
+function toggleFold(id, px) {
+  const size = find(layout(), id)?.size;
+  if (size?.px != null) { run("layout.resize", { id, weight: shared(`sidebar.fold.${id}`) ?? 1 }); return; }
+  setShared(`sidebar.fold.${id}`, size?.weight ?? 1);
+  run("layout.resize", { id, px });
+}
+const foldChevronIcon = (folded) => `mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`;
+
 // Where a space is now: its first terminal's live folder, else where it was made.
 // `ps`: panes(), read once by the caller (each read copies every pane).
 function place(s, ps) {
@@ -487,6 +499,7 @@ export default class Spaces extends View {
     if (this.dialog) return this.dialog; // ranch
     const t = theme();
     const collapsed = narrow();
+    const folded = !collapsed && isFolded("spaces"); // ranch: the panel folded to its header
     const palette = ["ansi6", "ansi3", "ansi4", "ansi5", "ansi2", "ansi1"];
     const sp = spaces();
     const ids = new Set(sp.map(p => p.id));
@@ -502,12 +515,16 @@ export default class Spaces extends View {
     return v_flex().id("ranch-spaces").track_focus(this.handle).size_full().min_h(0).bg(t.chrome).text_size(13) // ranch: focus target
       .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(12).text_color(t.dim)
         .when(collapsed, el => el.pl(0).pr(0).justify_center())
-        .when(!collapsed, el => el.child("Spaces").child(div().flex_1()).child(foldAllButton(this, t))) // ranch: collapse / expand all
+        .when(!collapsed, el => el.child(h_flex().id("spaces-fold").gap(5).items_center().cursor_pointer().hover(s => s.text_color(t.foreground))
+          .tooltip(folded ? "Show the Spaces list" : "Fold the Spaces list to its header")
+          .on_click(() => toggleFold("spaces", 31)) // ranch: fold the panel
+          .child(svg(foldChevronIcon(folded)).size(10)).child("Spaces"))
+          .child(div().flex_1()).when(!folded, el => el.child(foldAllButton(this, t)))) // ranch: collapse / expand all
         .child(div().id("space-new").size(26).flex_none().flex().items_center().justify_center().rounded(6).hover(s => s.bg(t.hover).text_color(t.foreground))
           .on_click(() => newSpaceMenu(null)).child(svg("mods/workspace-chrome/plus.svg").size(14)))) // ranch: Terminal or an agent
-      .when(!collapsed, el => el.child(accountFilterRow(this, t))) // ranch: spaces by account
-      .child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always")
+      .when(!collapsed && !folded, el => el.child(accountFilterRow(this, t))) // ranch: spaces by account
+      .when(!folded, el => el.child(v_flex().flex_1().min_h(0).px(collapsed ? 0 : 8).pb(14).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
-        .children(this.grouped(t, collapsed)));
+        .children(this.grouped(t, collapsed))));
   }
 }

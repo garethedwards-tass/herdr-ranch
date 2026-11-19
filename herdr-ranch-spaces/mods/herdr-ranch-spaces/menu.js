@@ -11,7 +11,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { props, closeOverlay, run, theme, spaces, knownAgents } from "herdr";
 import { openLinkDialog } from "./links.js";
 import { openWorktree, openNew, openRemove, openGit, ICONS } from "./actions.js";
-import { accounts, argvAs, runAs, accountColor, accountLetter } from "./accounts.js";
+import { accounts, argvAs, runAs, accountColor, accountLetter, defaultLabel, defaultLetter } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
 const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
@@ -94,14 +94,14 @@ export class SpaceMenu extends View {
 
   render() {
     const t = theme(), p = props(), list = menuItems(p, this.agents), i = p.info ?? null;
-    // The space's account (its own or its repository's) with its coloured letter; "Default" (your usual
+    // The space's account (its own or its repository's) with its coloured letter; "Default" or its name (your usual
     // Claude Code and gh login) without one. Every space menu has it.
     const space = p.menu !== "checkout" && p.menu !== "new-tab" && p.menu !== "new-space";
     const acct = space && p.account ? accounts().find((a) => a.id === p.account) ?? null : null;
     const who = space ? h_flex().gap(6).items_center().text_size(12).text_color(t.muted)
       .child(div().size(16).flex_none().rounded(3).bg(acct ? accountColor(acct, t) : t.raised).border_1().border_color(acct ? accountColor(acct, t) : t.border)
-        .flex().items_center().justify_center().text_size(10.5).font_semibold().text_color(acct ? t.background : t.dim).child(acct ? accountLetter(acct) : "D"))
-      .child(div().min_w(0).truncate().child(acct ? `${acct.label}${acct.ghUser ? ` · ${acct.ghUser}` : ""}` : "Default account")) : null;
+        .flex().items_center().justify_center().text_size(10.5).font_semibold().text_color(acct ? t.background : t.dim).child(acct ? accountLetter(acct) : defaultLetter()))
+      .child(div().min_w(0).truncate().child(acct ? `${acct.label}${acct.ghUser ? ` · ${acct.ghUser}` : ""}` : defaultLabel() === "Default" ? "Default account" : defaultLabel())) : null;
     // ↑/↓ skip the dividers.
     const step = (d) => { let n = this.at; do n = (n + d + list.length) % list.length; while (list[n] === SEP && n !== this.at); this.at = n; };
     return v_flex().id("spaces-menu").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8)

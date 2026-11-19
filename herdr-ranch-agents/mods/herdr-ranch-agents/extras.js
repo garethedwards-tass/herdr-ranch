@@ -5,9 +5,10 @@
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { openOverlay, closeOverlay, agents, terminals, home, shared, panes, spaces, run, notify, hc } from "herdr";
+import { openOverlay, closeOverlay, agents, terminals, home, shared, setShared, panes, spaces, run, notify, hc } from "herdr";
 import { bringBack } from "./revive.js";
 import { worktreeProps, worktreeLines, WORKTREE_H } from "./worktree.js";
+import { isCodex, refreshCodex, codexSnapshot, codexModel, codexShort, restartCodexAgent } from "./codex.js";
 import { liveSessions, configDirs, pickSession, projectDir, firstRead, readSince, subagents, apply, totals, windowOf, tokens, taskList } from "./claude.js";
 
 export const MOD = "herdr-ranch-agents";
@@ -54,12 +55,16 @@ export function start(v, cx) {
   v.claude = new Map(); // agent address -> { id, file, dir, st, offset, subs, read, started }
   v.openTasks = new Set();
   v.reviving = new Set(); // agents being brought back (revive.js)
+  v.seenRestart = shared(KEY_RESTART)?.at ?? 0;
   v.sessions = []; v.sessionsAt = 0;
   const tick = (cx) => {
+    restartAsked(v, cx);
     if (v.reading) return;
     v.reading = true;
     cx.spawn(async (cx) => {
       try { if (await refresh(v)) cx.notify(); } catch { /* next tick */ }
+      // Codex agents (codex.js): their conversation, model and context.
+      try { const all = terminals(); if (await refreshCodex(v, liveAgents(agents(), all).filter(isCodex), all)) cx.notify(); } catch { /* next tick */ }
       v.reading = false;
     });
   };
@@ -148,10 +153,31 @@ const shortModel = (id) => { const m = FAMILY.exec(id ?? ""); return m ? m[1].ch
 const level = (t, p) => (p >= 85 ? t.ansi1 : p >= 60 ? t.ansi3 : t.ansi2);
 // The agent's menu, from its pill or a right-click on its row.
 export function openAgentMenu(v, a) {
-  const c = v.claude?.get(a.address), s = c?.st.context ? snapshot(c) : null;
-  const name = s ? shortModel(c.st.model) : c ? "Claude" : a.program?.name ?? "Agent";
+  const c = v.claude?.get(a.address), x = v.codex?.get(a.address);
+  const s = c?.st.context ? snapshot(c) : x ? codexSnapshot(x, (a.title ?? "").split(" | ")[0].trim()) : null;
+  const name = c?.st.context ? shortModel(c.st.model) : c ? "Claude" : x ? codexModel(x.st.model) : a.program?.name ?? "Agent";
+  // Restart: only a Claude Code agent here whose conversation the watcher knows (revive.js).
+  // Codex: one whose conversation was found (codex.js).
+  const restart = ((Boolean(c?.id) && isClaude(a)) || (Boolean(x?.id) && isCodex(a))) && !v.reviving.has(a.address);
   const worktree = worktreeProps(v, a);
-  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 280, height: menuHeight(s) + (worktree ? WORKTREE_H : 0), props: { stats: s, menu: true, pane: a.pane, name, terminal: a.address, pinned: Boolean(a.pinned), worktree } });
+  const props = { stats: s, menu: true, pane: a.pane, name, terminal: a.address, pinned: Boolean(a.pinned), restart, worktree };
+  // As high as the rows it has: a Codex or other agent has fewer than a Claude Code one.
+  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 280, height: menuHeight(s, props) + (worktree ? WORKTREE_H : 0), props });
+}
+
+// The menu is its own view (a popup): its Restart asks the list, which knows the session, through
+// KEY_RESTART. The list's timer (start) looks for a new ask each tick and restarts that agent
+// (bringBack, restart); a task spawned from render doesn't last.
+export const KEY_RESTART = "agents.restart";
+function restartAsked(v, cx) {
+  const ask = shared(KEY_RESTART);
+  if (!ask?.at || ask.at === v.seenRestart) return;
+  v.seenRestart = ask.at;
+  if (Date.now() - ask.at > 60000) return; // an old ask, from before a reload
+  const a = liveAgents(agents(), terminals()).find((x) => x.address === ask.terminal);
+  if (a && isCodex(a)) restartCodexAgent(v, a, cx);
+  else if (a) bringBack(v, a, cx, true);
+  else notify({ title: "Couldn't restart the agent", body: "It isn't in the list any more.", level: "warning" });
 }
 
 export function statsChip(v, a, t, status = null) {
@@ -159,9 +185,11 @@ export function statsChip(v, a, t, status = null) {
   const p = known ? pct(c) : null;
   // Stopped by Claude Code itself (a usage limit, an API error): red, "limit" or "error".
   const err = c?.st.apiError?.text ?? null, limit = err && /limit/i.test(err);
-  const color = a.status === "blocked" || err ? t.blocked : known ? level(t, p) ?? t.dim : t.dim;
-  const left = known ? shortModel(c.st.model) : c ? "Claude" : a.program?.name ?? "Agent";
-  const right = err ? (limit ? "limit" : "error") : known ? `${p}%` : c ? "…" : "—";
+  // Codex (codex.js): its model and context, from its conversation's records.
+  const x = !c ? v.codex?.get(a.address) : null, xp = x?.st.window ? Math.round((100 * (x.st.context ?? 0)) / x.st.window) : null;
+  const color = a.status === "blocked" || err ? t.blocked : known ? level(t, p) ?? t.dim : xp != null ? level(t, xp) ?? t.dim : t.dim;
+  const left = known ? shortModel(c.st.model) : c ? "Claude" : x?.st.model ? codexShort(x.st.model) : a.program?.name ?? "Agent";
+  const right = err ? (limit ? "limit" : "error") : known ? `${p}%` : c ? "…" : xp != null ? `${xp}%` : x ? "…" : "—";
   return h_flex().id(`stats-${a.address}`).flex_none().w(PILL_W).h(PILL_H).gap(4).px(6).items_center().rounded(4)
     .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer()
     .hover((x) => x.bg(color + "2a"))
@@ -178,16 +206,18 @@ export function statsChip(v, a, t, status = null) {
 function menuItems(p) {
   const s = p.stats;
   return [
-    s ? { id: "details", label: "Usage details", hint: "›", go: () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 320, height: 460, props: { stats: s } }) } : null,
+    s && s.kind !== "codex" ? { id: "details", label: "Usage details", hint: "›", go: () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 320, height: 460, props: { stats: s } }) } : null,
     p.pane ? { id: "focus", label: "Go to terminal", go: () => run("pane.focus", { pane: p.pane }) } : null,
     p.terminal ? { id: "pin", label: p.pinned ? "Unpin" : "Pin to the top", go: () => run("terminal.pin", { terminal: p.terminal, pinned: !p.pinned }) } : null,
+    p.restart ? { id: "restart", label: "Restart", hint: "exit and resume", go: () => setShared(KEY_RESTART, { terminal: p.terminal, at: Date.now() }) } : null,
     s?.session ? { id: "copy-id", label: "Copy session ID", go: (cx) => { cx.write_to_clipboard(s.session); notify({ title: "Copied the session ID", body: s.session, level: "success", timeout: 2500 }); } } : null,
   ].filter(Boolean);
 }
 const ITEM_H = 30;
-export function menuHeight(s) {
-  const summary = s ? 22 + 20 + 26 + (s.tasks.length || s.subs.some((x) => !x[2]) ? 20 : 0) + (s.apiError ? 28 : 0) : 22;
-  return 12 + summary + 9 + ITEM_H * menuItems({ stats: s, pane: true, terminal: true }).length + 10;
+// p: the menu's props (default: every row an agent with stats can have).
+export function menuHeight(s, p = { stats: s, pane: true, terminal: true, restart: true }) {
+  const summary = s?.kind === "codex" ? 22 + 20 + (s.window ? 26 : 0) : s ? 22 + 20 + 26 + (s.tasks.length || s.subs.some((x) => !x[2]) ? 20 : 0) + (s.apiError ? 28 : 0) : 22;
+  return 12 + summary + 9 + ITEM_H * menuItems(p).length + 10;
 }
 export function statsMenu(p, t) {
   const s = p.stats;
@@ -196,6 +226,19 @@ export function statsMenu(p, t) {
     .when(Boolean(p.worktree), (el) => el.child(worktreeLines(p.worktree, t)))
     .child(div().h(1).mx(4).mb(4).bg(t.border))
     .children(menuRows(p, t));
+  if (s.kind === "codex") {
+    const used = s.window ? Math.min(1, s.context / s.window) : 0;
+    return v_flex().id("agent-menu").w_full().p(6).gap(1).bg(t.popover).text_size(12.5)
+      .child(v_flex().px(8).pt(4).pb(8).gap(3)
+        .child(div().font_semibold().truncate().text_color(t.foreground).child(s.title))
+        .child(div().truncate().text_size(12).text_color(t.muted).child(`${codexModel(s.model)}${s.effort ? ` · ${s.effort}` : ""}`))
+        .when(Boolean(s.window), (el) => el.child(h_flex().gap(8).items_center().pt(2)
+          .child(div().flex_1().h(5).rounded(3).bg(t.hover).child(div().h(5).rounded(3).w(Math.max(4, Math.round(150 * used))).bg(used >= 0.85 ? t.ansi1 : used >= 0.6 ? t.ansi3 : t.accent)))
+          .child(div().flex_none().text_size(12).text_color(tone(t, used * 100)).child(`${Math.round(used * 100)}% · ${tokens(s.context)}`)))))
+      .when(Boolean(p.worktree), (el) => el.child(worktreeLines(p.worktree, t)))
+      .child(div().h(1).mx(4).mb(4).bg(t.border))
+      .children(menuRows(p, t));
+  }
   const used = Math.min(1, s.context / s.window), running = s.subs.filter((x) => !x[2]).length;
   const extra = [s.tasks.length ? `${s.tasksDone}/${s.tasks.length} tasks` : "", running ? `${running} subagent${running === 1 ? "" : "s"} running` : ""].filter(Boolean).join(" · ");
   return v_flex().id("agent-menu").w_full().p(6).gap(1).bg(t.popover).text_size(12.5)

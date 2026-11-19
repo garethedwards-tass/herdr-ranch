@@ -61,7 +61,7 @@ test("pickSession, subagentOf, windows, names and paths", () => {
   assert.equal(utf8Length("a·€😀"), 1 + 2 + 3 + 4);
 });
 
-import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimInsert, resumeArgs, helpArity, envVar, setupFor, scriptFor } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
+import { keysFor, promptText, runningAgents, stopOffered, busyTitle, busyScreen, vimInsert, resumeArgs, helpArity, envVar, setupFor, scriptFor , restartOffered, restartInMenu, exitOffered, agentEntry } from "../herdr-ranch-agents/mods/herdr-ranch-agents/revive.js";
 
 test("revive: typable keys, the prompt, background agents, /stop, busy, vim", () => {
   assert.deepEqual(keysFor("sh /Users/a.b/x-1=2"), ["s", "h", "space", "/", "shift+u", "s", "e", "r", "s", "/", "a", ".", "b", "/", "x", "-", "1", "=", "2"]);
@@ -156,4 +156,32 @@ test("pickSession: several sessions in one folder, the terminal's own process wi
   assert.equal(pickSession(list, "Nothing alike", 30972).sessionId, "mine");
   assert.equal(pickSession(list, "Nothing alike"), null);
   assert.equal(pickSession(list, "Old", 1).sessionId, "bg");
+});
+
+test("restartOffered and restartInMenu: Claude Code's own /restart", () => {
+  const footer = "  ✔ Update installed · /restart to apply\n──\n❯ \n──\n  ⏵⏵ auto mode on";
+  assert.ok(restartOffered(footer));
+  assert.ok(!restartOffered("  ✔ Update installed · Restart to update\n❯ \n"));
+  assert.ok(restartInMenu("❯ /restart\n──\n❯ /restart     Restart Claude Code\n  /resume"));
+  assert.ok(!restartInMenu("❯ /restart\n──\n  No commands match"));
+});
+
+test("promptText and the menus: Claude Code's no-break space after ❯", () => {
+  assert.equal(promptText("──\n❯\u00a0x\n──"), "x");
+  assert.equal(promptText("──\n❯\u00a0\n──"), "");
+  assert.equal(stopOffered("❯\u00a0/stop\n  ❯\u00a0/stop      Stop this background session"), true);
+  assert.ok(restartInMenu("❯\u00a0/restart\n  ❯\u00a0/restart    Restart Claude Code"));
+});
+
+test("exitOffered: /exit highlighted in the slash menu, not the typed prompt", () => {
+  assert.ok(exitOffered("❯\u00a0/exit\n──\n  ❯ /exit      Exit the REPL"));
+  assert.ok(!exitOffered("❯\u00a0/exit\n──\n  No commands match"));
+});
+
+test("agentEntry: the session's kind from claude agents --json", () => {
+  const list = [{ pid: 10, sessionId: "a", kind: "interactive" }, { id: "dabfc713", sessionId: "b", kind: "background" }];
+  assert.equal(agentEntry(list, "b", 99).id, "dabfc713");
+  assert.equal(agentEntry(list, "zzz", 10).kind, "interactive");
+  assert.equal(agentEntry(list, "zzz", 11), null);
+  assert.equal(agentEntry(null, "a", 10), null);
 });

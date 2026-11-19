@@ -1,7 +1,7 @@
 // Bringing back a Claude Code agent that stopped reporting its status to Herdr (OSC 7501): it
 // still runs, but Herdr's own lists and next/previous agent skip it. A fresh start reports again.
-// Claude Code runs sessions in the background (`/exit` only detaches), so: `/stop` (ends the
-// session, keeps the conversation), quit the session list back to the pane's shell, then a small
+// A background session (`/exit` only detaches) ends with `/stop` (keeps the conversation), then its
+// session list is quit back to the pane's shell; a plain one ends with `/exit`; then a small
 // script starts Claude Code again with the running one's own options and `--resume <session id>`,
 // so it reopens this conversation and no other.
 //
@@ -31,11 +31,12 @@ export function keysFor(text) {
   return out;
 }
 
-// The prompt line's text (after "❯ "), from the bottom of a screen; null when none shows.
+// The prompt line's text (after "❯ "), from the bottom of a screen; null when none shows. Newer
+// Claude Code puts a no-break space (U+00A0) after the ❯, so every match here takes either space.
 export function promptText(screen) {
   const lines = (screen ?? "").split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
-    const m = /^❯ ?(.*)$/.exec(lines[i]);
+    const m = /^❯[ \u00a0]?(.*)$/.exec(lines[i]);
     if (m) return m[1].trimEnd();
   }
   return null;
@@ -54,8 +55,16 @@ export const busyScreen = (screen) => /esc to interrupt/i.test(bottom(screen, 8)
 // Vim mode shows "-- INSERT --" while typing adds text; anywhere else a key would edit the draft.
 export const vimInsert = (screen) => /-- INSERT --/.test(bottom(screen, 8));
 
+// Whether Claude Code says an installed update waits for its own /restart ("Update installed ·
+// /restart to apply"); older versions say "Restart to update" and have no /restart.
+export const restartOffered = (screen) => /\/restart to apply/i.test(bottom(screen, 10));
+// Whether the slash menu's highlighted entry is /restart.
+export const restartInMenu = (screen) => /^\s*❯\s\/restart\s{2,}\S/m.test(screen ?? ""); // the menu line, not the prompt
+
 // Whether the slash menu's highlighted entry is Claude Code's /stop for a background session.
-export const stopOffered = (screen) => /^\s*❯ \/stop\s+Stop this background session/m.test(screen ?? "");
+// Whether the slash menu's highlighted entry is /exit (a session that isn't in the background).
+export const exitOffered = (screen) => /^\s*❯\s\/exit\s{2,}\S/m.test(screen ?? "");
+export const stopOffered = (screen) => /^\s*❯\s\/stop\s+Stop this background session/m.test(screen ?? "");
 
 // Claude Code's options by what follows them: nothing (0), one value (1), an optional value ("?"),
 // or several ("*"). Read from the installed `claude --help` (helpArity); STATIC is 2.1.325's, for
@@ -220,14 +229,36 @@ const read = async (t) => (await hc(["read", t]).catch(() => null))?.stdout ?? "
 const keys = (t, ks) => hc(["keys", t, ...ks]);
 const isClaude = (g) => /(^|\/)claude$/.test(g?.foreground?.argv?.[0] ?? "");
 
+// The session's entry in `claude agents --json` (by session id, else by process): its kind
+// ("interactive" or "background") and, for a background one, its short id. null when not listed.
+export function agentEntry(list, sessionId, pid) {
+  if (!Array.isArray(list)) return null;
+  return list.find((e) => e?.sessionId === sessionId) ?? list.find((e) => e?.pid != null && String(e.pid) === String(pid)) ?? null;
+}
+const asAccount = (configDir) => (configDir === `${home()}/.claude` ? "unset CLAUDE_CONFIG_DIR" : `export CLAUDE_CONFIG_DIR=${q(configDir)}`);
+async function sessionEntry(configDir, sessionId, pid) {
+  const r = await exec("sh", ["-lc", `${asAccount(configDir)}; claude agents --json`], { timeout: 15000 }).catch(() => null);
+  try { return agentEntry(JSON.parse(r?.stdout ?? ""), sessionId, pid); } catch { return null; }
+}
+
 // Brings back terminal `t` (an address on this computer) to session `id`. Resolves to null when
 // done, else why not.
-export async function revive(t, session, cx) {
+// restart: also when it's reporting (Restart in its menu: e.g. to pick up an installed update).
+export async function revive(t, session, cx, restart = false) {
   let g = await get(t);
   if (!g || !isClaude(g)) return "Claude Code isn't in front in that terminal.";
-  if (g.status) return null; // reporting again already
+  if (g.status && !restart) return null; // reporting again already
   const { id, configDir, cwd } = session ?? {};
   if (!id || !/^[\w-]+$/.test(id) || !configDir || !cwd) return "Couldn't tell which conversation it is: restart it by hand.";
+  // Which kind of session: a background one restarts with `claude respawn` (nothing typed); an
+  // interactive one ends with /exit; one Claude Code doesn't list is tried with /stop, then /exit.
+  const entry = await sessionEntry(configDir, id, g.foreground.pid);
+  if (restart && entry?.kind === "background" && /^[\w-]+$/.test(entry.id ?? "")) {
+    if (busyTitle(g.title) || /busy|working/.test(entry.state ?? entry.status ?? "")) return "It looks busy: try again when it's done.";
+    const r = await exec("sh", ["-lc", `${asAccount(configDir)}; claude respawn ${q(entry.id)}`], { timeout: 60000 }).catch((e) => ({ code: 1, stderr: String(e?.message ?? e) }));
+    return r.code === 0 ? null : `claude respawn failed: ${(r.stderr || r.stdout || "").trim().split("\n")[0]}`;
+  }
+  const plain = entry?.kind === "interactive";
   // /stop must leave a shell behind to type into: Claude Code can't be the terminal's own program.
   if (String(g.pid) === String(g.foreground.pid)) return "Claude Code is the terminal's own program, with no shell behind it: restart it by hand.";
   let args;
@@ -246,20 +277,49 @@ export async function revive(t, session, cx) {
   // From here on the terminal is touched: look before each key.
   const screen = await read(t);
   if (busyTitle(g.title) || busyScreen(screen)) return "It looks busy: try again when it's done.";
-  if (runningAgents(screen)) return "A background agent of that session is still running: try again when it's done.";
+  // Claude Code's footer ("← 1 agent") keeps finished background agents too: a restart goes by the
+  // session's own records (claude.js subagents) when it has them.
+  const recordsIdle = restart && Array.isArray(session.subs) && session.subs.every((x) => x.done);
+  if (runningAgents(screen) && !recordsIdle) return "A background agent of that session is still running: try again when it's done.";
   if (vim && !vimInsert(screen)) return "Its prompt uses vim keys and isn't in insert mode: press i there, then try again.";
   // A typed draft stays when a key is added; Claude Code's suggested reply is replaced.
   await keys(t, ["x"]);
   let typed = null;
-  for (let i = 0; i < 6 && typed !== "x"; i++) { await cx.sleep(150); typed = promptText(await read(t)); }
+  for (let i = 0; i < 12 && typed !== "x"; i++) { await cx.sleep(200); typed = promptText(await read(t)); }
   await keys(t, ["backspace"]);
   if (typed !== "x") return "It has an unsent message in its prompt: send or clear it first.";
-  await keys(t, keysFor("/stop"));
-  await cx.sleep(400);
-  if (!stopOffered(await read(t))) { await keys(t, ["esc", "ctrl+u"]); return "That Claude Code doesn't offer /stop: restart it by hand."; }
+  // Claude Code's own /restart, where it has one: it restarts in place on the same conversation.
+  if (restart && restartOffered(screen)) {
+    await keys(t, keysFor("/restart"));
+    await cx.sleep(400);
+    if (restartInMenu(await read(t))) {
+      const asked = Date.now();
+      await keys(t, ["enter"]);
+      for (let i = 0; i < 40; i++) {
+        await cx.sleep(500);
+        g = await get(t);
+        if (isClaude(g) && g.status?.app && (g.status_ms ?? 0) >= asked) return null;
+      }
+      return "Claude Code's /restart ran but it isn't reporting yet: check the terminal.";
+    }
+    await keys(t, ["esc", "ctrl+u"]);
+  }
+  let stop = false;
+  if (!plain) {
+    await keys(t, keysFor("/stop"));
+    await cx.sleep(400);
+    stop = stopOffered(await read(t));
+    if (!stop) { await keys(t, ["esc", "ctrl+u"]); await cx.sleep(200); }
+  }
+  if (!stop) {
+    // An interactive session (started as plain `claude`): /exit ends it.
+    await keys(t, keysFor("/exit"));
+    await cx.sleep(400);
+    if (!exitOffered(await read(t))) { await keys(t, ["esc", "ctrl+u"]); return "That Claude Code offers neither /stop nor /exit: restart it by hand."; }
+  }
   await keys(t, ["enter"]);
-  // /stop leaves Claude Code's session list in front: ctrl+c twice quits it. Only a terminal that
-  // answers and shows its shell counts as out.
+  // /stop leaves Claude Code's session list in front (ctrl+c twice quits it); /exit goes straight to
+  // the shell. Only a terminal that answers and shows its shell counts as out.
   let out = false;
   for (let i = 0; i < 20 && !out; i++) {
     await cx.sleep(500);
@@ -282,16 +342,18 @@ export async function revive(t, session, cx) {
 
 // The click: runs revive() once per terminal, and says how it went. `v.reviving` keeps the row
 // (and its spinner) while the pane is a shell between the two Claude Codes.
-export function bringBack(v, a, cx) {
+export function bringBack(v, a, cx, restart = false) {
   if (v.reviving.has(a.address)) return;
   const session = v.claude?.get(a.address) ?? null;
   v.reviving.add(a.address);
   cx.notify();
   cx.spawn(async (cx) => {
     let why;
-    try { why = await revive(a.address, session, cx); } catch (e) { why = String(e?.message ?? e); }
+    try { why = await revive(a.address, session, cx, restart); } catch (e) { why = String(e?.message ?? e); }
     v.reviving.delete(a.address);
-    notify(why ? { title: `Couldn't bring back ${a.space_name}`, body: why, level: "warning" } : { title: `${a.space_name} is reporting again`, level: "success", timeout: 3000 });
+    const name = a.space_name ?? a.name ?? "the agent";
+    notify(why ? { title: `Couldn't ${restart ? "restart" : "bring back"} ${name}`, body: why, level: "warning" }
+      : { title: restart ? `Restarted ${name}` : `${name} is reporting again`, level: "success", timeout: 3000 });
     cx.notify();
   });
 }

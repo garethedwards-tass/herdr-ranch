@@ -11,7 +11,7 @@ import { View, div, image, svg } from "gpui-kit";
 import { HoverCard, h_flex, v_flex } from "gpui-base";
 import { exec, focused, theme, props, shared, setShared, appHome, home } from "herdr";
 import { providerList } from "./providers/index.js";
-import { accounts, accountColor, accountLetter, expand } from "./accounts.js";
+import { accounts, accountColor, accountLetter, expand, defaultLabel } from "./accounts.js";
 import { barModel, cardModel, chooseDensity, panelOnEnter } from "./lib/view.js";
 import { effectivePrefs, isOnBar, isShown, toggleOnBar, toggleProvider, toggleShowBars, toggleShowRemaining, toggleShowResetTime, toggleWindow } from "./lib/prefs.js";
 import { parseSession, sessionOnBar, sessionView } from "./lib/session.js";
@@ -39,7 +39,7 @@ const PANEL_CLOSE_DELAY = 300;      // ms, lets the pointer cross from the bar t
 const now = () => Math.floor(Date.now() / 1000);
 const states = () => shared(KEY_STATE) ?? {};
 // The usual Claude Code, one per account with its own folder, then Codex.
-const providers = () => providerList(accounts(), home(), expand);
+const providers = () => providerList(accounts(), home(), expand, defaultLabel());
 
 // An account's coloured letter, as on the Spaces list.
 function accountBadge(a, size, t) {

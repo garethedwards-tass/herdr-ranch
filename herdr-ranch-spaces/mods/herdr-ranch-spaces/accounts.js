@@ -2,6 +2,7 @@
 // GitHub account (GH_TOKEN from `gh auth token --user`) a space's terminals use.
 // Stored in shared("ranch-accounts"):
 //   { accounts: [{ id, label, claudeDir?: "~/.claude-work", ghUser?: "octocat" }],
+//     defaultLabel?: "Me",  (the name for no account: your usual login; "Default" when unset)
 //     spaces: { <space id>: { account, main, on } } }
 // A space without its own uses its repository's (worktree spaces follow the repository's space).
 // Herdr can't give a space environment variables, so a terminal "as" an account is started with a
@@ -22,6 +23,16 @@ export function accountColor(a, t) {
   return t[COLORS[i % COLORS.length]] ?? t.accent;
 }
 export const accountLetter = (a) => a?.label?.trim().charAt(0).toUpperCase() || "?";
+
+// No account (your usual ~/.claude login and gh account): "Default" unless you named it.
+export const defaultLabel = () => String(read().defaultLabel ?? "").trim() || "Default";
+export const defaultLetter = () => defaultLabel().charAt(0).toUpperCase();
+// "" (or "Default") goes back to "Default".
+export function setDefaultLabel(label) {
+  const all = read(), l = String(label ?? "").trim();
+  const { defaultLabel: _, ...rest } = all;
+  setShared(KEY, l && l !== "Default" ? { ...rest, defaultLabel: l } : rest);
+}
 
 export function accountOf(space, repo) {
   const all = read(), list = all.accounts ?? [];
@@ -49,7 +60,7 @@ export function addAccount(a) {
 export function removeAccount(id) {
   const all = read();
   const spaces = Object.fromEntries(Object.entries(all.spaces ?? {}).filter(([, s]) => s.account !== id));
-  setShared(KEY, { accounts: (all.accounts ?? []).filter((a) => a.id !== id), spaces });
+  setShared(KEY, { ...all, accounts: (all.accounts ?? []).filter((a) => a.id !== id), spaces });
 }
 
 // What a new account may hold: a label, a folder (~ or absolute, no quotes), a GitHub login.

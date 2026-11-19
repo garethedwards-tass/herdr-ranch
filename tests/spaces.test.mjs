@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
 import { place, probe, parseWorktrees, arrange, tail, linkLabel, countStatus, workIn, checkoutAt, hasWork, workText, issueBranch, parseRefs, addArgs, worktreePath, parseStatus, switchArgs, diverged, switchRisk, stashMessage } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js";
 import { source, looksLikeKey } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/issues.js";
-import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts } from "../shared/accounts.js";
+import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts, defaultLabel, defaultLetter, setDefaultLabel } from "../shared/accounts.js";
 
 test("place: the first terminal's live folder, else the space's folder", () => {
   const s = { folder: "/made", tabs: [{ id: "t1" }] };
@@ -256,4 +256,18 @@ test("readLanes: each machine on its own; a failed read or a machine away drops 
   assert.equal(v.lanes[""], undefined, "a failed read drops the lanes");
   assert.equal(changes, 3);
   state.exec = null; state.machines = []; state.spaces = [];
+});
+
+test("defaultLabel: Default until named; a name survives other account changes; empty goes back", () => {
+  state.shared["ranch-accounts"] = { accounts: [], spaces: {} };
+  assert.equal(defaultLabel(), "Default");
+  setDefaultLabel("  Me  ");
+  assert.equal(defaultLabel(), "Me");
+  assert.equal(defaultLetter(), "M");
+  const a = addAccount({ label: "Work", claudeDir: "~/.claude-work" });
+  removeAccount(a.id);
+  assert.equal(defaultLabel(), "Me");
+  setDefaultLabel("");
+  assert.equal(defaultLabel(), "Default");
+  assert.equal("defaultLabel" in state.shared["ranch-accounts"], false);
 });
