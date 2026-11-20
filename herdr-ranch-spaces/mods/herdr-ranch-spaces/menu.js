@@ -26,10 +26,6 @@ export function menuItems(p, agents = []) {
     ...agents.map((a) => [`New ${a.name}`, null, () => run("tab.new", { space: id, name: a.name, argv: acct ? runAs(acct, a.run) : a.run }), a]),
   ];
   if (p.menu === "new-tab") return newTabs(p.space, p.account ? accounts().find((a) => a.id === p.account) ?? null : null);
-  if (p.menu === "new-space") return [
-    ["Terminal", `${ICONS}/square-terminal.svg`, () => run("space.new", { machine: p.machine ?? "" })],
-    ...agents.map((a) => [a.name, null, () => run("space.new", { machine: p.machine ?? "", argv: a.run }), a]),
-  ];
   const acct = p.account ? accounts().find((a) => a.id === p.account) ?? null : null;
   if (p.menu === "checkout") return [
     ["Git: status, pull…", CHROME("git-compare"), () => openGit(null, "status", { folder: p.path, on: p.on })],
@@ -96,7 +92,7 @@ export class SpaceMenu extends View {
     const t = theme(), p = props(), list = menuItems(p, this.agents), i = p.info ?? null;
     // The space's account (its own or its repository's) with its coloured letter; "Default" or its name (your usual
     // Claude Code and gh login) without one. Every space menu has it.
-    const space = p.menu !== "checkout" && p.menu !== "new-tab" && p.menu !== "new-space";
+    const space = p.menu !== "checkout" && p.menu !== "new-tab";
     const acct = space && p.account ? accounts().find((a) => a.id === p.account) ?? null : null;
     const who = space ? h_flex().gap(6).items_center().text_size(12).text_color(t.muted)
       .child(div().size(16).flex_none().rounded(3).bg(acct ? accountColor(acct, t) : t.raised).border_1().border_color(acct ? accountColor(acct, t) : t.border)
@@ -118,7 +114,7 @@ export class SpaceMenu extends View {
         else return;
         cx.notify();
       })
-      .when(p.menu === "new-space" || p.menu === "new-tab", (el) => el.child(div().px(8).pt(4).pb(6).text_size(11).text_color(t.dim).child(p.menu === "new-space" ? "New space with" : "New tab with")))
+      .when(p.menu === "new-tab", (el) => el.child(div().px(8).pt(4).pb(6).text_size(11).text_color(t.dim).child("New tab with")))
       .children(list.map((item, i) => item === SEP ? div().flex_none().h(1).mx(6).my(4).bg(t.border) : menuRow(this, item, i, t)));
   }
 }

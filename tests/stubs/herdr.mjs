@@ -30,6 +30,7 @@ export const watchFolder = () => new Promise(() => {});
 const noop = () => null;
 export const run = (name, args) => { state.ran.push([name, args]); return null; };
 export const _unused = noop, openOverlay = noop, closeOverlay = noop, notify = noop, props = () => ({}), theme = () => ({}), settings = () => ({ ui_font_size: 13 });
+export const pickFolder = async () => null;
 export const knownAgents = async () => [], nextCommand = () => new Promise(() => {});
 export const agents = () => state.agents ?? [], terminals = () => state.terminals ?? [];
 export const hc = async (args) => (state.hc?.(args)) ?? { code: 1, stdout: "", stderr: "" };

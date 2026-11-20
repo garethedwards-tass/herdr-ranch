@@ -11,6 +11,7 @@ import { openLinkDialog } from "./links.js";
 import { LinkDialog } from "./link-dialog.js";
 import { SpaceMenu } from "./menu.js";
 import { NewDialog } from "./new.js";
+import { NewSpaceDialog } from "./new-space.js";
 import { RemoveDialog } from "./remove.js";
 import { GitDialog } from "./git-dialog.js";
 import { accounts, accountOf, accountColor, accountLetter, defaultLabel } from "./accounts.js";
@@ -41,12 +42,12 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 
 // The list opened as one of its own dialogs or popups: that view, else null.
 export function dialogFor(p, cx) {
-  const kind = p?.dialog === "link" ? LinkDialog : p?.dialog === "new" ? NewDialog : p?.dialog === "remove" ? RemoveDialog : p?.dialog === "git" ? GitDialog : p?.menu ? SpaceMenu : null;
+  const kind = p?.dialog === "link" ? LinkDialog : p?.dialog === "new" ? NewDialog : p?.dialog === "new-space" ? NewSpaceDialog : p?.dialog === "remove" ? RemoveDialog : p?.dialog === "git" ? GitDialog : p?.menu ? SpaceMenu : null;
   return kind ? cx.new(kind, p) : null;
 }
 
-// The list's own state, and its commands: "focus" (a dialog of ours closed), and "git",
-// "branches", "new-worktree" for the shown space (bind them in keys.json).
+// The list's own state, and its commands: "focus" (a dialog of ours closed), "new-space", and
+// "git", "branches", "new-worktree" for the shown space (bind them in keys.json).
 export function start(v, cx) {
   v.trees = {};
   v.unfolded = new Set(load("spaces.unfolded", []));
@@ -67,6 +68,7 @@ export function start(v, cx) {
         else if (id && c === "git") openGit(id, "status");
         else if (id && c === "branches") openGit(id, "branches");
         else if (id && c === "new-worktree") openNew(id, "branch");
+        else if (c === "new-space") newSpaceMenu(null);
       }
     } catch { /* the copy is closing */ }
   });
@@ -406,9 +408,9 @@ export function programIcon(program, t, size = 14) {
   return program.tint ? svg(program.icon).size(size).flex_none().text_color(t.muted) : image(program.icon).w(size).h(size).flex_none();
 }
 
-// The + for a new space: a menu of Terminal and each agent Herdr knows is installed there.
+// The + for a new space: the New space dialog (folder, name, Terminal or an agent), new-space.js.
 export function newSpaceMenu(machine) {
-  openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 240, height: 300, props: { menu: "new-space", machine: machine ?? "" } });
+  openOverlay({ mod: MOD, kind: "dialog", width: 560, height: 560, props: { dialog: "new-space", machine: machine ?? "" } });
 }
 
 const STATUS = { blocked: "blocked", done: "done", working: "working", idle: "idle" };

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { state } from "./stubs/herdr.mjs";
 import { place, probe, parseWorktrees, arrange, tail, linkLabel, countStatus, workIn, checkoutAt, hasWork, workText, issueBranch, parseRefs, addArgs, worktreePath, parseStatus, switchArgs, diverged, switchRisk, stashMessage } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js";
 import { source, looksLikeKey } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/issues.js";
+import { resolveFolder, tilde, splitTyped, suggestions } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/new-space.js";
 import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts, defaultLabel, defaultLetter, setDefaultLabel } from "../shared/accounts.js";
 
 test("place: the first terminal's live folder, else the space's folder", () => {
@@ -270,4 +271,26 @@ test("defaultLabel: Default until named; a name survives other account changes; 
   setDefaultLabel("");
   assert.equal(defaultLabel(), "Default");
   assert.equal("defaultLabel" in state.shared["ranch-accounts"], false);
+});
+
+test("new space: typed folders, ~ and suggestions", () => {
+  const H = "/Users/test";
+  assert.equal(resolveFolder("~", H), H);
+  assert.equal(resolveFolder("~/dev", H), `${H}/dev`);
+  assert.equal(resolveFolder("dev/x", H), `${H}/dev/x`);
+  assert.equal(resolveFolder("/opt", H), "/opt");
+  assert.equal(resolveFolder("  ", H), "");
+  assert.equal(tilde(`${H}/dev/`, H), "~/dev");
+  assert.equal(tilde("/opt/x", H), "/opt/x");
+  assert.deepEqual(splitTyped("~/dev/her", H), [`${H}/dev`, "her"]);
+  assert.deepEqual(splitTyped("~/dev/", H), [`${H}/dev`, ""]);
+  assert.deepEqual(splitTyped("~", H), [H, ""]);
+  assert.deepEqual(splitTyped("", H), [H, ""]);
+  assert.deepEqual(splitTyped("/op", H), ["/", "op"]);
+  const kids = ["herdr", "Zebra", "my-herdr", ".hidden"];
+  const used = [`${H}/dev/herdr`, `${H}/work/app`];
+  assert.deepEqual(suggestions("~/dev/her", H, kids, used), [`${H}/dev/herdr`, `${H}/dev/my-herdr`]);
+  assert.deepEqual(suggestions("~/dev/.h", H, kids, []), [`${H}/dev/.hidden`]);
+  assert.deepEqual(suggestions("", H, ["dev"], used), [...used, `${H}/dev`]);
+  assert.deepEqual(suggestions("/op", H, ["opt", "usr"], []), ["/opt"]);
 });
