@@ -6,7 +6,7 @@ import { state } from "./stubs/herdr.mjs";
 import { newer } from "../shared/update.js";
 import { fill, clean, DEFAULTS } from "../shared/prompts.js";
 import { storeSignIn, removeSignIn, credentials, forget, trustSite, call } from "../shared/jira-client.js";
-import { loadAvatars, avatarPics } from "../shared/links.js";
+import { loadAvatars, avatarPics, spaceRepo } from "../shared/links.js";
 
 const ok = (stdout = "") => ({ code: 0, stdout, stderr: "" });
 const fail = { code: 1, stdout: "", stderr: "" };
@@ -172,4 +172,11 @@ test("prompts: stack-fix uses gh stack and never merges", () => {
 
 test("prompts: stack-fix says what to do with a layer checked out in another worktree", () => {
   assert.match(DEFAULTS["stack-fix"], /checked out in another worktree/);
+});
+
+test("spaceRepo: a space whose folder is gone is not in a repository, not an error", async () => {
+  const before = state.exec;
+  state.exec = () => { throw new Error("`herdr.exec`: cannot run git: No such file or directory (os error 2)"); };
+  try { assert.equal(await spaceRepo({ id: "s1", folder: "/gone", machine: null }), null); }
+  finally { state.exec = before; }
 });

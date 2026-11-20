@@ -65,8 +65,8 @@ export function parseWorktrees(text) {
 }
 
 export async function worktrees(main, on) {
-  const r = await exec("git", ["worktree", "list", "--porcelain"], { cwd: main, on });
-  return r.code === 0 ? parseWorktrees(r.stdout) : [];
+  const r = await exec("git", ["worktree", "list", "--porcelain"], { cwd: main, on }).catch(() => null);
+  return r?.code === 0 ? parseWorktrees(r.stdout) : [];
 }
 
 const inside = (p, dir) => p === dir || p.startsWith(dir + "/");
@@ -201,8 +201,8 @@ export function parseRefs(text, checkouts = []) {
 }
 
 export async function branches(main, on, checkouts) {
-  const r = await exec("git", ["for-each-ref", "--sort=-committerdate", "--format=%(refname)%09%(committerdate:unix)", "refs/heads", "refs/remotes"], { cwd: main, on });
-  return r.code === 0 ? parseRefs(r.stdout, checkouts).slice(0, 300) : [];
+  const r = await exec("git", ["for-each-ref", "--sort=-committerdate", "--format=%(refname)%09%(committerdate:unix)", "refs/heads", "refs/remotes"], { cwd: main, on }).catch(() => null);
+  return r?.code === 0 ? parseRefs(r.stdout, checkouts).slice(0, 300) : [];
 }
 
 // The arguments for `git worktree add`: an existing local branch is checked out, a remote one
@@ -274,8 +274,8 @@ export function parseCommits(text) {
 
 // The commits on HEAD that no remote has, newest first (at most `max`); [] without a remote.
 export async function notPushed(top, on, max = 30) {
-  const remote = await exec("git", ["remote"], { cwd: top, on });
-  if (remote.code !== 0 || !remote.stdout.trim()) return [];
-  const r = await exec("git", ["log", `-n${max}`, "--format=%h%x09%s%x09%an%x09%ct", "HEAD", "--not", "--remotes"], { cwd: top, on });
-  return r.code === 0 ? parseCommits(r.stdout) : [];
+  const remote = await exec("git", ["remote"], { cwd: top, on }).catch(() => null);
+  if (remote?.code !== 0 || !remote.stdout.trim()) return [];
+  const r = await exec("git", ["log", `-n${max}`, "--format=%h%x09%s%x09%an%x09%ct", "HEAD", "--not", "--remotes"], { cwd: top, on }).catch(() => null);
+  return r?.code === 0 ? parseCommits(r.stdout) : [];
 }

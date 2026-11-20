@@ -28,9 +28,10 @@ function parseToml(text) {
   return projects.filter((p) => p.site && p.key).map((p) => ({ ...p, site: cleanSite(p.site) })).filter((p) => validSite(p.site) && /^[A-Z][A-Z0-9_]+$/.test(p.key));
 }
 
+// null when git fails, and when it can't start there (a folder that's gone throws ENOENT).
 async function git(cwd, args, on) {
-  const r = await exec("git", args, { cwd, on });
-  return r.code === 0 ? r.stdout.trim() : null;
+  const r = await exec("git", args, { cwd, on }).catch(() => null);
+  return r?.code === 0 ? r.stdout.trim() : null;
 }
 
 // A committed `.herdr/jira.toml` names the projects for everyone who clones the repository.

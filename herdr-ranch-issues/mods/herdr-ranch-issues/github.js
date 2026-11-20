@@ -12,7 +12,8 @@ export const SITE = "github.com";
 // where: { cwd, on, github }; `github` ("owner/repo") picks the repository, the folder
 // only which machine and sign-in runs gh.
 async function gh(args, where) {
-  const r = await exec("gh", args, { cwd: where.cwd, on: where.on });
+  // A folder that's gone (a deleted worktree) can't be gh's cwd: it runs from home instead.
+  const r = await exec("gh", args, { cwd: where.cwd, on: where.on }).catch((e) => (where.cwd ? exec("gh", args, { on: where.on }) : Promise.reject(e)));
   if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim() || `gh ${args[0]} failed`);
   return r.stdout;
 }

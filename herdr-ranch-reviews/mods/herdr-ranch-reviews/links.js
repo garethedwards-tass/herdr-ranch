@@ -16,9 +16,10 @@ const KEY = "space-links";
 
 export const activeSpace = () => spaces().find((s) => s.active) ?? null;
 
+// null when git fails, and when it can't start there (a folder that's gone throws ENOENT).
 async function git(cwd, args, on) {
-  const r = await exec("git", args, { cwd, on });
-  return r.code === 0 ? r.stdout.trim() : null;
+  const r = await exec("git", args, { cwd, on }).catch(() => null);
+  return r?.code === 0 ? r.stdout.trim() : null;
 }
 
 // The repository a space's folder is in: its main checkout (worktrees share it) and machine.

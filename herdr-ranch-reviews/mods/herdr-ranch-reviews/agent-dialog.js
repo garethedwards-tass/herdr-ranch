@@ -33,8 +33,9 @@ async function homeOf(on) {
   return h.startsWith("/") ? h : null;
 }
 
+// Not ok when git can't start there either (a folder that's gone throws ENOENT).
 async function git(cwd, args, on) {
-  const r = await exec("git", args, { cwd, on });
+  const r = await exec("git", args, { cwd, on }).catch((e) => ({ code: -1, stdout: "", stderr: `${cwd} can't be used: ${e?.message ?? e}` }));
   return { ok: r.code === 0, out: r.stdout.trim(), err: (r.stderr || r.stdout).trim() };
 }
 
