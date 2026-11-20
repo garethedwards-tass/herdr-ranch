@@ -125,6 +125,7 @@ test("revive: the account from the session's config folder; HERDR_RANCH_ACCOUNT 
   const list = [{ id: "personal-1", claudeDir: "~/.claude-personal", ghUser: "octo" }, { id: "gh-2", ghUser: "work" }];
   // The usual folder: unset whatever the shell has; a GitHub-only account named by Claude Code adds its login.
   assert.equal(setupFor({ configDir: `${home}/.claude`, home, list }), "unset CLAUDE_CONFIG_DIR");
+  assert.match(setupFor({ configDir: `${home}/.claude`, home, list, defaultGh: "me" }), /^unset CLAUDE_CONFIG_DIR; GH_TOKEN=\$\(gh auth token --user 'me'/);
   assert.equal(setupFor({ configDir: `${home}/.claude`, home, named: "gh-2", list }),
     `export HERDR_RANCH_ACCOUNT=gh-2; GH_TOKEN=$(gh auth token --user 'work' 2>/dev/null) && export GH_TOKEN || echo 'herdr-ranch: no gh token for work (gh auth login)' >&2; unset CLAUDE_CONFIG_DIR`);
   // An account's folder: that account, whatever Claude Code names (a stale inherited name can't win).

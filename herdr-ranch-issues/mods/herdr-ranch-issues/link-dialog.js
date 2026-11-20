@@ -16,7 +16,7 @@ import { props, closeOverlay, theme, spaces, exec, run } from "herdr";
 import { spaceRepo, linkOf, saveLink, knownSites, detectGithub, openUrl } from "./links.js";
 import { credentials, myself, findProjects, cleanSite, call, TOKEN_PAGE, storeSignIn, removeSignIn, platform, STORE, validSite, trustedSite, trustSite } from "./jira-client.js";
 import { fs } from "./links.js";
-import { accounts, accountOf, setAccount, addAccount, removeAccount, checkAccount, parseGhAccounts, accountColor, accountLetter, defaultLabel, setDefaultLabel } from "./accounts.js";
+import { accounts, accountOf, setAccount, addAccount, updateAccount, removeAccount, checkAccount, parseGhAccounts, accountColor, accountLetter, defaultLabel, setDefaultLabel, defaultGhUser, setDefaultGhUser, defaultBadge, ghAs, ghUserOf } from "./accounts.js";
 import { linearKey, viewer as linearViewer, findTeams, connectLinear, disconnectLinear, KEY_PAGE as LINEAR_KEY_PAGE } from "./linear-client.js";
 
 const branchKey = (branch) => /\b([A-Z][A-Z0-9]{1,9})-\d+\b/.exec(branch ?? "")?.[1] ?? "";
@@ -51,11 +51,11 @@ export class LinkDialog extends View {
     this.linTeam.on("focus", (_e, cx) => { this.linOpen = true; cx.notify(); });
     this.handle = cx.focus_handle();
     // Account: the choice (an id, null for the default; undefined until read), the New account form.
-    this.acct = undefined; this.acctWas = undefined; this.acctForm = false; this.acctError = ""; this.ghUsers = null; this.ghUser = "";
+    this.acct = undefined; this.acctWas = undefined; this.acctForm = false; this.acctEditing = null; this.acctError = ""; this.ghUsers = null; this.ghUser = "";
     this.acctLabel = InputState.new({ placeholder: "Work, Personal…" });
     this.acctDir = InputState.new({ placeholder: "~/.claude-<label> (empty: keep the usual login)" });
-    // Renaming no account (Default): its own small form, saved straight away.
-    this.defForm = false; this.defError = "";
+    // Editing no account (Default): its name and GitHub login, in its own small form saved straight away.
+    this.defForm = false; this.defError = ""; this.defGh = "";
     this.defName = InputState.new({ placeholder: "Default" });
     this.defName.on("change", (_e, cx) => { if (this.defError) { this.defError = ""; cx.notify(); } });
     this.defName.on("submit", (_e, cx) => this.renameDefault(cx));
@@ -104,12 +104,29 @@ export class LinkDialog extends View {
       this.ghOpen = false; this.jiraOpen = false;
       this.checkSite(cx);
       cx.notify();
-      const list = await exec("gh", ["repo", "list", "--limit", "200", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner"]).catch(() => null);
+      this.loadRepos(cx);
+    });
+  }
+
+  // The GitHub login the chosen account uses ("" for gh's active one): repositories are listed and
+  // searched as it, so the ones a work account sees are offered when it's picked.
+  acctGhUser() { return ghUserOf(accounts().find((x) => x.id === this.acct) ?? null); }
+
+  // Your repositories and login as the chosen account's GitHub login; again when it changes.
+  loadRepos(cx) {
+    const user = this.acctGhUser();
+    if (this.reposFor === user) return;
+    this.reposFor = user; this.repos = []; this.found = []; this.ghLogin = null; this.ghSignedOut = false;
+    cx.spawn(async (cx) => {
+      const list = await ghAs(user, ["repo", "list", "--limit", "200", "--json", "nameWithOwner", "--jq", ".[].nameWithOwner"]).catch(() => null);
+      if (this.reposFor !== user) return;
       if (list?.code === 0) this.repos = list.stdout.split("\n").filter(Boolean);
       else this.ghSignedOut = true;
-      const who = this.ghSignedOut ? null : await exec("gh", ["api", "user", "--jq", ".login"]).catch(() => null);
+      const who = this.ghSignedOut ? null : await ghAs(user, ["api", "user", "--jq", ".login"]).catch(() => null);
+      if (this.reposFor !== user) return;
       if (who?.code === 0) this.ghLogin = who.stdout.trim();
       cx.notify();
+      if (this.github.value().trim().length >= 3) this.searchGithub(cx);
     });
   }
 
@@ -137,7 +154,7 @@ export class LinkDialog extends View {
     const q = this.github.value().trim();
     if (q.length < 3 || this.ghSignedOut) { this.found = []; cx.notify(); return; }
     cx.spawn(async (cx) => {
-      const r = await exec("gh", ["search", "repos", q, "--limit", "8", "--json", "fullName", "--jq", ".[].fullName"]).catch(() => null);
+      const r = await ghAs(this.acctGhUser(), ["search", "repos", q, "--limit", "8", "--json", "fullName", "--jq", ".[].fullName"]).catch(() => null);
       if (this.github.value().trim() === q) { this.found = r?.code === 0 ? r.stdout.split("\n").filter(Boolean) : []; cx.notify(); }
     });
   }
@@ -259,38 +276,61 @@ export class LinkDialog extends View {
     cx.notify();
   }
 
-  // New account: add it to the list and choose it (saved with the rest).
+  // New account: add it to the list and choose it (saved with the rest). Editing one: change it in
+  // place, straight away (an empty folder then means none, not ~/.claude-<label>).
   addAccount(cx) {
-    const label = this.acctLabel.value().trim();
-    const a = { label, claudeDir: this.acctDir.value().trim() || (label ? `~/.claude-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : ""), ghUser: this.ghUser };
+    const label = this.acctLabel.value().trim(), dir = this.acctDir.value().trim();
+    const editing = this.acctEditing;
+    const a = { label, claudeDir: dir || (!editing && label ? `~/.claude-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : ""), ghUser: this.ghUser };
     const err = checkAccount(a);
     if (err) { this.acctError = err; cx.notify(); return; }
-    this.acct = addAccount(a).id;
-    this.acctLabel.set_value(""); this.acctDir.set_value(""); this.ghUser = ""; this.acctForm = false;
+    if (editing) updateAccount(editing, a);
+    else this.acct = addAccount(a).id;
+    this.reposFor = undefined; this.loadRepos(cx);
+    this.closeAccountForm();
     cx.notify();
   }
+  closeAccountForm() {
+    this.acctLabel.set_value(""); this.acctDir.set_value(""); this.ghUser = ""; this.acctForm = false; this.acctEditing = null; this.acctError = "";
+  }
 
-  // The name for no account; empty goes back to "Default".
+  // No account's name (empty goes back to "Default") and GitHub login (none: gh's active account).
   renameDefault(cx) {
     const label = this.defName.value().trim();
     if (label && !/^[\w .-]{1,40}$/.test(label)) { this.defError = "Name: letters, digits, spaces, . _ -"; cx.notify(); return; }
     setDefaultLabel(label);
+    setDefaultGhUser(this.defGh);
+    this.loadRepos(cx);
     this.defForm = false;
     cx.notify();
   }
   openDefaultForm(cx) {
     this.defForm = !this.defForm; this.defError = "";
-    if (this.defForm) this.defName.set_value(defaultLabel() === "Default" ? "" : defaultLabel());
+    if (this.defForm) this.closeAccountForm();
+    if (this.defForm) { this.defName.set_value(defaultLabel() === "Default" ? "" : defaultLabel()); this.defGh = defaultGhUser(); this.loadGhUsers(cx); }
     cx.notify();
   }
 
-  openAccountForm(cx) {
-    this.acctForm = !this.acctForm; this.acctError = "";
-    if (this.acctForm && this.ghUsers === null) cx.spawn(async (cx) => {
+  // The accounts gh is signed in to, read once, for the GitHub chips.
+  loadGhUsers(cx) {
+    if (this.ghUsers !== null || this.ghLoading) return;
+    this.ghLoading = true;
+    cx.spawn(async (cx) => {
       const r = await exec("gh", ["auth", "status"]).catch(() => null);
       this.ghUsers = parseGhAccounts(`${r?.stdout ?? ""}\n${r?.stderr ?? ""}`);
       cx.notify();
     });
+  }
+
+  // New account… toggles an empty form; Edit on an account opens it filled in with that account.
+  openAccountForm(cx, edit = null) {
+    const open = edit ? this.acctEditing !== edit.id : !this.acctForm || Boolean(this.acctEditing);
+    this.closeAccountForm();
+    if (open) {
+      this.acctForm = true; this.acctEditing = edit?.id ?? null; this.defForm = false;
+      if (edit) { this.acctLabel.set_value(edit.label ?? ""); this.acctDir.set_value(edit.claudeDir ?? ""); this.ghUser = edit.ghUser ?? ""; }
+      this.loadGhUsers(cx);
+    }
     cx.notify();
   }
 
@@ -430,24 +470,29 @@ export class LinkDialog extends View {
     // Account: no account (Default, or what you named it) or one of the list, its details, and the New account form.
     const accts = accounts(), cur = accts.find((x) => x.id === this.acct) ?? null;
     const letter = (x) => div().size(14).flex_none().flex().items_center().justify_center().rounded(3).bg(accountColor(x, t)).text_color(t.background).text_size(9).font_semibold().child(accountLetter(x));
-    const acctChip = (x) => h_flex().id(`acct-${x?.id ?? "default"}`).gap(5).items_center().pl(x ? 4 : 9).pr(9).py(1).rounded_full().text_size(fs.tiny).cursor_pointer()
+    const acctChip = (x, shown = x ?? defaultBadge()) => h_flex().id(`acct-${x?.id ?? "default"}`).gap(5).items_center().pl(shown ? 4 : 9).pr(9).py(1).rounded_full().text_size(fs.tiny).cursor_pointer()
       .border_1().border_color(this.acct === (x?.id ?? null) ? t.accent : t.border).text_color(this.acct === (x?.id ?? null) ? t.accent : t.muted)
       .when(this.acct === (x?.id ?? null), (e) => e.bg(t.accent + "14")).hover((s) => s.bg(t.hover))
-      .on_click((_e, cx) => { this.acct = x?.id ?? null; cx.notify(); })
-      .when(Boolean(x), (e) => e.child(letter(x))).child(x?.label ?? defaultLabel());
+      .on_click((_e, cx) => { this.acct = x?.id ?? null; if (this.acctEditing) this.closeAccountForm(); this.defForm = false; this.loadRepos(cx); cx.notify(); })
+      .when(Boolean(shown), (e) => e.child(letter(shown))).child(x?.label ?? defaultLabel());
     const accountBody = v_flex().gap(8)
       .child(h_flex().gap(6).flex_wrap().items_center()
-        .child(acctChip(null)).children(accts.map(acctChip))
-        .child(chip("acct-new", this.acctForm ? "Cancel new account" : "New account…", this.acctForm, (cx) => this.openAccountForm(cx))))
+        .child(acctChip(null)).children(accts.map((x) => acctChip(x)))
+        .child(chip("acct-new", this.acctForm && !this.acctEditing ? "Cancel new account" : "New account…", this.acctForm && !this.acctEditing, (cx) => this.openAccountForm(cx))))
       .child(h_flex().gap(8).items_center()
-        .child(div().flex_1().min_w(0).child(hint(cur ? [cur.claudeDir && `Claude Code: ${cur.claudeDir}`, cur.ghUser && `GitHub: ${cur.ghUser}`].filter(Boolean).join(" · ") : "Your usual Claude Code login and gh account.")))
-        .when(Boolean(cur), (e) => e.child(button("acct-remove", "Remove from list", "link", (cx) => { removeAccount(cur.id); if (this.acctWas === cur.id) this.acctWas = null; this.acct = null; cx.notify(); })))
-        .when(!cur && this.acct !== undefined, (e) => e.child(button("acct-rename-default", this.defForm ? "Cancel" : "Rename", "link", (cx) => this.openDefaultForm(cx)))))
+        .child(div().flex_1().min_w(0).child(hint(cur ? [cur.claudeDir && `Claude Code: ${cur.claudeDir}`, cur.ghUser && `GitHub: ${cur.ghUser}`].filter(Boolean).join(" · ") : defaultGhUser() ? `Your usual Claude Code login · GitHub: ${defaultGhUser()}` : "Your usual Claude Code login and gh's active account.")))
+        .when(Boolean(cur), (e) => e.child(button("acct-edit", this.acctEditing === cur.id ? "Cancel" : "Edit", "link", (cx) => this.openAccountForm(cx, cur)))
+          .child(button("acct-remove", "Remove from list", "link", (cx) => { removeAccount(cur.id); if (this.acctWas === cur.id) this.acctWas = null; this.acct = null; this.closeAccountForm(); this.loadRepos(cx); cx.notify(); })))
+        .when(!cur && this.acct !== undefined, (e) => e.child(button("acct-rename-default", this.defForm ? "Cancel" : "Edit", "link", (cx) => this.openDefaultForm(cx)))))
       .when(!cur && this.defForm, (e) => e.child(v_flex().gap(8).p(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
         .child(v_flex().gap(4).child(label("Name for your usual login")).child(box(this.defName, false)))
+        .child(h_flex().gap(6).flex_wrap().items_center().child(label("GitHub"))
+          .children((this.ghUsers ?? []).map((u) => chip(`def-gh-${u}`, u, this.defGh === u, (cx) => { this.defGh = this.defGh === u ? "" : u; cx.notify(); })))
+          .when(this.ghUsers !== null && this.ghUsers.length === 0, (e) => e.child(hint("none signed in to gh")))
+          .when(this.ghUsers === null, (e) => e.child(hint("Reading gh's accounts…"))))
         .when(Boolean(this.defError), (e) => e.child(hint(this.defError, t.ansi1)))
         .child(h_flex().gap(8).items_center()
-          .child(div().flex_1().min_w(0).child(hint("Shown everywhere instead of Default. Empty goes back to Default.")))
+          .child(div().flex_1().min_w(0).child(hint("Empty name goes back to Default. No GitHub account picked: gh's active one.")))
           .child(button("acct-rename-save", "Save", "blue", (cx) => this.renameDefault(cx))))))
       .when(this.acctForm, (e) => e.child(v_flex().gap(8).p(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
         .child(v_flex().gap(4).child(label("Label")).child(box(this.acctLabel, false)))
@@ -458,8 +503,8 @@ export class LinkDialog extends View {
           .when(this.ghUsers === null, (e) => e.child(hint("Reading gh's accounts…"))))
         .when(Boolean(this.acctError), (e) => e.child(hint(this.acctError, t.ansi1)))
         .child(h_flex().gap(8).items_center()
-          .child(div().flex_1().min_w(0).child(hint("Log in once: open a Claude Code terminal as the account, then /login.")))
-          .child(button("acct-add", "Add", "blue", (cx) => this.addAccount(cx))))))
+          .child(div().flex_1().min_w(0).child(hint(this.acctEditing ? "Saved straight away. Empty folder: the usual Claude Code login." : "Log in once: open a Claude Code terminal as the account, then /login.")))
+          .child(button("acct-add", this.acctEditing ? "Save" : "Add", "blue", (cx) => this.addAccount(cx))))))
       .child(hint("Terminals the Spaces list opens here use the account's Claude Code login and GitHub account."));
 
     return v_flex().id("space-link").size_full().text_size(fs.body).text_color(t.foreground).bg(t.background).track_focus(this.handle)
@@ -471,17 +516,18 @@ export class LinkDialog extends View {
         .child(div().font_semibold().text_size(fs.title + 1).child("Link space"))
         .child(h_flex().gap(4).text_size(fs.meta).text_color(t.muted).min_w(0)
           .child(div().font_semibold().text_color(t.foreground).child(this.space?.name ?? "?"))
-          .child(div().min_w(0).truncate().child("and its worktrees: where its pull requests and issues come from, and its account."))))
+          .child(div().min_w(0).truncate().child("and its worktrees: its account, and where its pull requests and issues come from."))))
       .child(v_flex().id("space-link-body").flex_1().min_h(0).overflow_y_scrollbar().px(16).py(12).gap(12)
-        .child(section(1, "GitHub repository", null, v_flex().gap(4)
+        .child(section(1, "Account", null, accountBody))
+        .child(section(2, "GitHub repository", null, v_flex().gap(4)
           .child(box(this.github, this.ghOpen))
           .when(gh.length > 0, (e) => e.child(suggestions("gh", gh.map((r) => [r, r, this.repos.includes(r) ? "" : "search", (cx) => {
             this.set("github", this.github, r); this.ghOpen = false; this.seq.github = (this.seq.github ?? 0) + 1; cx.notify();
           }]))))
-          .child(this.ghSignedOut ? hint("gh is not signed in: run `gh auth login` in a terminal, then reopen this dialog.", t.ansi1)
+          .child(this.ghSignedOut ? hint(this.reposFor ? `gh has no sign-in for ${this.reposFor}: run \`gh auth login\` in a terminal, then reopen this dialog.` : "gh is not signed in: run `gh auth login` in a terminal, then reopen this dialog.", t.ansi1)
             : h_flex().gap(6).items_center().child(div().size(8).rounded_full().bg(this.ghLogin ? t.ansi2 : t.dim))
-              .child(hint(this.ghLogin ? `gh is signed in as ${this.ghLogin} · empty uses the folder's remote` : "Empty uses the folder's remote")))))
-        .child(section(2, "Issues from", seg("issues", [["jira", "Jira"], ["linear", "Linear"], ["github", "GitHub"]], this.issues, (v, cx) => { this.issues = v; cx.notify(); }),
+              .child(hint(this.ghLogin ? `Repositories as ${this.ghLogin}${this.reposFor ? " (the account's GitHub login)" : " (gh's active account)"} · empty uses the folder's remote` : "Empty uses the folder's remote")))))
+        .child(section(3, "Issues from", seg("issues", [["jira", "Jira"], ["linear", "Linear"], ["github", "GitHub"]], this.issues, (v, cx) => { this.issues = v; cx.notify(); }),
           jira ? v_flex().gap(8)
             .child(v_flex().gap(4).child(label("Jira site")).child(box(this.site, false)))
             .when(Boolean(jiraStatus), (e) => e.child(jiraStatus))
@@ -490,7 +536,7 @@ export class LinkDialog extends View {
           : v_flex().gap(4).child(label("GitHub issue filter (optional)")).child(box(this.ghFilter, false))
             .child(hint("GitHub search, e.g. label:bug milestone:v2"))
             .when(Boolean(this.ghFilterError), (e) => e.child(hint(this.ghFilterError, t.ansi1)))))
-        .when(this.issues === "linear", (e) => e.child(section(3, "Team and filter", null, v_flex().gap(10)
+        .when(this.issues === "linear", (e) => e.child(section(4, "Team and filter", null, v_flex().gap(10)
           .child(v_flex().gap(4).child(label("Team")).child(box(this.linTeam, this.linOpen))
             .when(this.linOpen && this.teams.length > 0, (e) => e.child(suggestions("lin", this.teams.map((tm) => [tm.id, tm.key, tm.name, (cx) => {
               this.linChosen = tm; this.linOpen = false; this.set("linTeam", this.linTeam, tm.key); this.seq.linTeam = (this.seq.linTeam ?? 0) + 1; cx.notify();
@@ -498,7 +544,7 @@ export class LinkDialog extends View {
             .child(hint(this.linChosen?.name ? this.linChosen.name : this.lin.state === "in" ? "Type to search your teams." : "Connect first to search teams.")))
           .child(v_flex().gap(4).child(label("Show"))
             .child(h_flex().gap(6).flex_wrap().children(LINEAR_PRESETS.map(([v, text]) => chip(`lf-${v || "all"}`, text, this.linFilter === v, (cx) => { this.linFilter = v; cx.notify(); }))))), this.lin.state !== "in")))
-        .when(jira, (e) => e.child(section(3, "Project and filter", null, v_flex().gap(10)
+        .when(jira, (e) => e.child(section(4, "Project and filter", null, v_flex().gap(10)
           .child(v_flex().gap(4)
             .child(label("Project"))
             .child(box(this.project, this.jiraOpen))
@@ -511,7 +557,6 @@ export class LinkDialog extends View {
               .child(chip("f-custom", "Custom JQL…", preset === "custom", (cx) => { this.custom = true; cx.notify(); })))
             .when(preset === "custom", (e) => e.child(box(this.filter, false)).child(hint("JQL that narrows the project's open issues, e.g. labels = backend")))
             .when(Boolean(this.filterError), (e) => e.child(hint(this.filterError, t.ansi1)))), !site)))
-        .child(section(this.issues === "github" ? 3 : 4, "Account", null, accountBody))
         .when(Boolean(this.error), (e) => e.child(div().text_size(fs.meta).text_color(t.ansi1).child(this.error))))
       .child(h_flex().flex_none().px(16).py(10).gap(8).items_center().border_t_1().border_color(t.border).bg(t.surface)
         .child(button("guide", "How to connect ↗", "link", () => openUrl(this.issues === "linear" ? "https://github.com/garethedwards-tass/herdr-workspace#connect-linear" : this.issues === "github" ? "https://github.com/garethedwards-tass/herdr-workspace#link-a-space" : GUIDE)))

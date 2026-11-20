@@ -14,7 +14,7 @@ import { props, closeOverlay, theme, spaces, panes, exec, run, home } from "herd
 import { place, probe, worktrees, branches, addArgs, worktreePath, issueBranch, homeOn } from "./git.js";
 import { linkOf, detectGithub } from "./links.js";
 import { source, mine, lookup, looksLikeKey } from "./issues.js";
-import { accountOf, argvAs } from "./accounts.js";
+import { accountOf, argvAs, launchAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
 const MAX_ROWS = 100;
@@ -106,9 +106,9 @@ export class NewDialog extends View {
 
   close() { closeOverlay(props().overlay); run(`${MOD}.focus`); }
 
-  // The new space's first terminal as the repository's account, if it has one.
+  // The new space's first terminal as the repository's account, or no account's GitHub login.
   asAccount() {
-    const a = this.g ? accountOf(this.space, { main: this.g.main, on: this.on }) : null;
+    const a = launchAs(this.g ? accountOf(this.space, { main: this.g.main, on: this.on }) : null);
     return a ? { argv: argvAs(a) } : {};
   }
 

@@ -11,7 +11,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { props, closeOverlay, run, theme, spaces, knownAgents } from "herdr";
 import { openLinkDialog } from "./links.js";
 import { openWorktree, openNew, openRemove, openGit, ICONS } from "./actions.js";
-import { accounts, argvAs, runAs, accountColor, accountLetter, defaultLabel, defaultLetter } from "./accounts.js";
+import { accounts, argvAs, runAs, launchAs, accountColor, accountLetter, defaultLabel, defaultLetter, defaultGhUser, defaultBadge } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
 const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
@@ -21,7 +21,7 @@ const CHROME = (name) => `mods/workspace-chrome/${name}.svg`;
 export const SEP = "-";
 export function menuItems(p, agents = []) {
   // A new tab in a space: a terminal or an agent, as the space's account when it has one.
-  const newTabs = (id, acct) => [
+  const newTabs = (id, chosen, acct = launchAs(chosen)) => [
     ["New terminal", `${ICONS}/square-terminal.svg`, () => run("tab.new", { space: id, ...(acct ? { argv: argvAs(acct) } : {}) })],
     ...agents.map((a) => [`New ${a.name}`, null, () => run("tab.new", { space: id, name: a.name, argv: acct ? runAs(acct, a.run) : a.run }), a]),
   ];
@@ -30,7 +30,7 @@ export function menuItems(p, agents = []) {
   if (p.menu === "checkout") return [
     ["Git: status, pull…", CHROME("git-compare"), () => openGit(null, "status", { folder: p.path, on: p.on })],
     ["Switch branch…", CHROME("git-branch"), () => openGit(null, "branches", { folder: p.path, on: p.on })],
-    ["Create space here", CHROME("plus"), () => run("space.new", { folder: p.path, machine: p.on ?? "", ...(acct ? { argv: argvAs(acct) } : {}) })],
+    ["Create space here", CHROME("plus"), () => { const as = launchAs(acct); run("space.new", { folder: p.path, machine: p.on ?? "", ...(as ? { argv: argvAs(as) } : {}) }); }],
     ["Delete worktree…", CHROME("x"), () => openRemove(p)],
     ["Copy path", CHROME("file-text"), (cx) => cx.write_to_clipboard(p.path)],
   ];
@@ -95,9 +95,9 @@ export class SpaceMenu extends View {
     const space = p.menu !== "checkout" && p.menu !== "new-tab";
     const acct = space && p.account ? accounts().find((a) => a.id === p.account) ?? null : null;
     const who = space ? h_flex().gap(6).items_center().text_size(12).text_color(t.muted)
-      .child(div().size(16).flex_none().rounded(3).bg(acct ? accountColor(acct, t) : t.raised).border_1().border_color(acct ? accountColor(acct, t) : t.border)
-        .flex().items_center().justify_center().text_size(10.5).font_semibold().text_color(acct ? t.background : t.dim).child(acct ? accountLetter(acct) : defaultLetter()))
-      .child(div().min_w(0).truncate().child(acct ? `${acct.label}${acct.ghUser ? ` · ${acct.ghUser}` : ""}` : defaultLabel() === "Default" ? "Default account" : defaultLabel())) : null;
+      .child(((b) => div().size(16).flex_none().rounded(3).bg(b ? accountColor(b, t) : t.raised).border_1().border_color(b ? accountColor(b, t) : t.border)
+        .flex().items_center().justify_center().text_size(10.5).font_semibold().text_color(b ? t.background : t.dim).child(b ? accountLetter(b) : defaultLetter()))(acct ?? defaultBadge()))
+      .child(div().min_w(0).truncate().child(acct ? `${acct.label}${acct.ghUser ? ` · ${acct.ghUser}` : ""}` : `${defaultLabel() === "Default" ? "Default account" : defaultLabel()}${defaultGhUser() ? ` · ${defaultGhUser()}` : ""}`)) : null;
     // ↑/↓ skip the dividers.
     const step = (d) => { let n = this.at; do n = (n + d + list.length) % list.length; while (list[n] === SEP && n !== this.at); this.at = n; };
     return v_flex().id("spaces-menu").track_focus(this.handle).w_full().min_h(0).p(5).bg(t.popover).text_size(12.8)

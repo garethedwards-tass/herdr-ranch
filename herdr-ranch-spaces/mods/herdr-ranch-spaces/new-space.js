@@ -10,6 +10,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, theme, spaces, panes, exec, run, home, knownAgents, pickFolder } from "herdr";
 import { place, homeOn } from "./git.js";
 import { ICONS } from "./actions.js";
+import { launchAs, argvAs, runAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
 const MAX = 8; // suggestions shown
@@ -147,11 +148,13 @@ export class NewSpaceDialog extends View {
       if (r?.code !== 0) { this.busy = false; this.error = `${tilde(path, this.home)} isn't a folder${this.on ? ` on ${this.on}` : ""}.`; cx.notify(); return; }
       const agent = this.with === "terminal" ? null : this.agents.find((a) => a.name === this.with);
       const name = this.name.value().trim(), task = this.task.value().trim();
+      // As no account's GitHub login, when it has one (the Link space dialog sets an account later).
+      const as = launchAs(null);
       this.close();
       run("space.new", {
         folder: path, machine: this.on ?? "",
         ...(name ? { name } : {}),
-        ...(agent ? { argv: agent.run, tab: agent.name, ...(task ? { task } : {}) } : {}),
+        ...(agent ? { argv: as ? runAs(as, agent.run) : agent.run, tab: agent.name, ...(task ? { task } : {}) } : as ? { argv: argvAs(as) } : {}),
       });
     });
   }

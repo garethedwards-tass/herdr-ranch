@@ -3,13 +3,15 @@
 // Stored in shared("ranch-accounts"):
 //   { accounts: [{ id, label, claudeDir?: "~/.claude-work", ghUser?: "octocat" }],
 //     defaultLabel?: "Me",  (the name for no account: your usual login; "Default" when unset)
-//     spaces: { <space id>: { account, main, on } } }
-// A space without its own uses its repository's (worktree spaces follow the repository's space).
+//     defaultGhUser?: "octocat",  (the GitHub account no account's terminals use; gh's active one when unset)
+//     spaces: { <space id>: { account, main, on } } }  (account null: Default chosen for that space)
+// A space without its own uses its repository's (worktree spaces follow the repository's space);
+// one that chose Default keeps it, and only for itself: others don't inherit a Default.
 // Herdr can't give a space environment variables, so a terminal "as" an account is started with a
 // small sh script that sets them and then runs your shell or Claude Code. The token is fetched
 // inside that script: it never sits on a command line or in Herdr's settings.
 
-import { shared, setShared } from "herdr";
+import { shared, setShared, exec } from "herdr";
 
 const KEY = "ranch-accounts";
 const read = () => shared(KEY) ?? { accounts: [], spaces: {} };
@@ -19,6 +21,7 @@ export const accounts = () => read().accounts ?? [];
 // An account's color (a theme key's value), by its place in the list, and its letter.
 const COLORS = ["ansi5", "ansi4", "ansi6", "ansi3", "ansi2", "ansi1"];
 export function accountColor(a, t) {
+  if (a?.isDefault) return t.muted;
   const i = Math.max(0, accounts().findIndex((x) => x.id === a?.id));
   return t[COLORS[i % COLORS.length]] ?? t.accent;
 }
@@ -27,6 +30,9 @@ export const accountLetter = (a) => a?.label?.trim().charAt(0).toUpperCase() || 
 // No account (your usual ~/.claude login and gh account): "Default" unless you named it.
 export const defaultLabel = () => String(read().defaultLabel ?? "").trim() || "Default";
 export const defaultLetter = () => defaultLabel().charAt(0).toUpperCase();
+// No account drawn like an account once you've named it (its letter on a neutral square), for
+// accountColor and accountLetter; null while it's still "Default". For showing only, never launchAs.
+export const defaultBadge = () => (defaultLabel() === "Default" ? null : { id: null, label: defaultLabel(), isDefault: true });
 // "" (or "Default") goes back to "Default".
 export function setDefaultLabel(label) {
   const all = read(), l = String(label ?? "").trim();
@@ -34,18 +40,38 @@ export function setDefaultLabel(label) {
   setShared(KEY, l && l !== "Default" ? { ...rest, defaultLabel: l } : rest);
 }
 
-export function accountOf(space, repo) {
-  const all = read(), list = all.accounts ?? [];
+// No account's GitHub login: "" uses whichever account gh has active.
+export const defaultGhUser = () => String(read().defaultGhUser ?? "").trim();
+export function setDefaultGhUser(user) {
+  const all = read(), u = String(user ?? "").trim();
+  const { defaultGhUser: _, ...rest } = all;
+  setShared(KEY, u ? { ...rest, defaultGhUser: u } : rest);
+}
+
+// What a terminal is started as: the account, or for no account its GitHub login when it has one
+// (no id: it isn't an account the Agents list can name). null: start it plainly.
+export function launchAs(a) {
+  if (a) return a;
+  const ghUser = defaultGhUser();
+  return ghUser ? { ghUser } : null;
+}
+
+export function accountOf(space, repo, all = read()) {
+  const list = all.accounts ?? [];
   const mine = all.spaces?.[space?.id];
-  const pick = mine ?? (repo ? Object.values(all.spaces ?? {}).find((s) => s.main === repo.main && (s.on ?? null) === (repo.on ?? null)) : null);
+  const pick = mine ?? (repo ? Object.values(all.spaces ?? {}).find((s) => s.account && s.main === repo.main && (s.on ?? null) === (repo.on ?? null)) : null);
   return pick?.account ? list.find((a) => a.id === pick.account) ?? null : null;
 }
 
-// `account` null: the space goes back to the default (and stops overriding its repository's).
+// `account` null: the space uses the default. Kept as its own choice when its repository has an
+// account it would otherwise inherit (a worktree of a Personal repository picking Default), else
+// its entry goes.
 export function setAccount(space, repo, account) {
   const all = read(), spaces = { ...(all.spaces ?? {}) };
-  if (account) spaces[space.id] = { account: account.id, main: repo?.main ?? null, on: repo?.on ?? null };
-  else delete spaces[space.id];
+  delete spaces[space.id];
+  const entry = (id) => ({ account: id, main: repo?.main ?? null, on: repo?.on ?? null });
+  if (account) spaces[space.id] = entry(account.id);
+  else if (accountOf(space, repo, { ...all, spaces })) spaces[space.id] = entry(null);
   setShared(KEY, { ...all, spaces });
 }
 
@@ -55,6 +81,17 @@ export function addAccount(a) {
   const account = { id, label: a.label, ...(a.claudeDir ? { claudeDir: a.claudeDir } : {}), ...(a.ghUser ? { ghUser: a.ghUser } : {}) };
   setShared(KEY, { ...all, accounts: [...(all.accounts ?? []), account] });
   return account;
+}
+
+// Changes an account's label, Claude Code folder and GitHub login; its id (and so its spaces) stays.
+// Empty folder or login: it has none.
+export function updateAccount(id, a) {
+  const all = read();
+  const list = (all.accounts ?? []).map((x) => (x.id !== id ? x : {
+    id, label: a.label, ...(a.claudeDir ? { claudeDir: a.claudeDir } : {}), ...(a.ghUser ? { ghUser: a.ghUser } : {}),
+  }));
+  setShared(KEY, { ...all, accounts: list });
+  return list.find((x) => x.id === id) ?? null;
 }
 
 export function removeAccount(id) {
@@ -86,6 +123,16 @@ export function envScript(a) {
     a.ghUser ? `GH_TOKEN=$(gh auth token --user ${q(a.ghUser)} 2>/dev/null) && export GH_TOKEN || echo ${q(`herdr-ranch: no gh token for ${a.ghUser} (gh auth login)`)} >&2` : "",
   ].filter(Boolean).join("; ");
 }
+
+// gh as a GitHub login, its token fetched for this one command; "" runs gh as its active account.
+export function ghAs(user, args, opts = {}) {
+  if (!user) return exec("gh", args, opts);
+  return exec("sh", ["-c", `GH_TOKEN=$(gh auth token --user ${q(user)}) && export GH_TOKEN && exec gh "$@"`, "sh", ...args], opts);
+}
+
+// The GitHub login an account's terminals use: its own, or for no account (null) defaultGhUser;
+// "" when gh's active account (an account with only a Claude Code folder sets none).
+export const ghUserOf = (a) => (a ? a.ghUser ?? "" : defaultGhUser());
 
 // argv for a terminal as `a`: your login shell, or Claude Code (then a shell when it ends).
 export function argvAs(a, program = "shell") {

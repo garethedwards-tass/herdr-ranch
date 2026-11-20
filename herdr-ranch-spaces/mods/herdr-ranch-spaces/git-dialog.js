@@ -14,7 +14,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, theme, spaces, panes, exec, run, notify, knownAgents, settings } from "herdr";
 import { place, probe, status, worktrees, branches, switchArgs, diverged, switchRisk, stashMessage, workIn, checkoutAt, base, notPushed } from "./git.js";
 import { openRemove } from "./actions.js";
-import { accountOf, argvAs, runAs } from "./accounts.js";
+import { accountOf, argvAs, runAs, launchAs } from "./accounts.js";
 
 const MOD = "herdr-ranch-spaces";
 const MAX_FILES = 300, MAX_BRANCHES = 100, DETAIL_LINES = 400;
@@ -67,7 +67,7 @@ export class GitDialog extends View {
 
   // A space on this worktree with a terminal or an agent, as its repository's account if any.
   createSpace(agent = null) {
-    const a = accountOf(null, { main: this.g.main, on: this.on });
+    const a = launchAs(accountOf(null, { main: this.g.main, on: this.on }));
     const argv = agent ? (a ? runAs(a, agent.run) : agent.run) : a ? argvAs(a) : null;
     this.close();
     run("space.new", { folder: this.g.top, machine: this.on ?? "", ...(argv ? { argv } : {}) });

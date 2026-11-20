@@ -7,7 +7,7 @@ import { state } from "./stubs/herdr.mjs";
 import { place, probe, parseWorktrees, arrange, tail, linkLabel, countStatus, workIn, checkoutAt, hasWork, workText, issueBranch, parseRefs, addArgs, worktreePath, parseStatus, switchArgs, diverged, switchRisk, stashMessage } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/git.js";
 import { source, looksLikeKey } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/issues.js";
 import { resolveFolder, tilde, splitTyped, suggestions } from "../herdr-ranch-spaces/mods/herdr-ranch-spaces/new-space.js";
-import { accountOf, setAccount, addAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts, defaultLabel, defaultLetter, setDefaultLabel } from "../shared/accounts.js";
+import { accountOf, setAccount, addAccount, updateAccount, removeAccount, checkAccount, envScript, argvAs, runAs, parseGhAccounts, defaultLabel, defaultLetter, setDefaultLabel, defaultGhUser, setDefaultGhUser, launchAs, defaultBadge, accountColor, accountLetter, ghAs, ghUserOf } from "../shared/accounts.js";
 
 test("place: the first terminal's live folder, else the space's folder", () => {
   const s = { folder: "/made", tabs: [{ id: "t1" }] };
@@ -293,4 +293,74 @@ test("new space: typed folders, ~ and suggestions", () => {
   assert.deepEqual(suggestions("~/dev/.h", H, kids, []), [`${H}/dev/.hidden`]);
   assert.deepEqual(suggestions("", H, ["dev"], used), [...used, `${H}/dev`]);
   assert.deepEqual(suggestions("/op", H, ["opt", "usr"], []), ["/opt"]);
+});
+
+test("defaultGhUser: no account's terminals start as its GitHub login; an account keeps its own", () => {
+  state.shared["ranch-accounts"] = { accounts: [], spaces: {} };
+  assert.equal(launchAs(null), null);
+  setDefaultGhUser(" octo-me ");
+  assert.equal(defaultGhUser(), "octo-me");
+  assert.deepEqual(launchAs(null), { ghUser: "octo-me" });
+  assert.match(argvAs(launchAs(null))[2], /gh auth token --user 'octo-me'/);
+  assert.doesNotMatch(argvAs(launchAs(null))[2], /HERDR_RANCH_ACCOUNT|CLAUDE_CONFIG_DIR/);
+  const work = { id: "w", label: "Work", ghUser: "octo-work" };
+  assert.equal(launchAs(work), work);
+  setDefaultGhUser("");
+  assert.equal(launchAs(null), null);
+  assert.equal("defaultGhUser" in state.shared["ranch-accounts"], false);
+});
+
+test("defaultBadge: no letter while Default; once named, its letter on a neutral colour", () => {
+  state.shared["ranch-accounts"] = { accounts: [], spaces: {} };
+  assert.equal(defaultBadge(), null);
+  setDefaultLabel("Gareth");
+  const b = defaultBadge();
+  assert.equal(accountLetter(b), "G");
+  assert.equal(accountColor(b, { muted: "#999", ansi5: "#f0f" }), "#999");
+  setDefaultLabel("");
+});
+
+test("ghAs: gh as a login through its token; plain gh for the active account; ghUserOf picks the login", async () => {
+  state.shared["ranch-accounts"] = { accounts: [], spaces: {} };
+  const seen = [];
+  state.exec = (cmd, args) => { seen.push([cmd, args]); return { code: 0, stdout: "", stderr: "" }; };
+  await ghAs("", ["repo", "list"]);
+  await ghAs("octo-work", ["repo", "list"]);
+  state.exec = null;
+  assert.deepEqual(seen[0], ["gh", ["repo", "list"]]);
+  assert.equal(seen[1][0], "sh");
+  assert.match(seen[1][1][1], /gh auth token --user 'octo-work'.*exec gh "\$@"/);
+  assert.deepEqual(seen[1][1].slice(2), ["sh", "repo", "list"]);
+  assert.equal(ghUserOf({ ghUser: "w" }), "w");
+  assert.equal(ghUserOf({ claudeDir: "~/.c" }), "");
+  assert.equal(ghUserOf(null), "");
+  setDefaultGhUser("me");
+  assert.equal(ghUserOf(null), "me");
+  setDefaultGhUser("");
+});
+
+test("accounts: a worktree of an account's repository can switch back to Default, for itself only", () => {
+  state.shared["ranch-accounts"] = undefined;
+  const personal = addAccount({ label: "Personal", ghUser: "me" });
+  const repo = { main: "/src/clif", on: null };
+  setAccount({ id: "main" }, repo, personal);
+  assert.equal(accountOf({ id: "wt1" }, repo).label, "Personal");
+  setAccount({ id: "wt1" }, repo, null);
+  assert.equal(accountOf({ id: "wt1" }, repo), null);
+  assert.equal(accountOf({ id: "wt2" }, repo).label, "Personal");
+  assert.equal(accountOf({ id: "main" }, repo).label, "Personal");
+  setAccount({ id: "main" }, repo, null);
+  assert.equal(accountOf({ id: "main" }, repo), null);
+  setAccount({ id: "wt1" }, repo, null);
+  assert.deepEqual(Object.keys(state.shared["ranch-accounts"].spaces), []);
+});
+
+test("updateAccount: label, folder and login change in place; the id and its spaces stay", () => {
+  state.shared["ranch-accounts"] = undefined;
+  const a = addAccount({ label: "Personal", claudeDir: "~/.claude-p", ghUser: "me" });
+  const repo = { main: "/src/r", on: null };
+  setAccount({ id: "s1" }, repo, a);
+  const b = updateAccount(a.id, { label: "Home", claudeDir: "", ghUser: "me2" });
+  assert.deepEqual(b, { id: a.id, label: "Home", ghUser: "me2" });
+  assert.equal(accountOf({ id: "s1" }, repo).label, "Home");
 });

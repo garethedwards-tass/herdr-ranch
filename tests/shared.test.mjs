@@ -180,3 +180,13 @@ test("spaceRepo: a space whose folder is gone is not in a repository, not an err
   try { assert.equal(await spaceRepo({ id: "s1", folder: "/gone", machine: null }), null); }
   finally { state.exec = before; }
 });
+
+test("dialogs: no field shares a method's name (a field hides the method, and calling it throws)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  for (const f of ["../shared/link-dialog.js", "../shared/agent-dialog.js", "../herdr-ranch-spaces/mods/herdr-ranch-spaces/new-space.js"]) {
+    const src = await readFile(new URL(f, import.meta.url), "utf8");
+    const methods = new Set([...src.matchAll(/^  (?:async )?([a-zA-Z_]\w*)\([^)]*\) \{/gm)].map((m) => m[1]).filter((n) => !["if", "for", "while", "switch"].includes(n)));
+    const fields = new Set([...src.matchAll(/this\.([a-zA-Z_]\w*) = /g)].map((m) => m[1]));
+    assert.deepEqual([...methods].filter((m) => fields.has(m)), [], f);
+  }
+});

@@ -14,7 +14,7 @@ import { NewDialog } from "./new.js";
 import { NewSpaceDialog } from "./new-space.js";
 import { RemoveDialog } from "./remove.js";
 import { GitDialog } from "./git-dialog.js";
-import { accounts, accountOf, accountColor, accountLetter, defaultLabel } from "./accounts.js";
+import { accounts, accountOf, accountColor, accountLetter, defaultLabel, defaultBadge } from "./accounts.js";
 import { openNew, openGit, ICONS } from "./actions.js";
 import { base, checkoutAt, hasWork } from "./git.js";
 
@@ -233,9 +233,16 @@ function button(id, path, tip, t, onClick, color = null) {
     .child(svg(path).size(13));
 }
 
-// A space's account as a colored letter before its git chip; on the default account a faint
-// outlined square in its place. Either click opens Link space (links and account).
+// A space's account as a colored letter before its git chip; on the default account its letter on
+// a neutral square once you've named it, else a faint outlined link square. Each click opens Link space.
 function accountBadge(w, a, t) {
+  const d = a ? null : defaultBadge();
+  if (d) return div().id(`space-account-${w.id}`).size(PILL).flex_none().flex().items_center().justify_center().rounded(4)
+    .border_1().border_color(accountColor(d, t)).bg(accountColor(d, t)).text_color(t.background).text_size(12).font_semibold().cursor_pointer().hover((s) => s.opacity(0.85))
+    .tooltip(`${d.label} (no account)\nClick to link the space or pick an account`)
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
+    .child(accountLetter(d));
   if (!a) return div().id(`space-account-${w.id}`).size(PILL).flex_none().flex().items_center().justify_center().rounded(4)
     .border_1().border_color(t.dim + "55").text_color(t.dim).cursor_pointer().hover((s) => s.border_color(t.muted).text_color(t.muted))
     .tooltip(`${defaultLabel()} (no account)\nClick to link the space or pick an account`)

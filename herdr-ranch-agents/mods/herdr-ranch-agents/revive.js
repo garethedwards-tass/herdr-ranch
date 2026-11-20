@@ -17,7 +17,7 @@
 // every step reads the screen and stops at anything unexpected.
 
 import { hc, appHome, home, writeTextFile, readTextFile, exec, notify } from "herdr";
-import { accounts, envScript, expand } from "./accounts.js";
+import { accounts, envScript, expand, defaultGhUser } from "./accounts.js";
 
 // Keys that type `text`, or null when a character can't be typed.
 export function keysFor(text) {
@@ -196,12 +196,14 @@ export function envVar(psOut, argv, k) {
 // The script's account lines: the session's config folder (unset for the usual one) and, for a
 // Spaces account on that folder, its GitHub login. `named`: the account id Claude Code carries,
 // used only when that account's folder is this one.
-export function setupFor({ configDir, home, named = null, list = [] }) {
+export function setupFor({ configDir, home, named = null, list = [], defaultGh = "" }) {
   const usual = configDir === `${home}/.claude`;
   const on = (a) => (a.claudeDir ? expand(a.claudeDir, home) === configDir : usual);
   const account = list.find((a) => a.id === named && on(a)) ?? (usual ? null : list.find((a) => a.claudeDir && on(a))) ?? null;
   if (account) return [envScript(account), ...(account.claudeDir ? [] : ["unset CLAUDE_CONFIG_DIR"])].join("; ");
-  return usual ? "unset CLAUDE_CONFIG_DIR" : `export CLAUDE_CONFIG_DIR=${q(configDir)}`;
+  // The usual login with no account: no account's GitHub login, when it has one.
+  if (usual) return ["unset CLAUDE_CONFIG_DIR", ...(defaultGh ? [envScript({ ghUser: defaultGh })] : [])].join("; ");
+  return `export CLAUDE_CONFIG_DIR=${q(configDir)}`;
 }
 
 const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
@@ -272,7 +274,7 @@ export async function revive(t, session, cx, restart = false) {
   try { args = resumeArgs(g.foreground.argv.slice(1), id, await optionTable()); } catch (e) { return `${e.message}: restart it by hand.`; }
   const env = await exec("ps", ["eww", "-o", "command=", "-p", String(g.foreground.pid)]).catch(() => null);
   const named = envVar(env?.stdout, g.foreground.argv, "HERDR_RANCH_ACCOUNT") ?? null;
-  const setup = setupFor({ configDir, home: home(), named, list: accounts() });
+  const setup = setupFor({ configDir, home: home(), named, list: accounts(), defaultGh: defaultGhUser() });
   const vim = await vimMode(configDir);
   if (vim === null) return "Couldn't read its Claude Code settings (vim mode): restart it by hand.";
   const dir = `${appHome()}/data/herdr-ranch-agents`, path = `${dir}/revive-${t}.sh`;
