@@ -14,7 +14,7 @@ import { NewDialog } from "./new.js";
 import { NewSpaceDialog } from "./new-space.js";
 import { RemoveDialog } from "./remove.js";
 import { GitDialog } from "./git-dialog.js";
-import { accounts, accountOf, accountColor, accountLetter, defaultLabel, defaultBadge } from "./accounts.js";
+import { accounts, accountOf, accountColor, accountLetter, accountParts, defaultLabel, defaultBadge } from "./accounts.js";
 import { openNew, openGit, ICONS } from "./actions.js";
 import { base, checkoutAt, hasWork } from "./git.js";
 
@@ -252,7 +252,7 @@ function accountBadge(w, a, t) {
   const color = accountColor(a, t);
   return div().id(`space-account-${w.id}`).size(PILL).flex_none().flex().items_center().justify_center().rounded(4)
     .border_1().border_color(color).bg(color).text_color(t.background).text_size(12).font_semibold().cursor_pointer().hover((s) => s.opacity(0.85))
-    .tooltip(`Account: ${a.label}${a.claudeDir ? `\nClaude Code: ${a.claudeDir}` : ""}${a.ghUser ? `\nGitHub: ${a.ghUser}` : ""}\nClick to change`)
+    .tooltip(`Account: ${a.label}${accountParts(a).map(([k, v]) => `\n${k}: ${v}`).join("")}\nClick to change`)
     .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
     .on_click((_e, cx) => { cx.stop_propagation(); openLinkDialog(MOD, w); })
     .child(accountLetter(a));

@@ -1,7 +1,9 @@
-// Accounts per space (shared: the spaces list starts terminals as one; every Link space dialog sets it): which Claude Code login (its config folder, CLAUDE_CONFIG_DIR) and which
-// GitHub account (GH_TOKEN from `gh auth token --user`) a space's terminals use.
+// Accounts per space (shared: the spaces list starts terminals as one; every Link space dialog sets it):
+// one sign-in per provider that a space's terminals use. Claude Code: its config folder
+// (CLAUDE_CONFIG_DIR). GitHub: a gh login (GH_TOKEN from `gh auth token --user`). Codex: its home
+// (CODEX_HOME). Antigravity has one sign-in per computer, so it's always the usual one.
 // Stored in shared("ranch-accounts"):
-//   { accounts: [{ id, label, claudeDir?: "~/.claude-work", ghUser?: "octocat" }],
+//   { accounts: [{ id, label, claudeDir?: "~/.claude-work", ghUser?: "octocat", codexHome?: "~/.codex-work" }],
 //     defaultLabel?: "Me",  (the name for no account: your usual login; "Default" when unset)
 //     defaultGhUser?: "octocat",  (the GitHub account no account's terminals use; gh's active one when unset)
 //     spaces: { <space id>: { account, main, on } } }  (account null: Default chosen for that space)
@@ -75,10 +77,18 @@ export function setAccount(space, repo, account) {
   setShared(KEY, { ...all, spaces });
 }
 
+// What an account keeps: its label and each provider's sign-in it has (empty ones left out).
+const fields = (a) => ({
+  label: a.label,
+  ...(a.claudeDir ? { claudeDir: a.claudeDir } : {}),
+  ...(a.ghUser ? { ghUser: a.ghUser } : {}),
+  ...(a.codexHome ? { codexHome: a.codexHome } : {}),
+});
+
 export function addAccount(a) {
   const all = read();
   const id = `${a.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now().toString(36)}`;
-  const account = { id, label: a.label, ...(a.claudeDir ? { claudeDir: a.claudeDir } : {}), ...(a.ghUser ? { ghUser: a.ghUser } : {}) };
+  const account = { id, ...fields(a) };
   setShared(KEY, { ...all, accounts: [...(all.accounts ?? []), account] });
   return account;
 }
@@ -87,9 +97,7 @@ export function addAccount(a) {
 // Empty folder or login: it has none.
 export function updateAccount(id, a) {
   const all = read();
-  const list = (all.accounts ?? []).map((x) => (x.id !== id ? x : {
-    id, label: a.label, ...(a.claudeDir ? { claudeDir: a.claudeDir } : {}), ...(a.ghUser ? { ghUser: a.ghUser } : {}),
-  }));
+  const list = (all.accounts ?? []).map((x) => (x.id !== id ? x : { id, ...fields(a) }));
   setShared(KEY, { ...all, accounts: list });
   return list.find((x) => x.id === id) ?? null;
 }
@@ -100,14 +108,23 @@ export function removeAccount(id) {
   setShared(KEY, { ...all, accounts: (all.accounts ?? []).filter((a) => a.id !== id), spaces });
 }
 
-// What a new account may hold: a label, a folder (~ or absolute, no quotes), a GitHub login.
+// What an account may hold: a label, folders (~ or absolute, no quotes), a GitHub login.
+const FOLDER = /^(~|\/)[\w./ -]*$/;
 export function checkAccount(a) {
   if (!/^[\w .-]{1,40}$/.test(a.label ?? "")) return "Label: letters, digits, spaces, . _ -";
-  if (a.claudeDir && !/^(~|\/)[\w./ -]*$/.test(a.claudeDir)) return "Claude Code folder: a path starting with ~ or /.";
+  if (a.claudeDir && !FOLDER.test(a.claudeDir)) return "Claude Code folder: a path starting with ~ or /.";
+  if (a.codexHome && !FOLDER.test(a.codexHome)) return "Codex folder: a path starting with ~ or /.";
   if (a.ghUser && !/^[A-Za-z0-9-]{1,39}$/.test(a.ghUser)) return "GitHub user: a login name.";
-  if (!a.claudeDir && !a.ghUser) return "Give it a Claude Code folder, a GitHub user, or both.";
+  if (!a.claudeDir && !a.ghUser && !a.codexHome) return "Give it at least one: a Claude Code folder, a GitHub user or a Codex folder.";
   return "";
 }
+
+// An account's sign-ins, one line per provider it sets ([provider, value]); the rest use the usual one.
+export const accountParts = (a) => [
+  a?.claudeDir && ["Claude Code", a.claudeDir],
+  a?.ghUser && ["GitHub", a.ghUser],
+  a?.codexHome && ["Codex", a.codexHome],
+].filter(Boolean);
 
 const q = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
 // A folder for sh: ~ becomes "$HOME".
@@ -120,6 +137,7 @@ export function envScript(a) {
   return [
     a.id && /^[\w-]+$/.test(a.id) ? `export HERDR_RANCH_ACCOUNT=${a.id}` : "",
     a.claudeDir ? `export CLAUDE_CONFIG_DIR=${dir(a.claudeDir)}` : "",
+    a.codexHome ? `export CODEX_HOME=${dir(a.codexHome)}` : "",
     a.ghUser ? `GH_TOKEN=$(gh auth token --user ${q(a.ghUser)} 2>/dev/null) && export GH_TOKEN || echo ${q(`herdr-ranch: no gh token for ${a.ghUser} (gh auth login)`)} >&2` : "",
   ].filter(Boolean).join("; ");
 }

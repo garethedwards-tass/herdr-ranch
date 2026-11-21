@@ -364,3 +364,13 @@ test("updateAccount: label, folder and login change in place; the id and its spa
   assert.deepEqual(b, { id: a.id, label: "Home", ghUser: "me2" });
   assert.equal(accountOf({ id: "s1" }, repo).label, "Home");
 });
+
+test("accounts: a Codex folder is a sign-in of its own; envScript exports CODEX_HOME", () => {
+  assert.equal(checkAccount({ label: "Codex only", codexHome: "~/.codex-p" }), "");
+  assert.match(checkAccount({ label: "x", codexHome: "codex" }), /Codex/);
+  assert.match(checkAccount({ label: "x" }), /at least one/);
+  assert.match(envScript({ codexHome: "~/.codex-p" }), /export CODEX_HOME="\$HOME"'\/\.codex-p'/);
+  state.shared["ranch-accounts"] = undefined;
+  const a = addAccount({ label: "P", codexHome: "~/.codex-p", claudeDir: "" });
+  assert.deepEqual(a, { id: a.id, label: "P", codexHome: "~/.codex-p" });
+});

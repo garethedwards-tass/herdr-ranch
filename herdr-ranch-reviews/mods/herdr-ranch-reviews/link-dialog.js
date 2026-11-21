@@ -16,7 +16,7 @@ import { props, closeOverlay, theme, spaces, exec, run } from "herdr";
 import { spaceRepo, linkOf, saveLink, knownSites, detectGithub, openUrl } from "./links.js";
 import { credentials, myself, findProjects, cleanSite, call, TOKEN_PAGE, storeSignIn, removeSignIn, platform, STORE, validSite, trustedSite, trustSite } from "./jira-client.js";
 import { fs } from "./links.js";
-import { accounts, accountOf, setAccount, addAccount, updateAccount, removeAccount, checkAccount, parseGhAccounts, accountColor, accountLetter, defaultLabel, setDefaultLabel, defaultGhUser, setDefaultGhUser, defaultBadge, ghAs, ghUserOf } from "./accounts.js";
+import { accounts, accountOf, setAccount, addAccount, updateAccount, removeAccount, checkAccount, accountParts, parseGhAccounts, accountColor, accountLetter, defaultLabel, setDefaultLabel, defaultGhUser, setDefaultGhUser, defaultBadge, ghAs, ghUserOf } from "./accounts.js";
 import { linearKey, viewer as linearViewer, findTeams, connectLinear, disconnectLinear, KEY_PAGE as LINEAR_KEY_PAGE } from "./linear-client.js";
 
 const branchKey = (branch) => /\b([A-Z][A-Z0-9]{1,9})-\d+\b/.exec(branch ?? "")?.[1] ?? "";
@@ -53,13 +53,14 @@ export class LinkDialog extends View {
     // Account: the choice (an id, null for the default; undefined until read), the New account form.
     this.acct = undefined; this.acctWas = undefined; this.acctForm = false; this.acctEditing = null; this.acctError = ""; this.ghUsers = null; this.ghUser = "";
     this.acctLabel = InputState.new({ placeholder: "Work, Personal…" });
-    this.acctDir = InputState.new({ placeholder: "~/.claude-<label> (empty: keep the usual login)" });
+    this.acctDir = InputState.new({ placeholder: "~/.claude-<label>" });
+    this.acctCodex = InputState.new({ placeholder: "Empty: the usual ~/.codex" });
     // Editing no account (Default): its name and GitHub login, in its own small form saved straight away.
     this.defForm = false; this.defError = ""; this.defGh = "";
     this.defName = InputState.new({ placeholder: "Default" });
     this.defName.on("change", (_e, cx) => { if (this.defError) { this.defError = ""; cx.notify(); } });
     this.defName.on("submit", (_e, cx) => this.renameDefault(cx));
-    for (const s of [this.acctLabel, this.acctDir]) {
+    for (const s of [this.acctLabel, this.acctDir, this.acctCodex]) {
       s.on("change", (_e, cx) => { if (this.acctError) { this.acctError = ""; cx.notify(); } });
       s.on("submit", (_e, cx) => this.addAccount(cx));
     }
@@ -281,7 +282,7 @@ export class LinkDialog extends View {
   addAccount(cx) {
     const label = this.acctLabel.value().trim(), dir = this.acctDir.value().trim();
     const editing = this.acctEditing;
-    const a = { label, claudeDir: dir || (!editing && label ? `~/.claude-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : ""), ghUser: this.ghUser };
+    const a = { label, claudeDir: dir || (!editing && label ? `~/.claude-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : ""), ghUser: this.ghUser, codexHome: this.acctCodex.value().trim() };
     const err = checkAccount(a);
     if (err) { this.acctError = err; cx.notify(); return; }
     if (editing) updateAccount(editing, a);
@@ -291,7 +292,7 @@ export class LinkDialog extends View {
     cx.notify();
   }
   closeAccountForm() {
-    this.acctLabel.set_value(""); this.acctDir.set_value(""); this.ghUser = ""; this.acctForm = false; this.acctEditing = null; this.acctError = "";
+    this.acctLabel.set_value(""); this.acctDir.set_value(""); this.acctCodex.set_value(""); this.ghUser = ""; this.acctForm = false; this.acctEditing = null; this.acctError = "";
   }
 
   // No account's name (empty goes back to "Default") and GitHub login (none: gh's active account).
@@ -328,7 +329,7 @@ export class LinkDialog extends View {
     this.closeAccountForm();
     if (open) {
       this.acctForm = true; this.acctEditing = edit?.id ?? null; this.defForm = false;
-      if (edit) { this.acctLabel.set_value(edit.label ?? ""); this.acctDir.set_value(edit.claudeDir ?? ""); this.ghUser = edit.ghUser ?? ""; }
+      if (edit) { this.acctLabel.set_value(edit.label ?? ""); this.acctDir.set_value(edit.claudeDir ?? ""); this.acctCodex.set_value(edit.codexHome ?? ""); this.ghUser = edit.ghUser ?? ""; }
       this.loadGhUsers(cx);
     }
     cx.notify();
@@ -475,12 +476,16 @@ export class LinkDialog extends View {
       .when(this.acct === (x?.id ?? null), (e) => e.bg(t.accent + "14")).hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => { this.acct = x?.id ?? null; if (this.acctEditing) this.closeAccountForm(); this.defForm = false; this.loadRepos(cx); cx.notify(); })
       .when(Boolean(shown), (e) => e.child(letter(shown))).child(x?.label ?? defaultLabel());
+    // A provider's row in the account form: its name, its field, a hint under it.
+    const provider = (name, field, note) => h_flex().gap(10).items_start()
+      .child(div().w(84).flex_none().pt(4).child(label(name)))
+      .child(v_flex().flex_1().min_w(0).gap(3).child(field).child(hint(note)));
     const accountBody = v_flex().gap(8)
       .child(h_flex().gap(6).flex_wrap().items_center()
         .child(acctChip(null)).children(accts.map((x) => acctChip(x)))
         .child(chip("acct-new", this.acctForm && !this.acctEditing ? "Cancel new account" : "New account…", this.acctForm && !this.acctEditing, (cx) => this.openAccountForm(cx))))
       .child(h_flex().gap(8).items_center()
-        .child(div().flex_1().min_w(0).child(hint(cur ? [cur.claudeDir && `Claude Code: ${cur.claudeDir}`, cur.ghUser && `GitHub: ${cur.ghUser}`].filter(Boolean).join(" · ") : defaultGhUser() ? `Your usual Claude Code login · GitHub: ${defaultGhUser()}` : "Your usual Claude Code login and gh's active account.")))
+        .child(div().flex_1().min_w(0).child(hint(cur ? accountParts(cur).map(([k, v]) => `${k}: ${v}`).join(" · ") : defaultGhUser() ? `Your usual Claude Code login · GitHub: ${defaultGhUser()}` : "Your usual Claude Code login and gh's active account.")))
         .when(Boolean(cur), (e) => e.child(button("acct-edit", this.acctEditing === cur.id ? "Cancel" : "Edit", "link", (cx) => this.openAccountForm(cx, cur)))
           .child(button("acct-remove", "Remove from list", "link", (cx) => { removeAccount(cur.id); if (this.acctWas === cur.id) this.acctWas = null; this.acct = null; this.closeAccountForm(); this.loadRepos(cx); cx.notify(); })))
         .when(!cur && this.acct !== undefined, (e) => e.child(button("acct-rename-default", this.defForm ? "Cancel" : "Edit", "link", (cx) => this.openDefaultForm(cx)))))
@@ -496,14 +501,16 @@ export class LinkDialog extends View {
           .child(button("acct-rename-save", "Save", "blue", (cx) => this.renameDefault(cx))))))
       .when(this.acctForm, (e) => e.child(v_flex().gap(8).p(10).rounded(8).border_1().border_color(t.border).bg(t.surface)
         .child(v_flex().gap(4).child(label("Label")).child(box(this.acctLabel, false)))
-        .child(v_flex().gap(4).child(label("Claude Code config folder")).child(box(this.acctDir, false)))
-        .child(h_flex().gap(6).flex_wrap().items_center().child(label("GitHub"))
+        .child(provider("Claude Code", box(this.acctDir, false), this.acctEditing ? "Config folder. Empty: the usual ~/.claude." : "Config folder (CLAUDE_CONFIG_DIR)."))
+        .child(provider("GitHub", h_flex().gap(6).flex_wrap().items_center()
           .children((this.ghUsers ?? []).map((u) => chip(`acct-gh-${u}`, u, this.ghUser === u, (cx) => { this.ghUser = this.ghUser === u ? "" : u; cx.notify(); })))
           .when(this.ghUsers !== null && this.ghUsers.length === 0, (e) => e.child(hint("none signed in to gh")))
-          .when(this.ghUsers === null, (e) => e.child(hint("Reading gh's accounts…"))))
+          .when(this.ghUsers === null, (e) => e.child(hint("Reading gh's accounts…"))), "None picked: gh's active account."))
+        .child(provider("Codex", box(this.acctCodex, false), "Its home (CODEX_HOME). Sign in once: run `codex login` in a terminal as the account."))
+        .child(provider("Antigravity", hint("Your usual sign-in"), "agy keeps one sign-in per computer, so every account shares it."))
         .when(Boolean(this.acctError), (e) => e.child(hint(this.acctError, t.ansi1)))
         .child(h_flex().gap(8).items_center()
-          .child(div().flex_1().min_w(0).child(hint(this.acctEditing ? "Saved straight away. Empty folder: the usual Claude Code login." : "Log in once: open a Claude Code terminal as the account, then /login.")))
+          .child(div().flex_1().min_w(0).child(hint(this.acctEditing ? "Saved straight away." : "Sign in to Claude Code once: open a Claude Code terminal as the account, then /login.")))
           .child(button("acct-add", this.acctEditing ? "Save" : "Add", "blue", (cx) => this.addAccount(cx))))))
       .child(hint("Terminals the Spaces list opens here use the account's Claude Code login and GitHub account."));
 

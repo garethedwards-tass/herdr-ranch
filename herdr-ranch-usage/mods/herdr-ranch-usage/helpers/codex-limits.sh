@@ -11,6 +11,13 @@
 # Exit: 0 = printed something, 127 = codex CLI not found,
 # 1 = codex found but no reply and no snapshot.
 # Override the binary with HERDR_USAGE_CODEX_BIN; sessions follow CODEX_HOME.
+# $1: an account's Codex home (CODEX_HOME), ~ for your home; empty or absent: the usual one.
+
+case "${1:-}" in
+  "") ;;
+  "~"*) CODEX_HOME="$HOME${1#\~}"; export CODEX_HOME ;;
+  *) CODEX_HOME="$1"; export CODEX_HOME ;;
+esac
 
 # Not installed: say so, even if old session logs exist (they'd look like a reading).
 CODEX=$(command -v "${HERDR_USAGE_CODEX_BIN:-codex}" 2>/dev/null) || exit 127
