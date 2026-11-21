@@ -70,10 +70,12 @@ export function pickCodex(list, cwd, title, names, sharing = 1) {
   return here[0] ? { ...here[0], sure: sharing <= 1 } : null;
 }
 
-// The newest turn_context and token_count after `offset`, and the file's size, from one sh call.
+// The newest turn_context and token_count after `offset`, the turns started there (TURNS n), and
+// the file's size, from one sh call.
 export function parseRead(out) {
   const lines = (out ?? "").split("\n");
   const size = Number(/^SIZE (\d+)$/m.exec(out ?? "")?.[1]) || null;
+  const turns = Number(/^TURNS (\d+)$/m.exec(out ?? "")?.[1]) || 0;
   const st = {};
   for (const line of lines) {
     let j; try { j = JSON.parse(line); } catch { continue; }
@@ -82,14 +84,17 @@ export function parseRead(out) {
       const i = j.payload.info;
       if (i.last_token_usage?.total_tokens != null) st.context = i.last_token_usage.total_tokens;
       if (i.model_context_window) st.window = i.model_context_window;
+      // The conversation's totals: Codex's input counts the cached part too.
+      const tot = i.total_token_usage;
+      if (tot?.input_tokens != null) st.totals = { input: Math.max(0, tot.input_tokens - (tot.cached_input_tokens ?? 0)), cacheRead: tot.cached_input_tokens ?? 0, output: tot.output_tokens ?? 0, reasoning: tot.reasoning_output_tokens ?? 0 };
     }
   }
-  return { st, size };
+  return { st, size, turns };
 }
 export async function readCodex(file, offset = 0) {
   // Whole lines only: a line Codex is still writing is left for next time (SIZE stops before it).
   // A token_count without usage (info null: a rate-limit update) doesn't replace one with usage.
-  const script = 'export LC_ALL=C; s=$(wc -c < "$1" | tr -d " "); [ "$s" -gt "$2" ] || { echo "SIZE $s"; exit 0; }; if [ "$(tail -c +$s "$1" | head -c 1 | od -An -tx1 | tr -d " \\n")" != 0a ]; then p=$(tail -c +$(($2 + 1)) "$1" | head -c $((s - $2)) | tail -n 1 | wc -c | tr -d " "); s=$((s - p)); fi; tail -c +$(($2 + 1)) "$1" | head -c $((s - $2)) | awk \'/"type":"turn_context"/{a=$0} /"type":"token_count"/ && /"last_token_usage"/{b=$0} END{if(a!="")print a; if(b!="")print b}\'; echo "SIZE $s"';
+  const script = 'export LC_ALL=C; s=$(wc -c < "$1" | tr -d " "); [ "$s" -gt "$2" ] || { echo "SIZE $s"; exit 0; }; if [ "$(tail -c +$s "$1" | head -c 1 | od -An -tx1 | tr -d " \\n")" != 0a ]; then p=$(tail -c +$(($2 + 1)) "$1" | head -c $((s - $2)) | tail -n 1 | wc -c | tr -d " "); s=$((s - p)); fi; tail -c +$(($2 + 1)) "$1" | head -c $((s - $2)) | awk \'/"type":"turn_context"/{a=$0} /"type":"token_count"/ && /"last_token_usage"/{b=$0} /"type":"task_started"/{n++} END{if(a!="")print a; if(b!="")print b; print "TURNS " n+0}\'; echo "SIZE $s"';
   const r = await exec("sh", ["-c", script, "sh", file, String(offset)], { timeout: 15000 }).catch(() => null);
   return parseRead(r?.stdout);
 }
@@ -97,7 +102,22 @@ export async function readCodex(file, offset = 0) {
 // What the menu shows, as plain data.
 export function codexSnapshot(c, title) {
   const st = c.st;
-  return { kind: "codex", title: title || "Codex", model: st.model ?? null, effort: st.effort ?? null, context: st.context ?? 0, window: st.window ?? 0, session: c.id };
+  return { kind: "codex", app: "codex", title: title || "Codex", model: st.model ?? null, effort: st.effort ?? null, context: st.context ?? 0, window: st.window ?? 0, session: c.id,
+    turns: st.turns ?? null, totals: st.totals ?? null, started: c.started ?? null };
+}
+
+// When a terminal's program started (ms), from `ps -o etime=` ("[[dd-]hh:]mm:ss" ago), or null.
+export function parseEtime(text, now = Date.now()) {
+  const m = /^\s*(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)\s*$/.exec(text ?? "");
+  if (!m) return null;
+  const [d, h, mi, s] = [m[1], m[2], m[3], m[4]].map((x) => Number(x ?? 0));
+  return now - (((d * 24 + h) * 60 + mi) * 60 + s) * 1000;
+}
+export async function startedOf(t) {
+  const g = await get(t), pid = g?.foreground?.pid;
+  if (!pid) return null;
+  const r = await exec("ps", ["-o", "etime=", "-p", String(pid)]).catch(() => null);
+  return r?.code === 0 ? parseEtime(r.stdout) : null;
 }
 // "gpt-6.1-sol" → "GPT-6.1-Sol" (what Codex shows).
 export const codexModel = (id) => (id ?? "Codex").split("-").map((w, i) => (i === 0 && /^gpt$/i.test(w) ? "GPT" : w.charAt(0).toUpperCase() + w.slice(1))).join("-");
@@ -123,8 +143,9 @@ export async function refreshCodex(v, mine, all) {
     if (!s) { if (c) { v.codex.delete(a.address); changed = true; } continue; }
     if (c && c.sure !== s.sure) { c.sure = s.sure; changed = true; }
     if (!c || c.id !== s.id) {
-      const { st, size } = await readCodex(s.file, 0);
-      v.codex.set(a.address, { id: s.id, file: s.file, cwd: s.cwd, sure: s.sure, st, offset: size ?? 0, read: now });
+      const { st, size, turns } = await readCodex(s.file, 0);
+      st.turns = turns;
+      v.codex.set(a.address, { id: s.id, file: s.file, cwd: s.cwd, sure: s.sure, st, offset: size ?? 0, read: now, started: await startedOf(a.address) });
       changed = true;
       continue;
     }
@@ -133,7 +154,7 @@ export async function refreshCodex(v, mine, all) {
     const more = await readCodex(c.file, c.offset);
     if (more.size != null && more.size !== c.offset) {
       const before = JSON.stringify(c.st);
-      Object.assign(c.st, more.st); c.offset = more.size;
+      Object.assign(c.st, more.st); c.st.turns = (c.st.turns ?? 0) + more.turns; c.offset = more.size;
       if (JSON.stringify(c.st) !== before) changed = true;
     }
   }

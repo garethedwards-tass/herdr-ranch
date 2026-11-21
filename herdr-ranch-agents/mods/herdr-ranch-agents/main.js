@@ -317,7 +317,10 @@ export default class Agents extends View {
     const labels = new Map(list.map(a => {
       const tab = tabs.get(a.tab);
       const many = tabCounts.get(a.tab) > 1;
-      return [a.address, tab ? title(many ? { ...tab, named: false } : tab, many ? a : leads.get(a.tab)) : (a.title || a.program?.name || "")];
+      const own = tab ? title(many ? { ...tab, named: false } : tab, many ? a : leads.get(a.tab)) : (a.title || a.program?.name || "");
+      // ranch: an Antigravity agent sets no title; its conversation's name tells it apart (antigravity.js).
+      const conv = this.agy?.get(a.address)?.title;
+      return [a.address, conv && (!own || own === a.address || own === a.program?.name || (tab && !tab.named)) ? conv : own];
     }));
     const label = (a) => labels.get(a.address);
     const detail = new Map(list.map(a => [a.address, /^\d+$/.test(label(a)) ? null : label(a)]));

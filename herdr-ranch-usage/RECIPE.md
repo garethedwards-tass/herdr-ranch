@@ -1,6 +1,6 @@
 # Usage
 
-usage-limits from [VladTemp27/herdr-mods](https://github.com/VladTemp27/herdr-mods/tree/main/usage-limits) (Apache-2.0, see `LICENSE` and `NOTICE`), changed for herdr-ranch to read **every account**. Every Claude Code and Codex usage window (the 5-hour session, weekly, and per-model weekly limits)
+usage-limits from [VladTemp27/herdr-mods](https://github.com/VladTemp27/herdr-mods/tree/main/usage-limits) (Apache-2.0, see `LICENSE` and `NOTICE`), changed for herdr-ranch to read **every account**. Every Claude Code, Codex and Antigravity usage window (the 5-hour session, weekly, and per-model weekly limits)
 in a status bar, with a hover panel of details and the current session's context. The numbers come
 from the CLIs themselves; the mod never reads a token or credential file.
 
@@ -46,23 +46,32 @@ from the CLIs themselves; the mod never reads a token or credential file.
   `ranch-usage.prefs` (the layout's `props` preset them until the person changes something).
 - A window past its reset shows `—` until a new reading. Amber and red windows always show time to
   reset; the others only with that setting on.
-- Session numbers come from the focused agent's own session log (Claude Code or Codex), read for
-  numbers only, at most every 10 seconds while hovering.
+- Session numbers come from the focused agent's own session log (Claude Code, Codex or
+  Antigravity), read for numbers only, at most every 10 seconds while hovering. Antigravity: the
+  conversation its `agy` holds open (`brain/<id>` in `lsof`), its newest turn rows from
+  `conversations/<id>.db` (sqlite, read-only; immutable once agy has closed it), decoded by
+  `agy-turn.js` (shared with the Agents list): context and the limit compaction works to; no calls.
+- Antigravity's quota (Gemini, Claude/GPT and Argon groups, each 5-hour and weekly):
+  `helpers/antigravity-limits.sh` starts `agy acp` with a CSRF token it makes, sends `initialize`
+  and `session/list` (which starts agy's local server without creating a conversation), and asks
+  that server's HTTP port for `RetrieveUserQuotaSummary`, plus the plan name from `GetUserStatus`.
 - Agent status isn't shown; this is account usage.
 
 ## Built from
 
 - `mods/herdr-ranch-usage/`: `main.js` (bar, panel, settings), `providers/` (`claude.js`, `codex.js`,
-  `index.js`), `lib/` (pure: `format`, `prefs`, `report`, `session`, `state`, `view`), `helpers/`
-  (`claude-usage.sh`, `codex-limits.sh`, `session.sh`), `icons/` (gauge, gear, back, refresh).
+  `antigravity.js`, `index.js`), `lib/` (pure: `format`, `prefs`, `report`, `session`, `state`, `view`),
+  `agy-turn.js` (copy of `shared/`), `helpers/` (`claude-usage.sh`, `codex-limits.sh`,
+  `antigravity-limits.sh`, `session.sh`), `icons/` (gauge, gear, back, refresh).
   `mod.json`: `{ "place": "none" }`.
 - Put it in a layout block, e.g.
   `{ "id": "herdr-ranch-usage", "type": "block", "size": { "weight": 3 }, "min": 320, "content": { "mod": "herdr-ranch-usage", "props": { "align": "left", "showRemaining": true } } }`.
 - Herdr API: `exec`, `focused`, `shared`/`setShared`, `props`, `appHome`, `home`, gpui-base `HoverCard`.
 - Programs: `claude` (run briefly with `-p --safe-mode --no-session-persistence` and the
   `get_usage` control request; no prompt, no turn), `codex app-server` (`account/rateLimits/read`,
-  falling back to the newest rate-limit snapshot in Codex's session logs), `sh`, `awk`.
-  Override the binaries with `HERDR_USAGE_CLAUDE_BIN` / `HERDR_USAGE_CODEX_BIN`.
+  falling back to the newest rate-limit snapshot in Codex's session logs), `agy acp` (see above),
+  `curl`, `sqlite3`, `lsof`, `sh`, `awk`. Override the binaries with `HERDR_USAGE_CLAUDE_BIN` /
+  `HERDR_USAGE_CODEX_BIN` / `HERDR_USAGE_AGY_BIN`.
 
 ## Watch out
 

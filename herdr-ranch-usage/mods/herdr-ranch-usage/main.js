@@ -1,4 +1,4 @@
-// Usage limits: every Claude Code / Codex limit window in the status bar, and one
+// Usage limits: every Claude Code / Codex / Antigravity limit window in the status bar, and one
 // panel on hover: the details, and behind ⚙ the checkboxes to choose what shows.
 //
 // Data comes from small helpers that run the CLIs themselves (helpers/*.sh);
@@ -25,7 +25,7 @@ const FETCH_EVERY = 5 * 60;       // s, installed providers
 const MISSING_EVERY = 60 * 60;    // s, not-installed providers
 const REFRESH_COOLDOWN = 30;      // s
 const SESSION_EVERY = 10 * 1000;   // ms, at most this often on hover
-const AGENTS = { "claude-code": "claude", codex: "codex" }; // Herdr's app name → session.sh
+const AGENTS = { "claude-code": "claude", codex: "codex", antigravity: "antigravity" }; // Herdr's app name → session.sh
 const BAR_W = 30;
 const PANEL_W = 360;
 const PANEL_BAR_W = 96;
@@ -299,7 +299,7 @@ export default class UsageLimits extends View {
     if (session) body.child(v_flex().pt(10).border_t(1).border_color(t.border).child(this.sessionBlock(session, this.session?.account ?? null, t)));
     const cooling = this.cooling();
     return body.child(h_flex().gap(2).items_center()
-      .child(div().flex_1().min_w(0).truncate().text_size(10.5).text_color(t.dim).child("Data: claude (per account) and codex CLIs, numbers from session logs."))
+      .child(div().flex_1().min_w(0).truncate().text_size(10.5).text_color(t.dim).child("Data: the claude (per account), codex and agy CLIs; numbers from session logs."))
       .child(this.iconButton("ul-refresh", "refresh", cooling ? "Refreshing…" : "Refresh now", !cooling, (cx) => this.refresh(cx), t))
       .child(this.iconButton("ul-settings", "gear", "Settings", true, (cx) => this.show("settings", cx), t)));
   }
@@ -354,7 +354,7 @@ export default class UsageLimits extends View {
           return this.check(`s-${row}`, isOnBar(prefs, row), [div().text_color(t.foreground).child(name)],
             () => save(toggleOnBar(this.prefs(), row)), t);
         })))
-      .child(div().text_size(10.5).text_color(t.dim).child("Data: claude (per account) and codex CLIs, numbers from session logs."));
+      .child(div().text_size(10.5).text_color(t.dim).child("Data: the claude (per account), codex and agy CLIs; numbers from session logs."));
   }
 
   render(cx) {

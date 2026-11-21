@@ -1,11 +1,17 @@
 // The session in the focused terminal, as plain data. Pure: no Herdr imports.
 import { level, tokens } from "./format.js";
 import { isOnBar } from "./prefs.js";
+import { parseAgyTurn } from "../agy-turn.js";
 
 // Session: { app, tokens, window|null, calls, compactions|null, last: { trigger, pre, post }|null }
 // compactions is null where the agent's log isn't known to record them, which is not 0.
 export function parseSession(text, app) {
   const f = Object.fromEntries((text ?? "").trim().split(/\s+/).map((kv) => kv.split("=")));
+  // Antigravity: its newest turn records, as hex; the first one that reads gives the numbers.
+  if (f.rows != null) {
+    const turn = f.rows.split(",").map(parseAgyTurn).find(Boolean);
+    return turn ? { app, tokens: turn.context, window: turn.window, calls: null, compactions: null, last: null, dir: null } : null;
+  }
   const n = (k) => (/^\d+$/.test(f[k] ?? "") ? Number(f[k]) : null);
   if (!n("tokens")) return null;
   return {
@@ -33,7 +39,7 @@ export function sessionView(s, title) {
   return {
     title,
     context: context(s),
-    calls: plural(s.calls, "call"),
+    calls: s.calls != null ? plural(s.calls, "call") : null,
     compactions: s.compactions != null ? plural(s.compactions, "compaction") : null,
     last: s.last ? `last: ${s.last.trigger}, ${tokens(s.last.pre)} → ${tokens(s.last.post)}` : null,
   };
@@ -44,7 +50,7 @@ export function sessionOnBar(s, prefs) {
   const c = context(s);
   return [
     { id: "context", text: `ctx ${c.text}`, level: c.level },
-    { id: "calls", text: `⇄ ${s.calls}`, level: "ok" },
+    s.calls != null ? { id: "calls", text: `⇄ ${s.calls}`, level: "ok" } : null,
     s.compactions != null ? { id: "compactions", text: `▼ ${s.compactions}`, level: "ok" } : null,
   ].filter((n) => n && isOnBar(prefs, n.id));
 }

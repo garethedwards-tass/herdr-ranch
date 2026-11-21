@@ -2,6 +2,7 @@
 # Prints one line of numbers about the session a process is running, and exits:
 #   claude: tokens=N calls=N compactions=N [lastTrigger=auto lastPre=N lastPost=N]
 #   codex:  tokens=N window=N calls=N
+#   antigravity: rows=HEX,HEX… (its newest turn records; lib/session.js reads the numbers)
 #
 # Usage: session.sh claude|codex <pid of the agent in the terminal> [claude config folder...]
 # Claude's session is looked for in each folder given (every account's), in order; the
@@ -100,9 +101,26 @@ codex() {
   exit 1
 }
 
+# agy holds its conversation's brain/<id> folder open; the newest turn records are read from
+# conversations/<id>.db read-only (agy may be writing it). Only hex numbers leave this script.
+antigravity() {
+  id=$(lsof -nP -Fn -p "$pid" 2>/dev/null | sed -n 's|^n.*/antigravity-cli/brain/\([0-9a-f-]\{36\}\)$|\1|p' | head -1)
+  [ -n "$id" ] || exit 1
+  db="$HOME/.gemini/antigravity-cli/conversations/$id.db"
+  [ -f "$db" ] || exit 1
+  # While agy has it open (its -wal file is there) a read-only open sees the newest; once it's
+  # closed, read-only needs the file opened as immutable (it can't make the -shm file).
+  sql="select hex(data) from gen_metadata where length(data) between 1 and 20000 order by idx desc limit 4"
+  if [ -f "$db-wal" ]; then rows=$(sqlite3 -readonly "$db" "$sql" 2>/dev/null | tr '\n' ',')
+  else rows=$(sqlite3 "file:$db?mode=ro&immutable=1" "$sql" 2>/dev/null | tr '\n' ','); fi
+  [ -n "$rows" ] || exit 1
+  printf 'rows=%s id=%s\n' "$rows" "$id"
+}
+
 shift 2
 case "$app" in
   claude) claude "$@" ;;
   codex) codex ;;
+  antigravity) antigravity ;;
   *) exit 1 ;;
 esac

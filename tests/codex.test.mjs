@@ -43,8 +43,8 @@ test("parseRead: the newest model, effort, tokens and window", () => {
     '{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":32913},"model_context_window":475000}}}',
     "SIZE 1234",
   ].join("\n");
-  assert.deepEqual(parseRead(out), { st: { model: "gpt-6.1-sol", effort: "medium", context: 32913, window: 475000 }, size: 1234 });
-  assert.deepEqual(parseRead("SIZE 5"), { st: {}, size: 5 });
+  assert.deepEqual(parseRead(out), { st: { model: "gpt-6.1-sol", effort: "medium", context: 32913, window: 475000 }, size: 1234, turns: 0 });
+  assert.deepEqual(parseRead("SIZE 5"), { st: {}, size: 5, turns: 0 });
 });
 
 test("codexResumeArgs: keeps options, drops prompts and sessions, names the conversation", () => {

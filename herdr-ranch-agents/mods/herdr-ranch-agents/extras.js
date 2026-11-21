@@ -10,6 +10,7 @@ import { bringBack } from "./revive.js";
 import { accounts, accountOf, defaultLabel } from "./accounts.js";
 import { worktreeProps, worktreeLines, WORKTREE_H } from "./worktree.js";
 import { isCodex, refreshCodex, codexSnapshot, codexModel, codexShort, restartCodexAgent } from "./codex.js";
+import { isAgy, refreshAgy, agySnapshot, agyShort, restartAgyAgent } from "./antigravity.js";
 import { liveSessions, configDirs, pickSession, projectDir, firstRead, readSince, subagents, apply, totals, windowOf, tokens, taskList } from "./claude.js";
 
 export const MOD = "herdr-ranch-agents";
@@ -68,6 +69,8 @@ export function start(v, cx) {
       try { if (await refresh(v)) cx.notify(); } catch { /* next tick */ }
       // Codex agents (codex.js): their conversation, model and context.
       try { const all = terminals(); if (await refreshCodex(v, liveAgents(agents(), all).filter(isCodex), all)) cx.notify(); } catch { /* next tick */ }
+      // Antigravity agents (antigravity.js): their conversation, model and context.
+      try { const all = terminals(); if (await refreshAgy(v, liveAgents(agents(), all).filter(isAgy), all)) cx.notify(); } catch { /* next tick */ }
       v.reading = false;
     });
   };
@@ -156,12 +159,12 @@ const shortModel = (id) => { const m = FAMILY.exec(id ?? ""); return m ? m[1].ch
 const level = (t, p) => (p >= 85 ? t.ansi1 : p >= 60 ? t.ansi3 : t.ansi2);
 // The agent's menu, from its pill or a right-click on its row.
 export function openAgentMenu(v, a) {
-  const c = v.claude?.get(a.address), x = v.codex?.get(a.address);
-  const s = c?.st.context ? snapshot(c) : x ? codexSnapshot(x, (a.title ?? "").split(" | ")[0].trim()) : null;
-  const name = c?.st.context ? shortModel(c.st.model) : c ? "Claude" : x ? codexModel(x.st.model) : a.program?.name ?? "Agent";
+  const c = v.claude?.get(a.address), x = v.codex?.get(a.address), g = v.agy?.get(a.address);
+  const s = c?.st.context ? snapshot(c) : x ? codexSnapshot(x, (a.title ?? "").split(" | ")[0].trim()) : g ? agySnapshot(g) : null;
+  const name = c?.st.context ? shortModel(c.st.model) : c ? "Claude" : x ? codexModel(x.st.model) : g ? g.st.model ?? "Antigravity" : a.program?.name ?? "Agent";
   // Restart: only a Claude Code agent here whose conversation the watcher knows (revive.js).
-  // Codex: one whose conversation was found (codex.js).
-  const restart = ((Boolean(c?.id) && isClaude(a)) || (Boolean(x?.id) && x.sure && isCodex(a))) && !v.reviving.has(a.address);
+  // Codex and Antigravity: one whose conversation was found, and sure of (codex.js, antigravity.js).
+  const restart = ((Boolean(c?.id) && isClaude(a)) || (Boolean(x?.id) && x.sure && isCodex(a)) || (Boolean(g?.id) && g.sure && isAgy(a))) && !v.reviving.has(a.address);
   const worktree = worktreeProps(v, a);
   const props = { stats: s, menu: true, pane: a.pane, name, terminal: a.address, pinned: Boolean(a.pinned), restart, worktree };
   // As high as the rows it has: a Codex or other agent has fewer than a Claude Code one.
@@ -187,6 +190,7 @@ function restartAsked(v, cx) {
     if (now?.at !== ask.at || now.claimed !== v.instance) return;
     const a = liveAgents(agents(), terminals()).find((x) => x.address === ask.terminal);
     if (a && isCodex(a)) restartCodexAgent(v, a, cx);
+    else if (a && isAgy(a)) restartAgyAgent(v, a, cx, notify);
     else if (a) bringBack(v, a, cx, true);
     else notify({ title: "Couldn't restart the agent", body: "It isn't in the list any more.", level: "warning" });
   });
@@ -198,9 +202,11 @@ export function statsChip(v, a, t, status = null) {
   // Stopped by Claude Code itself (a usage limit, an API error): red, "limit" or "error".
   const err = c?.st.apiError?.text ?? null, limit = err && /limit/i.test(err);
   // Codex (codex.js): its model and context, from its conversation's records.
-  const x = !c ? v.codex?.get(a.address) : null, xp = x?.st.window ? Math.round((100 * (x.st.context ?? 0)) / x.st.window) : null;
+  // Antigravity (antigravity.js) the same way.
+  const cx_ = !c ? v.codex?.get(a.address) : null, ag = !c && !cx_ ? v.agy?.get(a.address) : null, x = cx_ ?? ag;
+  const xp = x?.st.window ? Math.round((100 * (x.st.context ?? 0)) / x.st.window) : null;
   const color = a.status === "blocked" || err ? t.blocked : known ? level(t, p) ?? t.dim : xp != null ? level(t, xp) ?? t.dim : t.dim;
-  const left = known ? shortModel(c.st.model) : c ? "Claude" : x?.st.model ? codexShort(x.st.model) : a.program?.name ?? "Agent";
+  const left = known ? shortModel(c.st.model) : c ? "Claude" : x?.st.model ? (ag ? agyShort(x.st.model) : codexShort(x.st.model)) : a.program?.name ?? "Agent";
   const right = err ? (limit ? "limit" : "error") : known ? `${p}%` : c ? "…" : xp != null ? `${xp}%` : x ? "…" : "—";
   return h_flex().id(`stats-${a.address}`).flex_none().w(PILL_W).h(PILL_H).gap(4).px(6).items_center().rounded(4)
     .border_1().border_color(color + "55").bg(color + "14").text_size(12).text_color(color).cursor_pointer()
@@ -218,7 +224,7 @@ export function statsChip(v, a, t, status = null) {
 function menuItems(p) {
   const s = p.stats;
   return [
-    s && s.kind !== "codex" ? { id: "details", label: "Usage details", hint: "›", go: () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 320, height: 460, props: { stats: s } }) } : null,
+    s ? { id: "details", label: "Usage details", hint: "›", go: () => openOverlay({ mod: MOD, kind: "popup", at: "pointer", width: 320, height: s.kind === "codex" ? 300 : 460, props: { stats: s } }) } : null,
     p.pane ? { id: "focus", label: "Go to terminal", go: () => run("pane.focus", { pane: p.pane }) } : null,
     p.terminal ? { id: "pin", label: p.pinned ? "Unpin" : "Pin to the top", go: () => run("terminal.pin", { terminal: p.terminal, pinned: !p.pinned }) } : null,
     p.restart ? { id: "restart", label: "Restart", hint: "exit and resume", go: () => setShared(KEY_RESTART, { terminal: p.terminal, at: Date.now() }) } : null,
@@ -243,7 +249,7 @@ export function statsMenu(p, t) {
     return v_flex().id("agent-menu").w_full().p(6).gap(1).bg(t.popover).text_size(12.5)
       .child(v_flex().px(8).pt(4).pb(8).gap(3)
         .child(div().font_semibold().truncate().text_color(t.foreground).child(s.title))
-        .child(div().truncate().text_size(12).text_color(t.muted).child(`${codexModel(s.model)}${s.effort ? ` · ${s.effort}` : ""}`))
+        .child(div().truncate().text_size(12).text_color(t.muted).child(`${s.modelText ?? codexModel(s.model)}${s.effort ? ` · ${s.effort}` : ""}`))
         .when(Boolean(s.window), (el) => el.child(h_flex().gap(8).items_center().pt(2)
           .child(div().flex_1().h(5).rounded(3).bg(t.hover).child(div().h(5).rounded(3).w(Math.max(4, Math.round(150 * used))).bg(used >= 0.85 ? t.ansi1 : used >= 0.6 ? t.ansi3 : t.accent)))
           .child(div().flex_none().text_size(12).text_color(tone(t, used * 100)).child(`${Math.round(used * 100)}% · ${tokens(s.context)}`)))))
@@ -329,9 +335,30 @@ const since = (ms) => { const m = Math.round((Date.now() - ms) / 60000); return 
 
 // The stats popup (the list opened as a popup with props { stats: snapshot() }).
 export function statsView(p, t) {
-  const s = p.stats, used = Math.min(1, s.context / s.window);
+  const s = p.stats, used = s.window ? Math.min(1, s.context / s.window) : 0;
   const line = (label, value, color) => h_flex().h(22).gap(8).items_center().child(div().w(96).flex_none().text_color(t.dim).child(label)).child(div().flex_1().min_w(0).truncate().text_color(color ?? t.foreground).child(value));
   const head = (text) => div().pt(8).pb(2).text_size(11).text_color(t.muted).child(text);
+  // Codex and Antigravity (codex.js, antigravity.js): what their own files record.
+  if (s.kind === "codex") {
+    const agy = s.app === "antigravity", tot = s.totals;
+    return v_flex().id("agent-stats").w_full().p(12).gap(1).bg(t.popover).text_size(12.5)
+      .on_key_down((e) => { if (e.key === "escape") closeOverlay(p.overlay); })
+      .child(div().font_semibold().truncate().text_color(t.foreground).child(s.title))
+      .child(line("Model", `${s.modelText ?? codexModel(s.model)}${s.effort ? ` · ${s.effort} effort` : ""}`))
+      .when(Boolean(s.window), (el) => el
+        .child(line("Context", `${tokens(s.context)} of ${tokens(s.window)} (${Math.round(used * 100)}%)${agy ? " before compacting" : ""}`, tone(t, used * 100)))
+        .child(div().h(5).w_full().rounded(3).bg(t.hover).child(div().h(5).rounded(3).w(Math.max(4, Math.round(296 * used))).bg(used >= 0.85 ? t.ansi1 : used >= 0.6 ? t.ansi3 : t.accent))))
+      .child(head("This conversation"))
+      .when(s.turns != null, (el) => el.child(line("Turns", String(s.turns))))
+      .when(s.calls != null, (el) => el.child(line("Model calls", String(s.calls))))
+      .when(Boolean(tot), (el) => el
+        .child(line("Output", `${tokens(tot.output)} tokens${tot.reasoning ? ` · ${tokens(tot.reasoning)} reasoning` : ""}`))
+        .child(line("Input", `${tokens(tot.input)} new · ${tokens(tot.cacheRead)} from cache`)))
+      .when(Boolean(s.started), (el) => el.child(line("Running for", since(s.started))))
+      .child(div().pt(8).text_size(10.5).text_color(t.dim).child(agy
+        ? "From agy's files in ~/.gemini/antigravity-cli (an undocumented format: a number it can't read is left out)."
+        : "From Codex's files in ~/.codex."));
+  }
   return v_flex().id("agent-stats").w_full().p(12).gap(1).bg(t.popover).text_size(12.5)
     .on_key_down((e) => { if (e.key === "escape") closeOverlay(p.overlay); })
     .child(div().font_semibold().truncate().text_color(t.foreground).child(s.title ?? "Claude Code"))

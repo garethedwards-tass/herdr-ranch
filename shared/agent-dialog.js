@@ -67,6 +67,8 @@ const OPTIONS = {
     args: (m, e) => [...(m ? ["--model", m] : []), ...(e ? ["--effort", e] : [])] },
   codex: { models: null, placeholder: "e.g. gpt-5-codex", efforts: ["low", "medium", "high"],
     args: (m, e) => [...(m ? ["-m", m] : []), ...(e ? ["-c", `model_reasoning_effort=${e}`] : [])] },
+  antigravity: { models: null, placeholder: "e.g. gemini-4-neon-high (agy models lists them)", efforts: ["low", "medium", "high", "xhigh", "max"],
+    args: (m, e) => [...(m ? ["--model", m] : []), ...(e ? ["--effort", e] : [])] },
   opencode: { models: null, placeholder: "provider/model, e.g. anthropic/claude-sonnet-4", efforts: null,
     args: (m) => (m ? ["-m", m] : []) },
 };
